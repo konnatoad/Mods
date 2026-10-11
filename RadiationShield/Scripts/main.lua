@@ -393,6 +393,28 @@ local function Round(border, radius, outline)
     return border
 end
 
+-- Panels are named, so a restarted copy of this mod (.reloadmods) can find
+-- and remove the badge, readout and menu the previous copy left on the HUD.
+-- The tag keeps names unique between copies: reusing a name would replace
+-- the old widget in place, which the game doesn't survive.
+local PANEL_PREFIX = "RadiationShieldPanel_"
+local panelTag = string.format("%x%x", os.time(), math.floor(os.clock() * 1000))
+local panelCount = 0
+local leftoversRemoved = false
+local function RemoveLeftovers()
+    if leftoversRemoved then return end
+    leftoversRemoved = true
+    pcall(function()
+        for _, w in ipairs(FindAllOf("Border") or {}) do
+            local name = ""
+            pcall(function() name = w:GetFName():ToString() end)
+            if name:find(PANEL_PREFIX, 1, true) == 1 and not name:find(panelTag, 1, true) then
+                pcall(function() w:RemoveFromParent() end)
+            end
+        end
+    end)
+end
+
 -- The HUD, remembered between calls: FindFirstOf searches every object, so
 -- it runs only after a level load or when the remembered HUD is gone.
 local function GetHud()
@@ -410,6 +432,7 @@ local function GetHud()
     pcall(function() hudName = hud:GetFullName() end)
     if ui.hud ~= hudName then ui = { hud = hudName } end   -- new HUD: build everything again there
     ui.hudObj = hud
+    RemoveLeftovers()
     return hud
 end
 
@@ -447,7 +470,13 @@ local function Warn(err)
 end
 
 local function DarkPanel(tree, alpha)
-    local panel = Construct("Border", tree)
+    panelCount = panelCount + 1
+    local panel = nil
+    pcall(function()
+        panel = StaticConstructObject(StaticFindObject(UMG .. "Border"), tree,
+            FName(PANEL_PREFIX .. panelTag .. "_" .. panelCount))
+    end)
+    if not (panel and panel:IsValid()) then panel = Construct("Border", tree) end
     panel:SetBrushColor({ R = 0.016, G = 0.018, B = 0.022, A = alpha })
     return Round(panel, 10)
 end

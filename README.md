@@ -33,6 +33,7 @@ Each of these mods is switched on by the `enabled.txt` in its folder:
 | **WorldTweaks** *(new)* | Day/night length (22 / 4), season and darker nights in one config. Replaces DayLengthTweaks and the Darker Nights pak. |
 | **RadiationShield** *(new)* | HOME toggles less radiation (for bunker hot spots), with an on-screen badge. `.radmenu` opens a settings menu with a live radiation readout. In co-op each player has their own shield, if the host allows it. |
 | **BackpackWeightFix** *(new)* | Resets empty containers stuck with weight (e.g. 73/75 kg) to 0 every 30 s. |
+| **ModHub** *(new)* | `.mods` opens a menu of the loaded mods: each one's hotkeys and console commands, a button for mods with their own menu, and restarting mods you've changed (no game restart). |
 | **RandomEmissions** | Random emission times and a warning siren. Fixed so it no longer piles up. |
 | **MISERY_StructuralFreedom** | Relaxed building support rules (unchanged). |
 | **NotSoShaky** | Softer camera shake when hit (unchanged). |
@@ -72,6 +73,8 @@ Press `~` in game to open the console.
 | `.radmenu` | Radiation Shield settings menu (opens and closes it) |
 | `.radshield 75` | Sets the shield to 75% less radiation and switches it on (saved) |
 | `.radmeter` | Measures a radiation hot spot; run it again to get the suggested reduction |
+| `.mods` | Mod Hub: the loaded mods, their keys and commands, opening their menus, restarting them |
+| `.reloadmods` | Restarts the mods whose `main.lua` changed since they loaded (`.reloadmods all`, or `.reloadmods <Name>` for one) |
 | `.fixweight` | Fix stuck container weight right now |
 | `.weightreport` | Use if the weight fix can't find the weight value: empty the backpack, then run it |
 | `.worldinfo` | Shows the day/night settings |
@@ -167,6 +170,6 @@ If something is broken, please open an issue and include those lines.
   [RE-UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) team, MIT licence.
 - **StackThemAll, MISERYModMenu, Mi8CargoHold (originally Mi 8 Cargo Hold / ChopperStorage), RandomEmissions,
   MISERY_StructuralFreedom, NotSoShaky**: their original authors. This repo contains modified versions, as described above.
-- **WorldTweaks, RadiationShield, BackpackWeightFix**: new in this repo.
+- **WorldTweaks, RadiationShield, BackpackWeightFix, ModHub**: new in this repo.
 
 MISERY is a game by its developers. This project isn't affiliated with them.
