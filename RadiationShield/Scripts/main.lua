@@ -323,15 +323,15 @@ end
 local UMG = "/Script/UMG."
 local HIT_TEST_INVISIBLE = 3   -- ESlateVisibility: shown, never blocks the mouse
 local COLLAPSED = 1
--- Amber on dark slate. Unreal takes linear colours; the comments are the
--- colours you see.
-local ACCENT = { R = 0.888, G = 0.371, B = 0.042, A = 1.0 }        -- amber #F2A43A
-local ACCENT_SOFT = { R = 0.434, G = 0.254, B = 0.091, A = 1.0 }   -- dusty amber #B08A55
-local WHITE = { R = 0.846, G = 0.791, B = 0.701, A = 1.0 }         -- warm white #EDE6DA
-local GREY = { R = 0.262, G = 0.235, B = 0.188, A = 1.0 }          -- #8C8578
-local PALE_GREY = { R = 0.624, G = 0.578, B = 0.503, A = 1.0 }     -- #CFC8BC
-local WARN = { R = 0.871, G = 0.162, B = 0.102, A = 1.0 }          -- coral #F0705A
-local RED = { R = 0.871, G = 0.162, B = 0.102, A = 1.0 }
+-- Muted sage on dark green-grey. Unreal takes linear colours; the comments
+-- are the colours you see.
+local ACCENT = { R = 0.262, G = 0.571, B = 0.352, A = 1 }   -- sage #8CC7A0
+local ACCENT_SOFT = { R = 0.205, G = 0.330, B = 0.246, A = 1 }   -- grey-green #7E9C88
+local WHITE = { R = 0.776, G = 0.831, B = 0.784, A = 1 }   -- soft white #E4EBE5
+local GREY = { R = 0.178, G = 0.227, B = 0.195, A = 1 }   -- #74837A
+local PALE_GREY = { R = 0.503, G = 0.565, B = 0.521, A = 1 }   -- #BCC6BF
+local WARN = { R = 0.745, G = 0.434, B = 0.117, A = 1 }   -- soft amber #E0B060
+local RED = { R = 0.693, G = 0.162, B = 0.115, A = 1 }   -- #D9705F
 
 local ui = { hud = nil, hudObj = nil }   -- widgets of the current HUD
 local lastText = setmetatable({}, { __mode = "k" })   -- text each widget shows now
@@ -479,7 +479,7 @@ local function DarkPanel(tree, alpha)
             FName(PANEL_PREFIX .. panelTag .. "_" .. panelCount))
     end)
     if not (panel and panel:IsValid()) then panel = Construct("Border", tree) end
-    panel:SetBrushColor({ R = 0.010, G = 0.014, B = 0.019, A = alpha })   -- dark slate #1A1F26
+    panel:SetBrushColor({ R = 0.008, G = 0.018, B = 0.012, A = alpha })   -- dark green-grey #16241C
     return Round(panel, 10)
 end
 
@@ -1077,15 +1077,15 @@ local KIND = { ["Less radiation"] = "slider", ["Badge position"] = "choice", ["T
 local SWITCH_STATE = { On = true, Yes = true, Off = false, No = false }   -- other values: text only
 local MENU_WIDTH, ROW_HEIGHT, SLIDER_WIDTH = 440, 38, 120
 local CLEAR = { R = 0, G = 0, B = 0, A = 0 }
-local CARD = { R = 1, G = 1, B = 1, A = 0.03 }
-local BAND = { R = 0.888, G = 0.371, B = 0.042, A = 0.09 }     -- amber tint behind the title
-local ROW_LIT = { R = 0.888, G = 0.371, B = 0.042, A = 0.14 }  -- amber tint on the chosen row
-local BUTTON = { R = 1, G = 1, B = 1, A = 0.06 }
-local TRACK = { R = 1, G = 1, B = 1, A = 0.14 }
-local HAIRLINE = { R = 0.888, G = 0.371, B = 0.042, A = 0.25 }
+local CARD = { R = 1, G = 1, B = 1, A = 0 }   -- no box behind sections
+local BAND = { R = 0.262, G = 0.571, B = 0.352, A = 0.07 }   -- faint sage behind the title
+local ROW_LIT = { R = 0.262, G = 0.571, B = 0.352, A = 0.11 }   -- faint sage on the chosen row
+local BUTTON = { R = 1, G = 1, B = 1, A = 0.05 }
+local TRACK = { R = 1, G = 1, B = 1, A = 0.12 }
+local HAIRLINE = { R = 0.55, G = 0.75, B = 0.6, A = 0.10 }   -- faint outline
 local LABEL = PALE_GREY
-local BRIGHT = { R = 1, G = 0.93, B = 0.82, A = 1 }             -- #FFF7EA
-local INK = { R = 0.010, G = 0.014, B = 0.019, A = 1 }          -- slate text on the accent
+local BRIGHT = { R = 1, G = 1, B = 1, A = 1 }
+local INK = { R = 0.004, G = 0.010, B = 0.006, A = 1 }   -- dark text on sage
 local NO_SHADOW = { R = 0, G = 0, B = 0, A = 0 }
 
 local function Box(tree, w, h, child)

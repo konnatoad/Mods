@@ -12,7 +12,8 @@
 --   .reloadmods <Name>     restart one, e.g. .reloadmods RadiationShield
 --
 -- New mods still need a game restart. A restarted mod starts fresh: a shield
--- that was on is off again, the PageUp menu is closed, and so on.
+-- that was on is off again, the PageUp menu is closed, and so on. The hub
+-- restarts itself last when it has changed too.
 ------------------------------------------------------------
 
 local MODS_DIR = "./ue4ss/Mods/"
@@ -146,12 +147,21 @@ local loadedScript = {}
 for _, name in ipairs(Loaded()) do loadedScript[name] = Script(name) end
 
 local function Changed(name)
-    if name == SELF or Builtin(name) then return false end
+    if Builtin(name) then return false end
     local now = Script(name)
     return now ~= nil and now ~= loadedScript[name]
 end
 
 local function Restart(name)
+    if name == SELF then
+        -- the hub restarting itself: UE4SS does it once this call is over
+        if type(RestartCurrentMod) ~= "function" or not pcall(RestartCurrentMod) then
+            log("Couldn't restart the Mod Hub itself - restart the game to update it")
+            return false
+        end
+        log("Restarting the Mod Hub")
+        return true
+    end
     if type(RestartMod) ~= "function" then
         log("This UE4SS version can't restart mods - restart the game instead")
         return false
@@ -166,25 +176,24 @@ local function Restart(name)
     return ok
 end
 
--- which: "changed", "all", or a mod name. Returns a short summary.
-local function Reload(which)
+-- which: "changed", "all", or a mod name. Returns a short summary, and
+-- whether the hub restarts itself (its menu should close first).
+local function Reload(which, beforeSelf)
     local list = {}
     if which == "changed" or which == "all" then
+        local includeSelf = false
         for _, name in ipairs(Loaded()) do
-            if name ~= SELF and not Builtin(name) and (which == "all" or Changed(name)) then
-                table.insert(list, name)
+            if not Builtin(name) and (which == "all" or Changed(name)) then
+                if name == SELF then includeSelf = true else table.insert(list, name) end
             end
         end
+        if includeSelf then table.insert(list, SELF) end   -- itself last
         if #list == 0 then
             local msg = which == "changed" and "No mod has changed since it was loaded" or "No mods to restart"
             log(msg)
             return msg
         end
     else
-        if which:lower() == SELF:lower() then
-            log("Restart the game to update the Mod Hub itself")
-            return "Restart the game to update the Mod Hub"
-        end
         local name = which
         for _, info in ipairs(INFO) do
             if info.name:lower() == which:lower() then name = info.name end
@@ -195,9 +204,13 @@ local function Reload(which)
         end
         list = { name }
     end
-    local done = 0
+    local done, selfRestart = 0, false
     for _, name in ipairs(list) do
-        if Restart(name) then done = done + 1 end
+        if name == SELF and beforeSelf then beforeSelf() end
+        if Restart(name) then
+            done = done + 1
+            selfRestart = selfRestart or name == SELF
+        end
     end
     local msg
     if #list == 1 then
@@ -206,7 +219,7 @@ local function Reload(which)
         msg = done .. " of " .. #list .. " mods restarted"
     end
     log(msg)
-    return msg
+    return msg, selfRestart
 end
 
 ------------------------------------------------------------
@@ -243,23 +256,23 @@ end
 ------------------------------------------------------------
 local UMG = "/Script/UMG."
 local VISIBLE, COLLAPSED = 3, 1   -- shown without blocking the mouse / hidden
--- Amber on dark slate, like the Radiation Shield menu. Unreal takes linear
--- colours; the comments are the colours you see.
-local ACCENT = { R = 0.888, G = 0.371, B = 0.042, A = 1 }        -- amber #F2A43A
-local HEADING = { R = 0.434, G = 0.254, B = 0.091, A = 1 }       -- dusty amber #B08A55
-local WARN = { R = 0.871, G = 0.162, B = 0.102, A = 1 }          -- coral #F0705A
-local WHITE = { R = 0.846, G = 0.791, B = 0.701, A = 1 }         -- warm white #EDE6DA
-local BRIGHT = { R = 1, G = 0.93, B = 0.82, A = 1 }              -- #FFF7EA
-local LABEL = { R = 0.624, G = 0.578, B = 0.503, A = 1 }         -- #CFC8BC
-local MUTED = { R = 0.262, G = 0.235, B = 0.188, A = 1 }         -- #8C8578
-local INK = { R = 0.010, G = 0.014, B = 0.019, A = 1 }           -- slate text on amber
-local PANEL = { R = 0.010, G = 0.014, B = 0.019, A = 0.88 }      -- dark slate #1A1F26, see-through
-local BAND = { R = 0.888, G = 0.371, B = 0.042, A = 0.09 }       -- amber tint behind the title
-local CARD = { R = 1, G = 1, B = 1, A = 0.03 }
-local ROW_LIT = { R = 0.888, G = 0.371, B = 0.042, A = 0.14 }
-local CAP = { R = 1, G = 1, B = 1, A = 0.06 }
-local BUTTON = { R = 1, G = 1, B = 1, A = 0.06 }
-local LINE = { R = 0.888, G = 0.371, B = 0.042, A = 0.25 }
+-- Muted sage on dark green-grey, like the Radiation Shield menu. Unreal takes
+-- linear colours; the comments are the colours you see.
+local ACCENT = { R = 0.262, G = 0.571, B = 0.352, A = 1 }   -- sage #8CC7A0
+local HEADING = { R = 0.205, G = 0.330, B = 0.246, A = 1 }   -- grey-green #7E9C88
+local WARN = { R = 0.745, G = 0.434, B = 0.117, A = 1 }   -- soft amber #E0B060
+local WHITE = { R = 0.776, G = 0.831, B = 0.784, A = 1 }   -- soft white #E4EBE5
+local BRIGHT = { R = 1, G = 1, B = 1, A = 1 }
+local LABEL = { R = 0.503, G = 0.565, B = 0.521, A = 1 }   -- #BCC6BF
+local MUTED = { R = 0.178, G = 0.227, B = 0.195, A = 1 }   -- #74837A
+local INK = { R = 0.004, G = 0.010, B = 0.006, A = 1 }   -- dark text on sage
+local PANEL = { R = 0.008, G = 0.018, B = 0.012, A = 0.86 }   -- dark green-grey #16241C, see-through
+local BAND = { R = 0.262, G = 0.571, B = 0.352, A = 0.07 }   -- faint sage behind the title
+local CARD = { R = 1, G = 1, B = 1, A = 0 }   -- no box behind sections
+local ROW_LIT = { R = 0.262, G = 0.571, B = 0.352, A = 0.11 }   -- faint sage on the chosen row
+local CAP = { R = 1, G = 1, B = 1, A = 0.05 }
+local BUTTON = { R = 1, G = 1, B = 1, A = 0.05 }
+local LINE = { R = 0.55, G = 0.75, B = 0.6, A = 0.10 }   -- faint outline
 local CLEAR = { R = 0, G = 0, B = 0, A = 0 }
 local WIDTH = 480
 
@@ -503,6 +516,15 @@ end
 
 local Close, Render
 
+-- From the menu: show the result, unless the hub itself restarts (it closes first)
+local function RunReload(which)
+    local msg, selfRestart = Reload(which, function() Close() end)
+    if not selfRestart then
+        hub.status = msg
+        Render()
+    end
+end
+
 local function ShowMod(name)
     return function() hub.view, hub.mod, hub.sel = "mod", name, 1; Render() end
 end
@@ -529,8 +551,8 @@ local function ListView(tree, body)
     end
     local tools = Section(tree, body, "RELOAD")
     ActionRow(tree, tools, "Restart changed mods", changed > 0 and tostring(changed) or "none",
-        changed > 0 and WARN or MUTED, function() hub.status = Reload("changed"); Render() end)
-    ActionRow(tree, tools, "Restart all mods", nil, nil, function() hub.status = Reload("all"); Render() end)
+        changed > 0 and WARN or MUTED, function() RunReload("changed") end)
+    ActionRow(tree, tools, "Restart all mods", nil, nil, function() RunReload("all") end)
     ActionRow(tree, body, "Close", nil, nil, function() Close() end, true)
 end
 
@@ -555,7 +577,7 @@ local function ModView(tree, body)
         local card = Section(tree, body, "CONSOLE COMMANDS")
         for _, c in ipairs(info.commands) do InfoRow(tree, card, c[1], c[2]) end
     end
-    local hasMenu, canRestart = info.menu ~= nil, name ~= SELF and not info.builtin
+    local hasMenu, canRestart = info.menu ~= nil, not info.builtin
     if hasMenu or canRestart then
         local actions = Section(tree, body, "ACTIONS")
         if hasMenu then
@@ -570,7 +592,7 @@ local function ModView(tree, body)
             end)
         end
         if canRestart then
-            ActionRow(tree, actions, "Restart this mod", nil, nil, function() hub.status = Reload(name); Render() end)
+            ActionRow(tree, actions, "Restart this mod", nil, nil, function() RunReload(name) end)
         end
     end
     ActionRow(tree, body, "Back", nil, nil, function() hub.view, hub.sel = "list", 1; Render() end, true)
@@ -674,7 +696,9 @@ end)
 
 RegisterConsoleCommandHandler(".reloadmods", function(FullCommand, Parameters)
     local arg = (Parameters and Parameters[1]) or ""
-    Reload(arg == "" and "changed" or (arg:lower() == "all" and "all" or arg))
+    Reload(arg == "" and "changed" or (arg:lower() == "all" and "all" or arg), function()
+        ExecuteInGameThread(function() Close() end)
+    end)
     return true
 end)
 

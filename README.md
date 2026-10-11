@@ -151,8 +151,8 @@ If something is broken, please open an issue and include those lines.
 - The item list shows in-game names sorted A–Z, including items from newer patches.
 - Search box next to the amount field, and `.find` in the console.
 - Spawn gives one copy instead of two (`.spawnmode`), and no longer crashes the game.
-- New look: the stone frame and grey stock buttons become a square, see-through dark slate panel with amber highlights
-  (like the Radiation Shield menu and the Mod Hub), dark buttons, an amber Spawn and a readable item list. Everything is arranged in sections: Spawn item, Spawn enemy, Time and weather, Events, Movement.
+- New look: the stone frame and grey stock buttons become a square, see-through dark green-grey panel with soft sage
+  highlights (like the Radiation Shield menu and the Mod Hub), dark buttons, a sage Spawn and a readable item list. Everything is arranged in sections: Spawn item, Spawn enemy, Time and weather, Events, Movement.
   To keep the game's layout, set `MenuLayout = { enabled = false ...` in `Scripts\main.lua`; for the old colours too, `MenuStyle = { enabled = false ...`.
 
 **Mi8CargoHold** (was the "Mi 8 Cargo Hold 1.0.1" download, folder `ChopperStorage`)

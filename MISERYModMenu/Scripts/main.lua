@@ -3183,25 +3183,25 @@ local MenuStyle = {
     donePath = nil,     -- cheat menu instance already styled
     searchDone = nil,   -- search box already styled
 }
--- Amber on dark slate, like the Radiation Shield menu and the Mod Hub.
+-- Muted sage on dark green-grey, like the Radiation Shield menu and the Mod Hub.
 -- Unreal takes linear colours; the comments are the colours you see.
-local MS_PANEL = { R = 0.010, G = 0.014, B = 0.019, A = 0.88 }        -- dark slate #1A1F26, see-through
+local MS_PANEL = { R = 0.008, G = 0.018, B = 0.012, A = 0.86 }   -- dark green-grey #16241C, see-through
 local MS_CLEAR = { R = 0, G = 0, B = 0, A = 0 }
-local MS_SURFACE = { R = 0.030, G = 0.036, B = 0.046, A = 1 }         -- #303540
-local MS_SURFACE_HOVER = { R = 0.058, G = 0.064, B = 0.078, A = 1 }   -- #434855
-local MS_SURFACE_DOWN = { R = 0.016, G = 0.020, B = 0.026, A = 1 }
-local MS_FIELD = { R = 0.006, G = 0.008, B = 0.011, A = 1 }           -- #11141A
-local MS_LINE = { R = 0.888, G = 0.371, B = 0.042, A = 0.25 }         -- amber hairline
-local MS_ACCENT = { R = 0.888, G = 0.371, B = 0.042, A = 1 }          -- amber #F2A43A
-local MS_ACCENT_HOVER = { R = 0.930, G = 0.510, B = 0.120, A = 1 }    -- #F7BC63
-local MS_ACCENT_DOWN = { R = 0.700, G = 0.270, B = 0.030, A = 1 }
-local MS_CHIP = { R = 0.791, G = 0.716, B = 0.597, A = 1 }            -- warm light #E6DCCB: list buttons keep dark text
-local MS_CHIP_HOVER = { R = 0.888, G = 0.830, B = 0.730, A = 1 }
-local MS_WHITE = { R = 0.846, G = 0.791, B = 0.701, A = 1 }           -- warm white #EDE6DA
-local MS_LABEL = { R = 0.624, G = 0.578, B = 0.503, A = 1 }           -- #CFC8BC
-local MS_HEADING = { R = 0.434, G = 0.254, B = 0.091, A = 1 }         -- dusty amber #B08A55
-local MS_MUTED = { R = 0.262, G = 0.235, B = 0.188, A = 1 }           -- #8C8578
-local MS_INK = { R = 0.010, G = 0.014, B = 0.019, A = 1 }             -- slate text on amber
+local MS_SURFACE = { R = 0.019, G = 0.030, B = 0.023, A = 1 }   -- #26302A
+local MS_SURFACE_HOVER = { R = 0.032, G = 0.048, B = 0.038, A = 1 }   -- #323E37
+local MS_SURFACE_DOWN = { R = 0.012, G = 0.019, B = 0.015, A = 1 }
+local MS_FIELD = { R = 0.004, G = 0.007, B = 0.005, A = 1 }   -- #0D140F
+local MS_LINE = { R = 0.55, G = 0.75, B = 0.6, A = 0.10 }   -- faint outline
+local MS_ACCENT = { R = 0.262, G = 0.571, B = 0.352, A = 1 }   -- sage #8CC7A0
+local MS_ACCENT_HOVER = { R = 0.366, G = 0.672, B = 0.456, A = 1 }   -- #A3D6B4
+local MS_ACCENT_DOWN = { R = 0.159, G = 0.392, B = 0.227, A = 1 }   -- #6FA883
+local MS_CHIP = { R = 0.644, G = 0.708, B = 0.658, A = 1 }   -- #D2DBD4: list buttons keep dark text
+local MS_CHIP_HOVER = { R = 0.768, G = 0.823, B = 0.784, A = 1 }   -- #E3EAE5
+local MS_WHITE = { R = 0.776, G = 0.831, B = 0.784, A = 1 }   -- soft white #E4EBE5
+local MS_LABEL = { R = 0.503, G = 0.565, B = 0.521, A = 1 }   -- #BCC6BF
+local MS_HEADING = { R = 0.205, G = 0.330, B = 0.246, A = 1 }   -- grey-green #7E9C88
+local MS_MUTED = { R = 0.178, G = 0.227, B = 0.195, A = 1 }   -- #74837A
+local MS_INK = { R = 0.004, G = 0.010, B = 0.006, A = 1 }   -- dark text on sage
 
 local function MsSetColor(target, c)
     target.R, target.G, target.B, target.A = c.R, c.G, c.B, c.A
@@ -3323,8 +3323,8 @@ local function MsSpin(spin)
     MsBrush(style.BackgroundBrush, MS_FIELD, 6, MS_LINE)
     MsBrush(style.HoveredBackgroundBrush, MS_FIELD, 6, MS_MUTED)
     pcall(function() MsBrush(style.ActiveBackgroundBrush, MS_FIELD, 6, MS_ACCENT) end)
-    MsBrush(style.ActiveFillBrush, { R = 0.888, G = 0.371, B = 0.042, A = 0.35 }, 6)
-    pcall(function() MsBrush(style.HoveredFillBrush, { R = 0.888, G = 0.371, B = 0.042, A = 0.25 }, 6) end)
+    MsBrush(style.ActiveFillBrush, { R = 0.262, G = 0.571, B = 0.352, A = 0.35 }, 6)
+    pcall(function() MsBrush(style.HoveredFillBrush, { R = 0.262, G = 0.571, B = 0.352, A = 0.25 }, 6) end)
     MsBrush(style.InactiveFillBrush, MS_CLEAR, 6)
     pcall(function() MsSlateColor(style.ForegroundColor, MS_WHITE) end)
     pcall(function() spin:SetForegroundColor({ SpecifiedColor = MS_WHITE, ColorUseRule = 0 }) end)
@@ -3472,9 +3472,9 @@ end)
 -- If anything fails before the move, the game's layout is left as it was.
 local MenuLayout = { enabled = true, donePath = nil }
 local ML_WIDTH = 500
-local ML_CARD = { R = 1, G = 1, B = 1, A = 0.03 }
-local ML_PANEL = { R = 0.010, G = 0.014, B = 0.019, A = 0.88 }     -- dark slate, see-through
-local ML_BAND = { R = 0.888, G = 0.371, B = 0.042, A = 0.09 }      -- amber tint behind the title
+local ML_CARD = { R = 1, G = 1, B = 1, A = 0 }   -- no box behind sections
+local ML_PANEL = { R = 0.008, G = 0.018, B = 0.012, A = 0.86 }   -- dark green-grey #16241C, see-through
+local ML_BAND = { R = 0.262, G = 0.571, B = 0.352, A = 0.07 }   -- faint sage behind the title
 local ML_LABELS = {   -- button texts as the game writes them -> as shown
     SPAWN = "Spawn", FLY = "Fly", SUNNY = "Sunny", RAIN = "Rain", THUNDER = "Thunder",
     ["SUMMON PLANE"] = "Summon plane", ["SUMMON GRAD"] = "Summon Grad",
@@ -3652,7 +3652,7 @@ function MenuLayout.Build(cm, p, attach)
     MlMiddle(head:AddChildToHorizontalBox(MlBox(tree, 3, 34, bar)))
     local titles = MlNew(tree, "VerticalBox")
     MlMiddle(MlFill(MlPad(head:AddChildToHorizontalBox(titles), 12, 0, 0, 0)))
-    titles:AddChildToVerticalBox(MlText(tree, "MOD MENU", 17, { R = 1, G = 0.93, B = 0.82, A = 1 }, true, 120))
+    titles:AddChildToVerticalBox(MlText(tree, "MOD MENU", 17, { R = 1, G = 1, B = 1, A = 1 }, true, 120))
     titles:AddChildToVerticalBox(MlText(tree, "PAGE UP TO CLOSE", 9, MS_HEADING, true, 200))
 
     local card
