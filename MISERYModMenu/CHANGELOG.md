@@ -5,7 +5,7 @@
 ## Version 4.5
 
 ### New Look
-- The PageUp menu is restyled when it opens: the stone frame becomes a square, see-through dark green-grey panel with soft sage highlights, the grey stock buttons become dark buttons with light text, Spawn is sage, and the item list has light text with a sage selection (it was black on black)
+- The PageUp menu is restyled when it opens: the stone frame becomes a square, see-through dark navy panel with soft steel-blue highlights, the grey stock buttons become dark buttons with light text, Spawn is blue, and the item list has light text with a blue selection (it was black on black)
 - Labels, buttons and the amount, search and time fields share one smaller, consistent style
 - Rearranged into sections in one panel: Spawn item (list, then amount, search and Spawn on one row), Spawn enemy (list and Spawn), Time and weather (Time, Day, Month side by side, then Sunny, Rain, Thunder), Events (Summon plane, Summon Grad, Skip 1 or 5 emissions), Movement (Fly and its hint)
 - These are the game's own widgets, moved rather than copied, so every button works as before; anything the game won't let the mod recolour keeps its old look, and if the menu isn't laid out as expected the game's layout is kept (`[MenuLayout]` in the log says why)

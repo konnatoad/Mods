@@ -317,21 +317,21 @@ end
 -- Built at runtime from plain UMG widgets inside the game's own HUD
 -- (BP_InventoryHUD, which also hosts the mod menu). A stand-alone UserWidget
 -- is not used: that class is abstract and creating one can crash the game.
---   badge:   | RADIATION SHIELD / -25% RADIATION, green bar
+--   badge:   | RADIATION SHIELD / -25% RADIATION, blue bar
 --   readout: radiation now, what comes in, what the shield removes, time to max
 --   menu:    settings, changed with the arrow keys
 local UMG = "/Script/UMG."
 local HIT_TEST_INVISIBLE = 3   -- ESlateVisibility: shown, never blocks the mouse
 local COLLAPSED = 1
--- Muted sage on dark green-grey. Unreal takes linear colours; the comments
--- are the colours you see.
-local ACCENT = { R = 0.262, G = 0.571, B = 0.352, A = 1 }   -- sage #8CC7A0
-local ACCENT_SOFT = { R = 0.205, G = 0.330, B = 0.246, A = 1 }   -- grey-green #7E9C88
-local WHITE = { R = 0.776, G = 0.831, B = 0.784, A = 1 }   -- soft white #E4EBE5
-local GREY = { R = 0.178, G = 0.227, B = 0.195, A = 1 }   -- #74837A
-local PALE_GREY = { R = 0.503, G = 0.565, B = 0.521, A = 1 }   -- #BCC6BF
-local WARN = { R = 0.745, G = 0.434, B = 0.117, A = 1 }   -- soft amber #E0B060
-local RED = { R = 0.693, G = 0.162, B = 0.115, A = 1 }   -- #D9705F
+-- Steel blue on dark navy. Unreal takes linear colours; the comments are
+-- the colours you see.
+local ACCENT = { R = 0.212, G = 0.445, B = 0.783, A = 1 }   -- steel blue #7FB2E5
+local ACCENT_SOFT = { R = 0.205, G = 0.275, B = 0.381, A = 1 }   -- grey-blue #7D8FA6
+local WHITE = { R = 0.791, G = 0.831, B = 0.888, A = 1 }   -- cool white #E6EBF2
+local GREY = { R = 0.168, G = 0.212, B = 0.275, A = 1 }   -- #727F8F
+local PALE_GREY = { R = 0.491, G = 0.552, B = 0.637, A = 1 }   -- #BAC4D1
+local WARN = { R = 0.784, G = 0.462, B = 0.136, A = 1 }   -- soft amber #E5B567
+local RED = { R = 0.745, G = 0.195, B = 0.147, A = 1 }   -- #E07A6B
 
 local ui = { hud = nil, hudObj = nil }   -- widgets of the current HUD
 local lastText = setmetatable({}, { __mode = "k" })   -- text each widget shows now
@@ -479,7 +479,7 @@ local function DarkPanel(tree, alpha)
             FName(PANEL_PREFIX .. panelTag .. "_" .. panelCount))
     end)
     if not (panel and panel:IsValid()) then panel = Construct("Border", tree) end
-    panel:SetBrushColor({ R = 0.008, G = 0.018, B = 0.012, A = alpha })   -- dark green-grey #16241C
+    panel:SetBrushColor({ R = 0.006, G = 0.009, B = 0.015, A = alpha })   -- dark navy #121821
     return Round(panel, 10)
 end
 
@@ -1078,14 +1078,14 @@ local SWITCH_STATE = { On = true, Yes = true, Off = false, No = false }   -- oth
 local MENU_WIDTH, ROW_HEIGHT, SLIDER_WIDTH = 440, 38, 120
 local CLEAR = { R = 0, G = 0, B = 0, A = 0 }
 local CARD = { R = 1, G = 1, B = 1, A = 0 }   -- no box behind sections
-local BAND = { R = 0.262, G = 0.571, B = 0.352, A = 0.07 }   -- faint sage behind the title
-local ROW_LIT = { R = 0.262, G = 0.571, B = 0.352, A = 0.11 }   -- faint sage on the chosen row
+local BAND = { R = 0.212, G = 0.445, B = 0.783, A = 0.07 }   -- faint blue behind the title
+local ROW_LIT = { R = 0.212, G = 0.445, B = 0.783, A = 0.12 }   -- faint blue on the chosen row
 local BUTTON = { R = 1, G = 1, B = 1, A = 0.05 }
 local TRACK = { R = 1, G = 1, B = 1, A = 0.12 }
-local HAIRLINE = { R = 0.55, G = 0.75, B = 0.6, A = 0.10 }   -- faint outline
+local HAIRLINE = { R = 0.6, G = 0.7, B = 0.85, A = 0.10 }   -- faint outline
 local LABEL = PALE_GREY
 local BRIGHT = { R = 1, G = 1, B = 1, A = 1 }
-local INK = { R = 0.004, G = 0.010, B = 0.006, A = 1 }   -- dark text on sage
+local INK = { R = 0.004, G = 0.006, B = 0.010, A = 1 }   -- dark text on blue
 local NO_SHADOW = { R = 0, G = 0, B = 0, A = 0 }
 
 local function Box(tree, w, h, child)

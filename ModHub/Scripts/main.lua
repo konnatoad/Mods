@@ -256,23 +256,23 @@ end
 ------------------------------------------------------------
 local UMG = "/Script/UMG."
 local VISIBLE, COLLAPSED = 3, 1   -- shown without blocking the mouse / hidden
--- Muted sage on dark green-grey, like the Radiation Shield menu. Unreal takes
+-- Steel blue on dark navy, like the Radiation Shield menu. Unreal takes
 -- linear colours; the comments are the colours you see.
-local ACCENT = { R = 0.262, G = 0.571, B = 0.352, A = 1 }   -- sage #8CC7A0
-local HEADING = { R = 0.205, G = 0.330, B = 0.246, A = 1 }   -- grey-green #7E9C88
-local WARN = { R = 0.745, G = 0.434, B = 0.117, A = 1 }   -- soft amber #E0B060
-local WHITE = { R = 0.776, G = 0.831, B = 0.784, A = 1 }   -- soft white #E4EBE5
+local ACCENT = { R = 0.212, G = 0.445, B = 0.783, A = 1 }   -- steel blue #7FB2E5
+local HEADING = { R = 0.205, G = 0.275, B = 0.381, A = 1 }   -- grey-blue #7D8FA6
+local WARN = { R = 0.784, G = 0.462, B = 0.136, A = 1 }   -- soft amber #E5B567
+local WHITE = { R = 0.791, G = 0.831, B = 0.888, A = 1 }   -- cool white #E6EBF2
 local BRIGHT = { R = 1, G = 1, B = 1, A = 1 }
-local LABEL = { R = 0.503, G = 0.565, B = 0.521, A = 1 }   -- #BCC6BF
-local MUTED = { R = 0.178, G = 0.227, B = 0.195, A = 1 }   -- #74837A
-local INK = { R = 0.004, G = 0.010, B = 0.006, A = 1 }   -- dark text on sage
-local PANEL = { R = 0.008, G = 0.018, B = 0.012, A = 0.86 }   -- dark green-grey #16241C, see-through
-local BAND = { R = 0.262, G = 0.571, B = 0.352, A = 0.07 }   -- faint sage behind the title
+local LABEL = { R = 0.491, G = 0.552, B = 0.637, A = 1 }   -- #BAC4D1
+local MUTED = { R = 0.168, G = 0.212, B = 0.275, A = 1 }   -- #727F8F
+local INK = { R = 0.004, G = 0.006, B = 0.010, A = 1 }   -- dark text on blue
+local PANEL = { R = 0.006, G = 0.009, B = 0.015, A = 0.86 }   -- dark navy #121821, see-through
+local BAND = { R = 0.212, G = 0.445, B = 0.783, A = 0.07 }   -- faint blue behind the title
 local CARD = { R = 1, G = 1, B = 1, A = 0 }   -- no box behind sections
-local ROW_LIT = { R = 0.262, G = 0.571, B = 0.352, A = 0.11 }   -- faint sage on the chosen row
+local ROW_LIT = { R = 0.212, G = 0.445, B = 0.783, A = 0.12 }   -- faint blue on the chosen row
 local CAP = { R = 1, G = 1, B = 1, A = 0.05 }
 local BUTTON = { R = 1, G = 1, B = 1, A = 0.05 }
-local LINE = { R = 0.55, G = 0.75, B = 0.6, A = 0.10 }   -- faint outline
+local LINE = { R = 0.6, G = 0.7, B = 0.85, A = 0.10 }   -- faint outline
 local CLEAR = { R = 0, G = 0, B = 0, A = 0 }
 local WIDTH = 480
 

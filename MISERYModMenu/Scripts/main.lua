@@ -3174,7 +3174,7 @@ end
 -- ---------- modern look ----------
 -- The menu is the game's own developer panel (stone frame, grey stock
 -- buttons, black-on-black list). When it opens, its widgets are recoloured in
--- place: dark rounded panel, dark rounded buttons with white text, a green
+-- place: dark square panel, dark buttons with light text, a blue
 -- SPAWN, readable list and fields. Nothing is added or moved, so every button
 -- keeps working; anything the game refuses simply keeps its old look.
 -- Set MenuStyle.enabled = false to keep the game's look.
@@ -3183,25 +3183,25 @@ local MenuStyle = {
     donePath = nil,     -- cheat menu instance already styled
     searchDone = nil,   -- search box already styled
 }
--- Muted sage on dark green-grey, like the Radiation Shield menu and the Mod Hub.
+-- Steel blue on dark navy, like the Radiation Shield menu and the Mod Hub.
 -- Unreal takes linear colours; the comments are the colours you see.
-local MS_PANEL = { R = 0.008, G = 0.018, B = 0.012, A = 0.86 }   -- dark green-grey #16241C, see-through
+local MS_PANEL = { R = 0.006, G = 0.009, B = 0.015, A = 0.86 }   -- dark navy #121821, see-through
 local MS_CLEAR = { R = 0, G = 0, B = 0, A = 0 }
-local MS_SURFACE = { R = 0.019, G = 0.030, B = 0.023, A = 1 }   -- #26302A
-local MS_SURFACE_HOVER = { R = 0.032, G = 0.048, B = 0.038, A = 1 }   -- #323E37
-local MS_SURFACE_DOWN = { R = 0.012, G = 0.019, B = 0.015, A = 1 }
-local MS_FIELD = { R = 0.004, G = 0.007, B = 0.005, A = 1 }   -- #0D140F
-local MS_LINE = { R = 0.55, G = 0.75, B = 0.6, A = 0.10 }   -- faint outline
-local MS_ACCENT = { R = 0.262, G = 0.571, B = 0.352, A = 1 }   -- sage #8CC7A0
-local MS_ACCENT_HOVER = { R = 0.366, G = 0.672, B = 0.456, A = 1 }   -- #A3D6B4
-local MS_ACCENT_DOWN = { R = 0.159, G = 0.392, B = 0.227, A = 1 }   -- #6FA883
-local MS_CHIP = { R = 0.644, G = 0.708, B = 0.658, A = 1 }   -- #D2DBD4: list buttons keep dark text
-local MS_CHIP_HOVER = { R = 0.768, G = 0.823, B = 0.784, A = 1 }   -- #E3EAE5
-local MS_WHITE = { R = 0.776, G = 0.831, B = 0.784, A = 1 }   -- soft white #E4EBE5
-local MS_LABEL = { R = 0.503, G = 0.565, B = 0.521, A = 1 }   -- #BCC6BF
-local MS_HEADING = { R = 0.205, G = 0.330, B = 0.246, A = 1 }   -- grey-green #7E9C88
-local MS_MUTED = { R = 0.178, G = 0.227, B = 0.195, A = 1 }   -- #74837A
-local MS_INK = { R = 0.004, G = 0.010, B = 0.006, A = 1 }   -- dark text on sage
+local MS_SURFACE = { R = 0.018, G = 0.025, B = 0.037, A = 1 }   -- #252C36
+local MS_SURFACE_HOVER = { R = 0.031, G = 0.043, B = 0.063, A = 1 }   -- #313A46
+local MS_SURFACE_DOWN = { R = 0.011, G = 0.015, B = 0.023, A = 1 }
+local MS_FIELD = { R = 0.004, G = 0.006, B = 0.009, A = 1 }   -- #0C1117
+local MS_LINE = { R = 0.6, G = 0.7, B = 0.85, A = 0.10 }   -- faint outline
+local MS_ACCENT = { R = 0.212, G = 0.445, B = 0.783, A = 1 }   -- steel blue #7FB2E5
+local MS_ACCENT_HOVER = { R = 0.323, G = 0.552, B = 0.855, A = 1 }   -- #9AC4EE
+local MS_ACCENT_DOWN = { R = 0.111, G = 0.287, B = 0.584, A = 1 }   -- #5E93C9
+local MS_CHIP = { R = 0.651, G = 0.701, B = 0.768, A = 1 }   -- #D3DAE3: list buttons keep dark text
+local MS_CHIP_HOVER = { R = 0.776, G = 0.815, B = 0.863, A = 1 }   -- #E4E9EF
+local MS_WHITE = { R = 0.791, G = 0.831, B = 0.888, A = 1 }   -- cool white #E6EBF2
+local MS_LABEL = { R = 0.491, G = 0.552, B = 0.637, A = 1 }   -- #BAC4D1
+local MS_HEADING = { R = 0.205, G = 0.275, B = 0.381, A = 1 }   -- grey-blue #7D8FA6
+local MS_MUTED = { R = 0.168, G = 0.212, B = 0.275, A = 1 }   -- #727F8F
+local MS_INK = { R = 0.004, G = 0.006, B = 0.010, A = 1 }   -- dark text on blue
 
 local function MsSetColor(target, c)
     target.R, target.G, target.B, target.A = c.R, c.G, c.B, c.A
@@ -3279,7 +3279,7 @@ local function MsCombo(combo)
         MsBrush(b.Pressed, MS_CHIP, 6, MS_ACCENT)
     end)
     pcall(function() MsBrush(style.ComboButtonStyle.MenuBorderBrush, MS_FIELD, 8, MS_LINE) end)
-    -- the drop-down rows: dark, light text, green selection
+    -- the drop-down rows: dark, light text, blue selection
     pcall(function()
         local rows = combo.ItemStyle
         for _, k in ipairs({ "EvenRowBackgroundBrush", "OddRowBackgroundBrush" }) do
@@ -3323,8 +3323,8 @@ local function MsSpin(spin)
     MsBrush(style.BackgroundBrush, MS_FIELD, 6, MS_LINE)
     MsBrush(style.HoveredBackgroundBrush, MS_FIELD, 6, MS_MUTED)
     pcall(function() MsBrush(style.ActiveBackgroundBrush, MS_FIELD, 6, MS_ACCENT) end)
-    MsBrush(style.ActiveFillBrush, { R = 0.262, G = 0.571, B = 0.352, A = 0.35 }, 6)
-    pcall(function() MsBrush(style.HoveredFillBrush, { R = 0.262, G = 0.571, B = 0.352, A = 0.25 }, 6) end)
+    MsBrush(style.ActiveFillBrush, { R = 0.212, G = 0.445, B = 0.783, A = 0.35 }, 6)
+    pcall(function() MsBrush(style.HoveredFillBrush, { R = 0.212, G = 0.445, B = 0.783, A = 0.25 }, 6) end)
     MsBrush(style.InactiveFillBrush, MS_CLEAR, 6)
     pcall(function() MsSlateColor(style.ForegroundColor, MS_WHITE) end)
     pcall(function() spin:SetForegroundColor({ SpecifiedColor = MS_WHITE, ColorUseRule = 0 }) end)
@@ -3473,8 +3473,8 @@ end)
 local MenuLayout = { enabled = true, donePath = nil }
 local ML_WIDTH = 500
 local ML_CARD = { R = 1, G = 1, B = 1, A = 0 }   -- no box behind sections
-local ML_PANEL = { R = 0.008, G = 0.018, B = 0.012, A = 0.86 }   -- dark green-grey #16241C, see-through
-local ML_BAND = { R = 0.262, G = 0.571, B = 0.352, A = 0.07 }   -- faint sage behind the title
+local ML_PANEL = { R = 0.006, G = 0.009, B = 0.015, A = 0.86 }   -- dark navy #121821, see-through
+local ML_BAND = { R = 0.212, G = 0.445, B = 0.783, A = 0.07 }   -- faint blue behind the title
 local ML_LABELS = {   -- button texts as the game writes them -> as shown
     SPAWN = "Spawn", FLY = "Fly", SUNNY = "Sunny", RAIN = "Rain", THUNDER = "Thunder",
     ["SUMMON PLANE"] = "Summon plane", ["SUMMON GRAD"] = "Summon Grad",
