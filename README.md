@@ -31,7 +31,7 @@ Each of these mods is switched on by the `enabled.txt` in its folder:
 | **MISERYModMenu** | PageUp menu with in-game item names, a search box, single spawn and console commands. |
 | **Mi8CargoHold** | The Mi-8 wreck becomes a 1,000-slot storage container. In co-op the host's hold is shared: everyone who has this mod can open it, and the host's save keeps it. |
 | **WorldTweaks** *(new)* | Day/night length (22 / 4), season and darker nights in one config. Replaces DayLengthTweaks and the Darker Nights pak. |
-| **RadiationShield** *(new)* | The HOME key toggles 25% less radiation (for bunker hot spots) and shows an on-screen badge. |
+| **RadiationShield** *(new)* | HOME toggles less radiation (for bunker hot spots), with an on-screen badge. `.radmenu` opens a settings menu with a live radiation readout. Works in co-op. |
 | **BackpackWeightFix** *(new)* | Resets empty containers stuck with weight (e.g. 73/75 kg) to 0 every 30 s. |
 | **RandomEmissions** | Random emission times and a warning siren. Fixed so it no longer piles up. |
 | **MISERY_StructuralFreedom** | Relaxed building support rules (unchanged). |
@@ -57,7 +57,7 @@ The settings are at the top of each mod's `Scripts\main.lua`.
 | Mod | Settings |
 |---|---|
 | WorldTweaks | `dayLength = 22.0`, `nightLength = 4.0`, `season = ""` (`"winter"` etc. to force one), `nightSkyLight = 7.5` (game default 20.0; lower is darker; `nil` turns it off) |
-| RadiationShield | `toggleKey = "HOME"`, `reduction = 0.25` (0.5 = half the radiation), `showIndicator = true`, `indicatorPosition` (anchors 0..1, offsets in px) |
+| RadiationShield | Use the in-game menu (`.radmenu`); it saves to `RadiationShield\settings.txt`. The defaults at the top of `main.lua` apply only when there is no settings file. |
 | BackpackWeightFix | `checkEverySeconds = 30` (`.fixweight` runs it instantly) |
 | RandomEmissions | emission every 1800–3600 s, siren 120–300 s before |
 | StackThemAll | per category in `scripts\stackThemAllConfig.lua`, per item in `scripts\stackConfig.lua` (e.g. `Resource_Rubles = 250`) |
@@ -69,7 +69,8 @@ Press `~` in game to open the console.
 | Command | Effect |
 |---|---|
 | `.radshield [on\|off]` | Radiation Shield toggle (same as HOME) |
-| `.radshield 75` | Sets the shield to 75% less radiation and switches it on (until the game restarts) |
+| `.radmenu` | Radiation Shield settings menu (opens and closes it) |
+| `.radshield 75` | Sets the shield to 75% less radiation and switches it on (saved) |
 | `.radmeter` | Measures a radiation hot spot; run it again to get the suggested reduction |
 | `.fixweight` | Fix stuck container weight right now |
 | `.weightreport` | Use if the weight fix can't find the weight value: empty the backpack, then run it |
@@ -78,6 +79,30 @@ Press `~` in game to open the console.
 | `.find <name>` | Searches the mod menu's item list (`.find` alone clears it) |
 | `.spawnmode game\|mod` | Chooses who adds items when you press Spawn |
 | `.help` | Lists all mod menu commands |
+
+## Radiation Shield menu
+
+Type `.radmenu` in the console while in a world. Use Up/Down to choose a row and Left/Right to change it.
+Close it with the Close row or `.radmenu` again. HOME (or your chosen key) still just turns the shield on and off.
+
+| Setting | What it does |
+|---|---|
+| Shield | On / off (same as HOME) |
+| Less radiation | 5–100% in 5% steps (`.radshield 73` for exact values) |
+| Protect | **Only me**, or **Everyone**: when you host, it also covers every player in your world |
+| Live readout | A panel with your radiation, what comes in per second, what the shield removes, the actual change and the time until maximum |
+| Badge / Badge position | Shows the on-screen badge, and where it sits |
+| Shield on at start | Switches the shield on as soon as the game starts |
+| Toggle key | HOME, END, INS, DEL, PAGE_DOWN or F6–F9 (applies on the next start) |
+
+Every change is saved immediately to `RadiationShield\settings.txt`.
+
+**Co-op:** your own shield always covers you. If you host, set **Protect: Everyone** to cover your friends too, even if
+they don't have the mod. If you join someone and the readout says *"Host's game adds your radiation"*, your
+game can't reduce it: the host needs this mod with **Protect: Everyone**.
+
+**Finding the right setting:** turn on **Live readout**, walk into the hot spot and watch **Maximum in**.
+Raise **Less radiation** until it's long enough to do what you need there.
 
 ## Troubleshooting
 
