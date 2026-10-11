@@ -1,0 +1,6 @@
+# Normalise line endings in the repo; Windows checkouts get CRLF
+* text=auto
+*.lua text
+*.txt text
+*.md text
+*.json text

@@ -1,0 +1,95 @@
+MISERY STRUCTURAL FREEDOM v1.0.0
+================================
+
+QUE HACE ESTE MOD
+-----------------
+Structural Freedom relaja las comprobaciones de soporte estructural de MISERY. Permite construir diseños que el juego normal rechaza porque no existe suficiente soporte directamente debajo.
+
+NO es un mod de "construir absolutamente donde quieras" ni de construcción noclip. Conserva el grid real del juego, colisiones, distancia, propiedad y costos normales.
+
+REQUISITOS
+----------
+- MISERY
+- UE4SS
+
+Los usuarios de Vortex pueden usar MISERY Vortex Extension, que admite mods de scripts UE4SS.
+
+INSTALACION - VORTEX
+--------------------
+1. Asegúrate de tener instalada/activada MISERY Vortex Extension.
+2. Instala este archivo con Vortex.
+3. Haz Deploy de los mods.
+4. Inicia MISERY.
+
+INSTALACION - MANUAL
+--------------------
+1. Instala UE4SS para MISERY.
+2. Copia la carpeta "MISERY_StructuralFreedom" dentro de:
+
+   MISERY\Binaries\Win64\ue4ss\Mods\
+
+3. Debe quedar así:
+
+   ...\ue4ss\Mods\MISERY_StructuralFreedom\scripts\main.lua
+   ...\ue4ss\Mods\MISERY_StructuralFreedom\enabled.txt
+
+4. Inicia MISERY y carga una partida.
+
+COMPORTAMIENTO Y LIMITACIONES IMPORTANTES
+-----------------------------------------
+1. Todavía NO puedes colocar objetos libremente en el aire.
+   MISERY tiene que encontrar un grid/lugar real de colocación.
+
+2. Las paredes tienen mucha más libertad respecto al soporte estructural, pero todavía necesitan un suelo/grid o punto válido al cual conectarse. El mod no convierte la colocación en noclip.
+
+3. Para crear suelos flotantes puede ser necesario usar soporte temporal.
+   Si MISERY no te permite colocar directamente el suelo deseado:
+   - Construye temporalmente una pared/soporte debajo.
+   - Coloca el suelo superior.
+   - Después destruye la pared/soporte temporal.
+   En las pruebas, el suelo puede permanecer después de retirar ese soporte.
+
+4. Si destruyes una pared inferior, MISERY todavía puede destruir las paredes que estén apiladas encima.
+   Esa es otra lógica de dependencias/destrucción del juego y Structural Freedom v1.0.0 NO la desactiva.
+
+5. Las colisiones siguen funcionando.
+   Instalar Structural Freedom no permite atravesar objetos sólidos al construir.
+
+6. Los costos, propiedad y distancia normal de construcción no se modifican intencionalmente.
+
+DIAGNOSTICO
+-----------
+Abre la consola de UE4SS (normalmente F10) y escribe:
+
+   structuralfreedomstatus
+
+El estado correcto es:
+
+   grid=true sgk=true
+
+Si alguno aparece false después de cargar una partida, escribe:
+
+   structuralfreedominstall
+
+También se conservan los comandos antiguos de prueba "freebuildstatus" y "freebuildinstall" como alias.
+
+ESTABILIDAD Y PARTIDAS GUARDADAS
+--------------------------------
+La versión 1.0.0 se basa en la rama 0.2.2 que se utilizó para las pruebas de estabilidad.
+Se probaron guardados/cargas repetidas, estructuras poco normales sin soporte y una sesión multijugador básica sin observar un crash reproducible con la arquitectura final.
+
+Aun así:
+- Haz respaldo de partidas importantes antes de instalar cualquier mod de gameplay.
+- Una futura actualización de MISERY puede cambiar funciones internas y hacer necesaria una actualización del mod.
+- Si MISERY se actualiza y aparecen crashes o deja de funcionar el mod, desactiva Structural Freedom primero y revisa si existe una actualización.
+- No es recomendable retirar el mod en medio de una construcción importante sin soporte sin hacer antes una copia de seguridad; MISERY vanilla puede volver a evaluar dependencias cuando edites o destruyas piezas.
+
+MULTIJUGADOR
+------------
+Se realizó una prueba multijugador básica sin observar un crash. No se han probado de forma exhaustiva todas las combinaciones host/cliente.
+
+CREDITOS / IMPLEMENTACION
+-------------------------
+Mod Lua UE4SS independiente para MISERY.
+Este archivo NO incluye código ni recursos de Not so Miserable.
+La implementación fue desarrollada a partir de información runtime/Object Dump de MISERY y APIs de UE4SS.

@@ -1,0 +1,20 @@
+# Backups and archives
+*.7z
+*.zip
+*.rar
+*.bak
+
+# Files the mods write while the game runs
+WorldTweaks/weather_dump*.txt
+MISERYModMenu/items_world.txt
+MISERYModMenu/items_rowmap.txt
+MISERYModMenu/items_dump.txt
+MISERYModMenu/bindings.txt
+*.log
+
+# OS / editor clutter
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/

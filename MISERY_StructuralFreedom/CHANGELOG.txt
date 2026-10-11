@@ -1,0 +1,15 @@
+MISERY Structural Freedom - Changelog
+=====================================
+
+1.0.0
+-----
+- First public release.
+- Renamed project from the FreeBuild test name to Structural Freedom.
+- Relaxes unsupported-grid rejection without creating arbitrary air-placement grids.
+- Forces the master structural support result while preserving normal collision/placement systems.
+- Uses lifecycle-driven hook installation only.
+- No LoopAsync polling.
+- No temporary ClientRestart hook.
+- Adds structuralfreedomstatus and structuralfreedominstall diagnostics.
+- Keeps legacy freebuildstatus/freebuildinstall aliases for pre-release testers.
+- Includes English and Spanish installation/limitation documentation.
