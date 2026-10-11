@@ -3751,6 +3751,68 @@ function MenuLayout.Build(cm, p, attach)
     return L
 end
 
+-- Moving the Time / Day / Month fields rebuilds them, and a rebuilt field
+-- commits its value (0, 1, 1) - the game then sets 0:00 on the 1st. So the
+-- weather manager's time and date values are saved before the move and any
+-- the move changed are put back.
+function MenuLayout.WeatherManager()
+    local wm = nil
+    pcall(function()
+        local wms = FindAllOf("BP_MultiplayerDynamicWeatherManager_C")
+        if wms and #wms > 0 and wms[1]:IsValid() then wm = wms[1] end
+    end)
+    return wm
+end
+
+local ML_NUMBER_PROPS = { FloatProperty = true, DoubleProperty = true, IntProperty = true, ByteProperty = true }
+function MenuLayout.SaveClock()
+    local wm = MenuLayout.WeatherManager()
+    if not wm then return nil end
+    local saved = {}
+    pcall(function()
+        local cls = wm:GetClass()
+        for _ = 1, 10 do
+            if not ItemMenu.IsValid(cls) then break end
+            cls:ForEachProperty(function(prop)
+                local name, kind = "", ""
+                pcall(function() name = prop:GetFName():ToString() end)
+                pcall(function() kind = prop:GetClass():GetFName():ToString() end)
+                local l = name:lower()
+                if ML_NUMBER_PROPS[kind] and (l:find("time") or l:find("day") or l:find("month")
+                    or l:find("date") or l:find("year") or l:find("season")) then
+                    local v = nil
+                    pcall(function() v = wm[name] end)
+                    if type(v) == "number" then saved[name] = v end
+                end
+            end)
+            local super = nil
+            pcall(function() super = cls:GetSuperStruct() end)
+            cls = super
+        end
+    end)
+    return saved
+end
+
+function MenuLayout.RestoreClock(saved)
+    if not saved then return end
+    local wm = MenuLayout.WeatherManager()
+    if not wm then return end
+    local restored = {}
+    for name, v in pairs(saved) do
+        local now = nil
+        pcall(function() now = wm[name] end)
+        if type(now) == "number" and math.abs(now - v) > 1e-4 then
+            pcall(function() wm[name] = v end)
+            table.insert(restored, string.format("%s %.1f", name, v))
+        end
+    end
+    if #restored == 0 then return end
+    pcall(function() wm["Set Light Rotation"](wm) end)
+    pcall(function() wm["Set Elements"](wm) end)
+    table.sort(restored)
+    Log("[MenuLayout] Moving the time fields reset the clock - put back: " .. table.concat(restored, ", "))
+end
+
 -- Game thread, after MenuStyle.Apply: once per menu instance
 function MenuLayout.Apply()
     if not MenuLayout.enabled then return end
@@ -3824,7 +3886,9 @@ function MenuLayout.Apply()
         end
     end
 
+    local clock = MenuLayout.SaveClock()
     local built, err2 = pcall(MenuLayout.Build, cm, p, attach)
+    MenuLayout.RestoreClock(clock)
     if not built then
         -- some widgets may already be in the new panel: show both rather than lose any
         Log("[MenuLayout] Layout failed part way (" .. tostring(err2) .. ") - nothing hidden")
