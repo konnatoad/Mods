@@ -243,19 +243,23 @@ end
 ------------------------------------------------------------
 local UMG = "/Script/UMG."
 local VISIBLE, COLLAPSED = 3, 1   -- shown without blocking the mouse / hidden
-local ACCENT = { R = 0.32, G = 0.86, B = 0.56, A = 1 }
-local AMBER = { R = 1.0, G = 0.75, B = 0.25, A = 1 }
-local WHITE = { R = 0.95, G = 0.96, B = 0.97, A = 1 }
-local BRIGHT = { R = 1, G = 1, B = 1, A = 1 }
-local LABEL = { R = 0.8, G = 0.82, B = 0.85, A = 1 }
-local MUTED = { R = 0.5, G = 0.53, B = 0.57, A = 1 }
-local INK = { R = 0.03, G = 0.06, B = 0.04, A = 1 }
-local PANEL = { R = 0.016, G = 0.018, B = 0.022, A = 0.95 }
-local CARD = { R = 1, G = 1, B = 1, A = 0.035 }
-local ROW_LIT = { R = 1, G = 1, B = 1, A = 0.08 }
-local CAP = { R = 1, G = 1, B = 1, A = 0.07 }
-local BUTTON = { R = 1, G = 1, B = 1, A = 0.07 }
-local LINE = { R = 1, G = 1, B = 1, A = 0.09 }
+-- Amber on dark slate, like the Radiation Shield menu. Unreal takes linear
+-- colours; the comments are the colours you see.
+local ACCENT = { R = 0.888, G = 0.371, B = 0.042, A = 1 }        -- amber #F2A43A
+local HEADING = { R = 0.434, G = 0.254, B = 0.091, A = 1 }       -- dusty amber #B08A55
+local WARN = { R = 0.871, G = 0.162, B = 0.102, A = 1 }          -- coral #F0705A
+local WHITE = { R = 0.846, G = 0.791, B = 0.701, A = 1 }         -- warm white #EDE6DA
+local BRIGHT = { R = 1, G = 0.93, B = 0.82, A = 1 }              -- #FFF7EA
+local LABEL = { R = 0.624, G = 0.578, B = 0.503, A = 1 }         -- #CFC8BC
+local MUTED = { R = 0.262, G = 0.235, B = 0.188, A = 1 }         -- #8C8578
+local INK = { R = 0.010, G = 0.014, B = 0.019, A = 1 }           -- slate text on amber
+local PANEL = { R = 0.010, G = 0.014, B = 0.019, A = 0.88 }      -- dark slate #1A1F26, see-through
+local BAND = { R = 0.888, G = 0.371, B = 0.042, A = 0.09 }       -- amber tint behind the title
+local CARD = { R = 1, G = 1, B = 1, A = 0.03 }
+local ROW_LIT = { R = 0.888, G = 0.371, B = 0.042, A = 0.14 }
+local CAP = { R = 1, G = 1, B = 1, A = 0.06 }
+local BUTTON = { R = 1, G = 1, B = 1, A = 0.06 }
+local LINE = { R = 0.888, G = 0.371, B = 0.042, A = 0.25 }
 local CLEAR = { R = 0, G = 0, B = 0, A = 0 }
 local WIDTH = 480
 
@@ -300,19 +304,16 @@ local function Text(tree, s, size, color, bold, spacing)
     return t
 end
 
--- Rounded corners (UE5 rounded-box brushes); square if the game refuses
+-- Square panels with a thin outline (UE5 rounded-box brushes at radius 0)
 local function Round(border, radius, outline)
+    radius = 0   -- square look; kept as a switch should rounded corners come back
     pcall(function()
         local brush = border.Background
-        brush.DrawAs = 4
+        brush.DrawAs = 4   -- rounded-box drawing, which also draws the outline
         local o = brush.OutlineSettings
-        if radius then
-            o.RoundingType = 0
-            local c = o.CornerRadii
-            c.X, c.Y, c.Z, c.W = radius, radius, radius, radius
-        else
-            o.RoundingType = 1
-        end
+        o.RoundingType = 0
+        local c = o.CornerRadii
+        c.X, c.Y, c.Z, c.W = radius, radius, radius, radius
         if outline then
             o.Width = 1.0
             local c = o.Color.SpecifiedColor
@@ -387,19 +388,24 @@ local function BuildPanel(hud)
     local p = {}
     p.panel = Fill(tree, PANEL, PANEL_PREFIX .. panelTag .. "_" .. panelCount)
     Round(p.panel, 14, LINE)
-    pcall(function() p.panel:SetPadding({ Left = 18, Top = 16, Right = 18, Bottom = 14 }) end)
+    pcall(function() p.panel:SetPadding({ Left = 14, Top = 14, Right = 14, Bottom = 12 }) end)
     local width = Box(tree, WIDTH)
     p.panel:SetContent(width)
     local column = Construct("VerticalBox", tree)
     width:SetContent(column)
 
+    -- header: tinted band with the accent bar, title in capitals
+    local band = Fill(tree, BAND)
+    pcall(function() band:SetPadding({ Left = 0, Top = 10, Right = 12, Bottom = 10 }) end)
+    column:AddChildToVerticalBox(band)
     local head = Construct("HorizontalBox", tree)
-    Pad(column:AddChildToVerticalBox(head), 4, 0, 4, 2)
+    band:SetContent(head)
+    Middle(head:AddChildToHorizontalBox(Box(tree, 3, 34, Fill(tree, ACCENT))))
     local titles = Construct("VerticalBox", tree)
-    Middle(Grow(head:AddChildToHorizontalBox(titles)))
-    p.title = Text(tree, "Mods", 19, BRIGHT, true)
+    Middle(Grow(Pad(head:AddChildToHorizontalBox(titles), 12, 0, 0, 0)))
+    p.title = Text(tree, "MODS", 17, BRIGHT, true, 120)
     titles:AddChildToVerticalBox(p.title)
-    p.sub = Text(tree, "", 11, MUTED)
+    p.sub = Text(tree, "", 9, HEADING, true, 200)
     titles:AddChildToVerticalBox(p.sub)
 
     p.body = Construct("VerticalBox", tree)
@@ -443,7 +449,7 @@ end
 
 -- body helpers: a section heading and a card to put rows in
 local function Section(tree, body, title)
-    Pad(body:AddChildToVerticalBox(Text(tree, title, 9, MUTED, true, 140)), 6, 14, 0, 6)
+    Pad(body:AddChildToVerticalBox(Text(tree, title, 9, HEADING, true, 200)), 6, 14, 0, 6)
     local frame = Round(Fill(tree, CARD), 10)
     pcall(function() frame:SetPadding({ Left = 4, Top = 4, Right = 4, Bottom = 4 }) end)
     body:AddChildToVerticalBox(frame)
@@ -462,6 +468,10 @@ local function ActionRow(tree, card, label, note, noteColor, action, button)
     if button then Pad(slot, 0, 14, 0, 0) end
     local line = Construct("HorizontalBox", tree)
     r.bg:SetContent(Box(tree, nil, 36, line))
+    if not button then
+        r.marker = Fill(tree, CLEAR)
+        Middle(Pad(line:AddChildToHorizontalBox(Box(tree, 3, 24, r.marker)), 0, 0, 10, 0))
+    end
     r.label = Text(tree, label, 13, LABEL, button)
     local labelSlot = Middle(Grow(line:AddChildToHorizontalBox(r.label)))
     if button then pcall(function() labelSlot:SetHorizontalAlignment(2) end) end
@@ -499,8 +509,8 @@ end
 
 local function ListView(tree, body)
     local mods = Loaded()
-    SetText(ui.p.title, "Mods")
-    SetText(ui.p.sub, #mods .. " loaded")
+    SetText(ui.p.title, "MODS")
+    SetText(ui.p.sub, #mods .. " LOADED")
     local card = Section(tree, body, "MODS")
     local changed, builtins = 0, {}
     for _, name in ipairs(mods) do
@@ -510,7 +520,7 @@ local function ListView(tree, body)
             local info = INFO_BY_NAME[name]
             local isChanged = Changed(name)
             if isChanged then changed = changed + 1 end
-            ActionRow(tree, card, info and info.title or name, isChanged and "CHANGED" or nil, AMBER, ShowMod(name))
+            ActionRow(tree, card, info and info.title or name, isChanged and "CHANGED" or nil, WARN, ShowMod(name))
         end
     end
     if #builtins > 0 then
@@ -519,7 +529,7 @@ local function ListView(tree, body)
     end
     local tools = Section(tree, body, "RELOAD")
     ActionRow(tree, tools, "Restart changed mods", changed > 0 and tostring(changed) or "none",
-        changed > 0 and AMBER or MUTED, function() hub.status = Reload("changed"); Render() end)
+        changed > 0 and WARN or MUTED, function() hub.status = Reload("changed"); Render() end)
     ActionRow(tree, tools, "Restart all mods", nil, nil, function() hub.status = Reload("all"); Render() end)
     ActionRow(tree, body, "Close", nil, nil, function() Close() end, true)
 end
@@ -527,8 +537,8 @@ end
 local function ModView(tree, body)
     local name = hub.mod
     local info = INFO_BY_NAME[name] or { title = name, about = "No details for this mod." }
-    SetText(ui.p.title, info.title)
-    SetText(ui.p.sub, name .. (Changed(name) and "  -  changed since it loaded" or ""))
+    SetText(ui.p.title, info.title:upper())
+    SetText(ui.p.sub, name:upper() .. (Changed(name) and "  -  CHANGED SINCE IT LOADED" or ""))
     local about = Text(tree, info.about or "", 12, LABEL)
     pcall(function() about:SetAutoWrapText(true) end)
     Pad(body:AddChildToVerticalBox(about), 4, 10, 4, 0)
@@ -574,6 +584,7 @@ local function Recolor()
             Color(r.label, lit and INK or WHITE)
         else
             pcall(function() r.bg:SetBrushColor(lit and ROW_LIT or CLEAR) end)
+            pcall(function() r.marker:SetBrushColor(lit and ACCENT or CLEAR) end)
             Color(r.label, lit and BRIGHT or LABEL)
             if r.chevron then Color(r.chevron, lit and ACCENT or MUTED) end
         end

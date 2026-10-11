@@ -323,10 +323,15 @@ end
 local UMG = "/Script/UMG."
 local HIT_TEST_INVISIBLE = 3   -- ESlateVisibility: shown, never blocks the mouse
 local COLLAPSED = 1
-local GREEN, PALE_GREEN, WHITE = { R = 0.32, G = 0.86, B = 0.56, A = 1.0 }, { R = 0.62, G = 0.9, B = 0.72, A = 1.0 }, { R = 0.94, G = 0.95, B = 0.96, A = 1.0 }
-local GREY, PALE_GREY = { R = 0.5, G = 0.53, B = 0.57, A = 1.0 }, { R = 0.72, G = 0.75, B = 0.79, A = 1.0 }
-local AMBER = { R = 1.0, G = 0.75, B = 0.25, A = 1.0 }
-local RED = { R = 1.0, G = 0.35, B = 0.3, A = 1.0 }
+-- Amber on dark slate. Unreal takes linear colours; the comments are the
+-- colours you see.
+local ACCENT = { R = 0.888, G = 0.371, B = 0.042, A = 1.0 }        -- amber #F2A43A
+local ACCENT_SOFT = { R = 0.434, G = 0.254, B = 0.091, A = 1.0 }   -- dusty amber #B08A55
+local WHITE = { R = 0.846, G = 0.791, B = 0.701, A = 1.0 }         -- warm white #EDE6DA
+local GREY = { R = 0.262, G = 0.235, B = 0.188, A = 1.0 }          -- #8C8578
+local PALE_GREY = { R = 0.624, G = 0.578, B = 0.503, A = 1.0 }     -- #CFC8BC
+local WARN = { R = 0.871, G = 0.162, B = 0.102, A = 1.0 }          -- coral #F0705A
+local RED = { R = 0.871, G = 0.162, B = 0.102, A = 1.0 }
 
 local ui = { hud = nil, hudObj = nil }   -- widgets of the current HUD
 local lastText = setmetatable({}, { __mode = "k" })   -- text each widget shows now
@@ -372,17 +377,14 @@ end
 -- Rounded corners: UE5 brushes can draw as a rounded box. No radius = a pill
 -- (half the height). Only looks: if the game refuses, corners stay square.
 local function Round(border, radius, outline)
+    radius = 0   -- square look; kept as a switch should rounded corners come back
     pcall(function()
         local brush = border.Background
-        brush.DrawAs = 4                      -- ESlateBrushDrawType::RoundedBox
+        brush.DrawAs = 4                      -- ESlateBrushDrawType::RoundedBox (draws the outline)
         local o = brush.OutlineSettings
-        if radius then
-            o.RoundingType = 0                -- fixed radius
-            local c = o.CornerRadii
-            c.X, c.Y, c.Z, c.W = radius, radius, radius, radius
-        else
-            o.RoundingType = 1                -- half the height
-        end
+        o.RoundingType = 0                    -- fixed radius
+        local c = o.CornerRadii
+        c.X, c.Y, c.Z, c.W = radius, radius, radius, radius
         if outline then
             o.Width = 1.0
             local c = o.Color.SpecifiedColor
@@ -477,7 +479,7 @@ local function DarkPanel(tree, alpha)
             FName(PANEL_PREFIX .. panelTag .. "_" .. panelCount))
     end)
     if not (panel and panel:IsValid()) then panel = Construct("Border", tree) end
-    panel:SetBrushColor({ R = 0.016, G = 0.018, B = 0.022, A = alpha })
+    panel:SetBrushColor({ R = 0.010, G = 0.014, B = 0.019, A = alpha })   -- dark slate #1A1F26
     return Round(panel, 10)
 end
 
@@ -492,7 +494,7 @@ local function BuildBadge(tree)
     bar:SetWidthOverride(4.0)
     bar:SetHeightOverride(34.0)
     b.accent = Round(Construct("Border", tree))
-    b.accent:SetBrushColor(GREEN)
+    b.accent:SetBrushColor(ACCENT)
     bar:SetContent(b.accent)
     local barSlot = row:AddChildToHorizontalBox(bar)
     pcall(function() barSlot:SetVerticalAlignment(2) end)   -- centre
@@ -503,7 +505,7 @@ local function BuildBadge(tree)
     pcall(function() columnSlot:SetVerticalAlignment(2) end)
 
     b.title = Construct("TextBlock", tree)
-    StyleText(b.title, 10, PALE_GREEN, 120)
+    StyleText(b.title, 10, ACCENT_SOFT, 120)
     column:AddChildToVerticalBox(b.title)
     b.value = Construct("TextBlock", tree)
     StyleText(b.value, 17, WHITE)
@@ -606,14 +608,14 @@ local function ShowIndicator(on, notice)
     SetText(b.title, "RADIATION SHIELD")
     if on then
         SetText(b.value, BadgeValue())
-        pcall(function() b.accent:SetBrushColor(GREEN) end)
-        SetTextColor(b.title, PALE_GREEN)
+        pcall(function() b.accent:SetBrushColor(ACCENT) end)
+        SetTextColor(b.title, ACCENT_SOFT)
         SetTextColor(b.value, WHITE)
         hideToken = hideToken + 1   -- cancels a pending hide
     else
         SetText(b.value, notice or "SHIELD OFF")
-        pcall(function() b.accent:SetBrushColor(notice and AMBER or GREY) end)
-        SetTextColor(b.title, notice and AMBER or GREY)
+        pcall(function() b.accent:SetBrushColor(notice and WARN or GREY) end)
+        SetTextColor(b.title, notice and WARN or GREY)
         SetTextColor(b.value, notice and WHITE or PALE_GREY)
         HideLater(notice and 3 or 1.5)
     end
@@ -632,19 +634,19 @@ end
 local function Status()
     if not myAddress then return "Not in a world yet", GREY end
     if Joined() then
-        if hostAnswer == "denied" then return "Disabled by host", AMBER end
-        if hostAnswer == "nomod" then return "Host doesn't have RadiationShield", AMBER end
+        if hostAnswer == "denied" then return "Disabled by host", WARN end
+        if hostAnswer == "nomod" then return "Host doesn't have RadiationShield", WARN end
         if hostAnswer == "asking" then return "Asking the host...", PALE_GREY end
-        if hostAnswer == "allowed" then return "Allowed by host: your shield covers only you", PALE_GREEN end
+        if hostAnswer == "allowed" then return "Allowed by host: your shield covers only you", ACCENT_SOFT end
         return "Joined game: press " .. boundKey .. " to ask the host", PALE_GREY
     end
-    if not isHooked then return "Backup mode: radiation taken back each second", AMBER end
+    if not isHooked then return "Backup mode: radiation taken back each second", WARN end
     if allowOthers then
         local n = CountOthers()
-        return "Hosting: others may use shields (" .. n .. " on now)", PALE_GREEN
+        return "Hosting: others may use shields (" .. n .. " on now)", ACCENT_SOFT
     end
     return mode == "shrink" and "Shield cuts radiation as it comes in"
-        or "Shield takes radiation back as it comes in", PALE_GREEN
+        or "Shield takes radiation back as it comes in", ACCENT_SOFT
 end
 
 local function UpdateReadout()
@@ -1075,14 +1077,15 @@ local KIND = { ["Less radiation"] = "slider", ["Badge position"] = "choice", ["T
 local SWITCH_STATE = { On = true, Yes = true, Off = false, No = false }   -- other values: text only
 local MENU_WIDTH, ROW_HEIGHT, SLIDER_WIDTH = 440, 38, 120
 local CLEAR = { R = 0, G = 0, B = 0, A = 0 }
-local CARD = { R = 1, G = 1, B = 1, A = 0.035 }
-local ROW_LIT = { R = 1, G = 1, B = 1, A = 0.08 }
-local BUTTON = { R = 1, G = 1, B = 1, A = 0.07 }
-local TRACK = { R = 1, G = 1, B = 1, A = 0.16 }
-local HAIRLINE = { R = 1, G = 1, B = 1, A = 0.09 }
-local LABEL = { R = 0.8, G = 0.82, B = 0.85, A = 1 }
-local BRIGHT = { R = 1, G = 1, B = 1, A = 1 }
-local INK = { R = 0.03, G = 0.06, B = 0.04, A = 1 }   -- dark text on the accent
+local CARD = { R = 1, G = 1, B = 1, A = 0.03 }
+local BAND = { R = 0.888, G = 0.371, B = 0.042, A = 0.09 }     -- amber tint behind the title
+local ROW_LIT = { R = 0.888, G = 0.371, B = 0.042, A = 0.14 }  -- amber tint on the chosen row
+local BUTTON = { R = 1, G = 1, B = 1, A = 0.06 }
+local TRACK = { R = 1, G = 1, B = 1, A = 0.14 }
+local HAIRLINE = { R = 0.888, G = 0.371, B = 0.042, A = 0.25 }
+local LABEL = PALE_GREY
+local BRIGHT = { R = 1, G = 0.93, B = 0.82, A = 1 }             -- #FFF7EA
+local INK = { R = 0.010, G = 0.014, B = 0.019, A = 1 }          -- slate text on the accent
 local NO_SHADOW = { R = 0, G = 0, B = 0, A = 0 }
 
 local function Box(tree, w, h, child)
@@ -1128,33 +1131,39 @@ local function Switch(tree)
 end
 
 local function SetSwitch(s, on)
-    pcall(function() s.track:SetBrushColor(on and GREEN or TRACK) end)
+    pcall(function() s.track:SetBrushColor(on and ACCENT or TRACK) end)
     pcall(function() s.gap:SetWidthOverride(on and 18 or 0) end)
 end
 
 local function BuildMenu(hud)
     local tree = hud.WidgetTree
     local m = { rows = {}, order = VisibleRows(), joined = Joined() }
-    m.panel = DarkPanel(tree, 0.94)
-    Round(m.panel, 14, HAIRLINE)
-    pcall(function() m.panel:SetPadding({ Left = 18, Top = 16, Right = 18, Bottom = 14 }) end)
+    m.panel = DarkPanel(tree, 0.88)
+    Round(m.panel, 0, HAIRLINE)
+    pcall(function() m.panel:SetPadding({ Left = 14, Top = 14, Right = 14, Bottom = 12 }) end)
     local width = Construct("SizeBox", tree)
     pcall(function() width:SetWidthOverride(MENU_WIDTH) end)
     m.panel:SetContent(width)
     local column = Construct("VerticalBox", tree)
     width:SetContent(column)
 
-    -- header: title, and the shield's own switch
+    -- header: tinted band with the accent bar, title, and the shield's own switch
+    local band = Fill(tree, BAND)
+    pcall(function() band:SetPadding({ Left = 0, Top = 10, Right = 12, Bottom = 10 }) end)
+    column:AddChildToVerticalBox(band)
     local head = Construct("HorizontalBox", tree)
-    Pad(column:AddChildToVerticalBox(head), 4, 0, 4, 2)
+    band:SetContent(head)
+    m.accent = Fill(tree, ACCENT)
+    Middle(head:AddChildToHorizontalBox(Box(tree, 3, 34, m.accent)))
     local titles = Construct("VerticalBox", tree)
-    Middle(Grow(head:AddChildToHorizontalBox(titles)))
-    m.title = Text(tree, 19, BRIGHT)
+    Middle(Grow(Pad(head:AddChildToHorizontalBox(titles), 12, 0, 0, 0)))
+    m.title = Text(tree, 17, BRIGHT, 120)
     Bold(m.title)
-    SetText(m.title, "Radiation Shield")
+    SetText(m.title, "RADIATION SHIELD")
     titles:AddChildToVerticalBox(m.title)
-    m.sub = Text(tree, 11, GREY)
-    SetText(m.sub, "Settings")
+    m.sub = Text(tree, 9, ACCENT_SOFT, 260)
+    Bold(m.sub)
+    SetText(m.sub, "SETTINGS")
     titles:AddChildToVerticalBox(m.sub)
     m.stateText = Text(tree, 12, PALE_GREY)
     Middle(Pad(head:AddChildToHorizontalBox(m.stateText), 0, 0, 10, 0))
@@ -1169,7 +1178,7 @@ local function BuildMenu(hud)
         local section = SECTION_OF[row[1]]
         if section and section ~= lastSection then
             lastSection = section
-            local heading = Text(tree, 9, GREY, 140)
+            local heading = Text(tree, 9, ACCENT_SOFT, 200)
             Bold(heading)
             SetText(heading, section)
             Pad(column:AddChildToVerticalBox(heading), 6, 14, 0, 6)
@@ -1189,6 +1198,8 @@ local function BuildMenu(hud)
         end
         local line = Construct("HorizontalBox", tree)
         r.bg:SetContent(Box(tree, nil, ROW_HEIGHT, line))
+        r.marker = Fill(tree, CLEAR)
+        Middle(Pad(line:AddChildToHorizontalBox(Box(tree, 3, ROW_HEIGHT - 12, r.marker)), 0, 0, 10, 0))
         r.label = Text(tree, 13, LABEL)
         SetText(r.label, row[1])
         local labelSlot = Middle(Grow(line:AddChildToHorizontalBox(r.label)))
@@ -1203,7 +1214,7 @@ local function BuildMenu(hud)
         elseif kind == "slider" then
             local slider = Construct("HorizontalBox", tree)
             Middle(line:AddChildToHorizontalBox(slider))
-            r.barFill = Box(tree, 0, 4, Round(Fill(tree, GREEN)))
+            r.barFill = Box(tree, 0, 4, Round(Fill(tree, ACCENT)))
             r.barRest = Box(tree, SLIDER_WIDTH, 4, Round(Fill(tree, TRACK)))
             Middle(slider:AddChildToHorizontalBox(r.barFill))
             Middle(slider:AddChildToHorizontalBox(Box(tree, 12, 12, Round(Fill(tree, BRIGHT)))))
@@ -1228,7 +1239,7 @@ local function BuildMenu(hud)
     -- footer: status with a coloured dot, then the keys as key caps
     local statusRow = Construct("HorizontalBox", tree)
     Pad(column:AddChildToVerticalBox(statusRow), 4, 14, 4, 0)
-    m.dot = Round(Fill(tree, GREEN))
+    m.dot = Round(Fill(tree, ACCENT))
     Middle(statusRow:AddChildToHorizontalBox(Box(tree, 8, 8, m.dot)))
     m.status = Text(tree, 12, LABEL)
     Middle(Pad(statusRow:AddChildToHorizontalBox(m.status), 8, 0, 0, 0))
@@ -1252,8 +1263,8 @@ local function BuildMenu(hud)
 end
 
 local function ValueColor(value)
-    if value == "Disabled by host" then return AMBER end
-    if value == "Allowed by host" then return GREEN end
+    if value == "Disabled by host" then return WARN end
+    if value == "Allowed by host" then return ACCENT end
     return GREY
 end
 
@@ -1272,17 +1283,19 @@ UpdateMenu = function()
     end
     local m = ui.menu
     if m.joined then
-        SetText(m.sub, hostAnswer == "allowed" and ("Strength set by host: " .. Percent(reduction) .. "%")
-            or "Strength set by host")
+        SetText(m.sub, hostAnswer == "allowed" and ("STRENGTH SET BY HOST: " .. Percent(reduction) .. "%")
+            or "STRENGTH SET BY HOST")
     end
     SetText(m.stateText, isOn and "On" or "Off")
+    pcall(function() m.accent:SetBrushColor(isOn and ACCENT or GREY) end)
     SetSwitch(m.switch, isOn)
     for n, i in ipairs(m.order) do
         local row = ROWS[i]
         local r = m.rows[i]
         local lit = n == selected
+        pcall(function() r.marker:SetBrushColor(lit and r.kind ~= "button" and ACCENT or CLEAR) end)
         if r.kind == "button" then
-            pcall(function() r.bg:SetBrushColor(lit and GREEN or BUTTON) end)
+            pcall(function() r.bg:SetBrushColor(lit and ACCENT or BUTTON) end)
             SetTextColor(r.label, lit and INK or BRIGHT)
         else
             pcall(function() r.bg:SetBrushColor(lit and ROW_LIT or CLEAR) end)
@@ -1297,8 +1310,8 @@ UpdateMenu = function()
                 SetTextColor(r.value, ValueColor(value))
             elseif r.kind == "choice" then
                 SetTextColor(r.value, lit and BRIGHT or LABEL)
-                SetTextColor(r.left, lit and GREEN or GREY)
-                SetTextColor(r.right, lit and GREEN or GREY)
+                SetTextColor(r.left, lit and ACCENT or GREY)
+                SetTextColor(r.right, lit and ACCENT or GREY)
             else   -- slider
                 local filled = math.floor(SLIDER_WIDTH * reduction + 0.5)
                 pcall(function() r.barFill:SetWidthOverride(filled) end)

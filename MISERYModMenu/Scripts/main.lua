@@ -3183,22 +3183,25 @@ local MenuStyle = {
     donePath = nil,     -- cheat menu instance already styled
     searchDone = nil,   -- search box already styled
 }
-local MS_PANEL = { R = 0.035, G = 0.04, B = 0.045, A = 0.97 }
+-- Amber on dark slate, like the Radiation Shield menu and the Mod Hub.
+-- Unreal takes linear colours; the comments are the colours you see.
+local MS_PANEL = { R = 0.010, G = 0.014, B = 0.019, A = 0.88 }        -- dark slate #1A1F26, see-through
 local MS_CLEAR = { R = 0, G = 0, B = 0, A = 0 }
-local MS_SURFACE = { R = 0.11, G = 0.12, B = 0.135, A = 1 }
-local MS_SURFACE_HOVER = { R = 0.17, G = 0.185, B = 0.2, A = 1 }
-local MS_SURFACE_DOWN = { R = 0.08, G = 0.085, B = 0.095, A = 1 }
-local MS_FIELD = { R = 0.06, G = 0.065, B = 0.075, A = 1 }
-local MS_LINE = { R = 1, G = 1, B = 1, A = 0.1 }
-local MS_ACCENT = { R = 0.32, G = 0.86, B = 0.56, A = 1 }
-local MS_ACCENT_HOVER = { R = 0.42, G = 0.93, B = 0.65, A = 1 }
-local MS_ACCENT_DOWN = { R = 0.24, G = 0.7, B = 0.45, A = 1 }
-local MS_CHIP = { R = 0.86, G = 0.88, B = 0.91, A = 1 }        -- list buttons keep dark text
-local MS_CHIP_HOVER = { R = 0.95, G = 0.96, B = 0.97, A = 1 }
-local MS_WHITE = { R = 0.95, G = 0.96, B = 0.97, A = 1 }
-local MS_LABEL = { R = 0.72, G = 0.75, B = 0.79, A = 1 }
-local MS_MUTED = { R = 0.5, G = 0.53, B = 0.57, A = 1 }
-local MS_INK = { R = 0.03, G = 0.06, B = 0.04, A = 1 }
+local MS_SURFACE = { R = 0.030, G = 0.036, B = 0.046, A = 1 }         -- #303540
+local MS_SURFACE_HOVER = { R = 0.058, G = 0.064, B = 0.078, A = 1 }   -- #434855
+local MS_SURFACE_DOWN = { R = 0.016, G = 0.020, B = 0.026, A = 1 }
+local MS_FIELD = { R = 0.006, G = 0.008, B = 0.011, A = 1 }           -- #11141A
+local MS_LINE = { R = 0.888, G = 0.371, B = 0.042, A = 0.25 }         -- amber hairline
+local MS_ACCENT = { R = 0.888, G = 0.371, B = 0.042, A = 1 }          -- amber #F2A43A
+local MS_ACCENT_HOVER = { R = 0.930, G = 0.510, B = 0.120, A = 1 }    -- #F7BC63
+local MS_ACCENT_DOWN = { R = 0.700, G = 0.270, B = 0.030, A = 1 }
+local MS_CHIP = { R = 0.791, G = 0.716, B = 0.597, A = 1 }            -- warm light #E6DCCB: list buttons keep dark text
+local MS_CHIP_HOVER = { R = 0.888, G = 0.830, B = 0.730, A = 1 }
+local MS_WHITE = { R = 0.846, G = 0.791, B = 0.701, A = 1 }           -- warm white #EDE6DA
+local MS_LABEL = { R = 0.624, G = 0.578, B = 0.503, A = 1 }           -- #CFC8BC
+local MS_HEADING = { R = 0.434, G = 0.254, B = 0.091, A = 1 }         -- dusty amber #B08A55
+local MS_MUTED = { R = 0.262, G = 0.235, B = 0.188, A = 1 }           -- #8C8578
+local MS_INK = { R = 0.010, G = 0.014, B = 0.019, A = 1 }             -- slate text on amber
 
 local function MsSetColor(target, c)
     target.R, target.G, target.B, target.A = c.R, c.G, c.B, c.A
@@ -3212,6 +3215,7 @@ end
 -- Edits a brush where it lives: flat colour, rounded corners, optional outline
 local function MsBrush(brush, color, radius, outline)
     if brush == nil then return end
+    radius = 0   -- square look; kept as a switch should rounded corners come back
     pcall(function() brush.DrawAs = 4 end)              -- RoundedBox
     pcall(function()
         local o = brush.OutlineSettings
@@ -3319,8 +3323,8 @@ local function MsSpin(spin)
     MsBrush(style.BackgroundBrush, MS_FIELD, 6, MS_LINE)
     MsBrush(style.HoveredBackgroundBrush, MS_FIELD, 6, MS_MUTED)
     pcall(function() MsBrush(style.ActiveBackgroundBrush, MS_FIELD, 6, MS_ACCENT) end)
-    MsBrush(style.ActiveFillBrush, { R = 0.32, G = 0.86, B = 0.56, A = 0.35 }, 6)
-    pcall(function() MsBrush(style.HoveredFillBrush, { R = 0.32, G = 0.86, B = 0.56, A = 0.25 }, 6) end)
+    MsBrush(style.ActiveFillBrush, { R = 0.888, G = 0.371, B = 0.042, A = 0.35 }, 6)
+    pcall(function() MsBrush(style.HoveredFillBrush, { R = 0.888, G = 0.371, B = 0.042, A = 0.25 }, 6) end)
     MsBrush(style.InactiveFillBrush, MS_CLEAR, 6)
     pcall(function() MsSlateColor(style.ForegroundColor, MS_WHITE) end)
     pcall(function() spin:SetForegroundColor({ SpecifiedColor = MS_WHITE, ColorUseRule = 0 }) end)
@@ -3468,8 +3472,9 @@ end)
 -- If anything fails before the move, the game's layout is left as it was.
 local MenuLayout = { enabled = true, donePath = nil }
 local ML_WIDTH = 500
-local ML_CARD = { R = 1, G = 1, B = 1, A = 0.035 }
-local ML_PANEL = { R = 0.016, G = 0.018, B = 0.022, A = 0.95 }
+local ML_CARD = { R = 1, G = 1, B = 1, A = 0.03 }
+local ML_PANEL = { R = 0.010, G = 0.014, B = 0.019, A = 0.88 }     -- dark slate, see-through
+local ML_BAND = { R = 0.888, G = 0.371, B = 0.042, A = 0.09 }      -- amber tint behind the title
 local ML_LABELS = {   -- button texts as the game writes them -> as shown
     SPAWN = "Spawn", FLY = "Fly", SUNNY = "Sunny", RAIN = "Rain", THUNDER = "Thunder",
     ["SUMMON PLANE"] = "Summon plane", ["SUMMON GRAD"] = "Summon Grad",
@@ -3627,7 +3632,7 @@ function MenuLayout.Build(cm, p, attach)
     L.panel = MlNew(tree, "Border")
     L.panel:SetBrushColor(ML_PANEL)
     MsBrush(L.panel.Background, { R = 1, G = 1, B = 1, A = 1 }, 14, MS_LINE)
-    pcall(function() L.panel:SetPadding({ Left = 18, Top = 16, Right = 18, Bottom = 16 }) end)
+    pcall(function() L.panel:SetPadding({ Left = 14, Top = 14, Right = 14, Bottom = 14 }) end)
     local width = MlNew(tree, "SizeBox")
     pcall(function() width:SetWidthOverride(ML_WIDTH) end)
     L.panel:SetContent(width)
@@ -3635,14 +3640,24 @@ function MenuLayout.Build(cm, p, attach)
     width:SetContent(column)
     attach(L.panel)
 
+    -- header: tinted band with the accent bar, title in capitals
+    local band = MlNew(tree, "Border")
+    band:SetBrushColor(ML_BAND)
+    pcall(function() band:SetPadding({ Left = 0, Top = 10, Right = 12, Bottom = 10 }) end)
+    column:AddChildToVerticalBox(band)
     local head = MlNew(tree, "HorizontalBox")
-    MlPad(column:AddChildToVerticalBox(head), 4, 0, 4, 2)
-    MlMiddle(MlFill(head:AddChildToHorizontalBox(MlText(tree, "Mod Menu", 19, MS_WHITE, true))))
-    MlMiddle(head:AddChildToHorizontalBox(MlText(tree, "PageUp to close", 11, MS_MUTED)))
+    band:SetContent(head)
+    local bar = MlNew(tree, "Border")
+    bar:SetBrushColor(MS_ACCENT)
+    MlMiddle(head:AddChildToHorizontalBox(MlBox(tree, 3, 34, bar)))
+    local titles = MlNew(tree, "VerticalBox")
+    MlMiddle(MlFill(MlPad(head:AddChildToHorizontalBox(titles), 12, 0, 0, 0)))
+    titles:AddChildToVerticalBox(MlText(tree, "MOD MENU", 17, { R = 1, G = 0.93, B = 0.82, A = 1 }, true, 120))
+    titles:AddChildToVerticalBox(MlText(tree, "PAGE UP TO CLOSE", 9, MS_HEADING, true, 200))
 
     local card
     local function Section(title)
-        MlPad(column:AddChildToVerticalBox(MlText(tree, title, 9, MS_MUTED, true, 140)), 6, 14, 0, 6)
+        MlPad(column:AddChildToVerticalBox(MlText(tree, title, 9, MS_HEADING, true, 200)), 6, 14, 0, 6)
         local frame = MlNew(tree, "Border")
         frame:SetBrushColor(ML_CARD)
         MsBrush(frame.Background, { R = 1, G = 1, B = 1, A = 1 }, 10)
