@@ -14,7 +14,7 @@
 -- pressed it. The host decides whether players who joined may use theirs
 -- ("Others can use it" in the host's menu); if not, they see "Disabled by
 -- host". The host's and the players' mods talk through two messages Unreal
--- Engine always has (ServerCheat to the host, ClientMessage back), so this
+-- Engine always has (ServerNotifyLoadedWorld to the host, ClientMessage back), so this
 -- works whichever game adds the radiation. Everyone needs this mod.
 ------------------------------------------------------------
 -- Defaults. The menu saves your choices to settings.txt in this mod's
@@ -133,6 +133,15 @@ local reportedWorking = false   -- one log line per switch-on, so the log shows 
 local function Measuring() return meterOn or showDebug or menuOpen end
 local function Joined() return myController ~= nil and not amHost end
 
+-- Calling anything on an object that doesn't exist (a missing owner,
+-- character or player state) crashes the game outright - pcall can't catch
+-- it - so every link in a chain is checked first.
+local function Valid(obj)
+    if obj == nil then return false end
+    local ok, valid = pcall(function() return obj:IsValid() end)
+    return ok and valid == true
+end
+
 local function AddressOf(obj)
     local ok, address = pcall(function() return obj:GetAddress() end)
     return ok and address or nil
@@ -147,17 +156,23 @@ local function RefreshMyInventory()
     myInventory, myAddress = nil, nil
     pcall(function()
         for _, ctrl in ipairs(FindAllOf("BP_SGKController_C") or {}) do
-            if ctrl:IsLocalController() then
+            if Valid(ctrl) and ctrl:IsLocalController() then
                 myController = ctrl
-                local candidate = ctrl.Character.PlayerInventory
-                if candidate:IsValid() then myInventory = candidate end
+                local character = ctrl.Character   -- none while dead or loading
+                if Valid(character) then
+                    local candidate = character.PlayerInventory
+                    if Valid(candidate) then myInventory = candidate end
+                end
                 return
             end
         end
     end)
     myAddress = myInventory and AddressOf(myInventory) or nil
     if myInventory then
-        local ok, authority = pcall(function() return myInventory:GetOwner():HasAuthority() end)
+        local ok, authority = pcall(function()
+            local owner = myInventory:GetOwner()
+            if Valid(owner) then return owner:HasAuthority() end
+        end)
         amHost = not (ok and authority == false)
     end
     return myInventory
@@ -641,12 +656,18 @@ local searchWait = 0
 ------------------------------------------------------------
 -- Co-op messages
 ------------------------------------------------------------
--- Player -> host: APlayerController:ServerCheat("RSHIELD on 0.75"). Unreal
---   sends it to the host in every build; a shipping game ignores its text, the
---   host's mod reads it.
+-- Player -> host: APlayerController:ServerNotifyLoadedWorld(FName "RSHIELD_ON_75").
+--   Unreal sends it to the host in every build; the game only acts on it
+--   during a seamless level change (and then only on a real level's name), so
+--   our name is ignored - the host's mod reads it. (ServerCheat, the obvious
+--   choice, doesn't exist in this game's shipping build.)
 -- Host -> player: APlayerController:ClientMessage("... #RS:allowed"). Shows
 --   as a line in that player's console; their mod reads the #RS: tag.
 local SERVER_TAG = "RSHIELD"
+
+local function SendToHost(command)
+    return pcall(function() myController:ServerNotifyLoadedWorld(FName(SERVER_TAG .. "_" .. command)) end)
+end
 
 local function ParamString(param)
     local value = param
@@ -658,7 +679,10 @@ end
 
 local function PlayerName(pc)
     local name = "a player"
-    pcall(function() name = pc.PlayerState:GetPlayerName():ToString() end)
+    pcall(function()
+        local state = pc.PlayerState
+        if Valid(state) then name = state:GetPlayerName():ToString() end
+    end)
     return name
 end
 
@@ -671,10 +695,14 @@ RebuildOthers = function()
     local byInv, active = {}, false
     for key, o in pairs(others) do
         local inv = nil
-        local okPc = pcall(function() if o.pc:IsValid() then inv = o.pc.Character.PlayerInventory end end)
-        if not okPc or not o.pc:IsValid() then
+        local okPc = pcall(function()
+            if not Valid(o.pc) then return end
+            local character = o.pc.Character
+            if Valid(character) then inv = character.PlayerInventory end
+        end)
+        if not okPc or not Valid(o.pc) then
             others[key] = nil   -- left the game
-        elseif inv and inv:IsValid() then
+        elseif Valid(inv) then
             local address = AddressOf(inv)
             if address then byInv[address] = o.reduction; active = true end
         end
@@ -767,13 +795,13 @@ local askId = 0
 local function AskHost(on)
     if not on then
         SetShield(false)
-        pcall(function() myController:ServerCheat(SERVER_TAG .. " off") end)
+        SendToHost("OFF")
         return
     end
     hostAnswer = "asking"
     askId = askId + 1
     local myAsk = askId
-    local sent = pcall(function() myController:ServerCheat(SERVER_TAG .. " on " .. reduction) end)
+    local sent = SendToHost("ON_" .. Percent(reduction))
     log("Asking the host to allow your radiation shield")
     -- no answer in 3 s: the host doesn't run this mod
     LoopAsync(3000, function()
@@ -823,29 +851,29 @@ local function OnClientMessage(selfParam, textParam)
 end
 
 -- A joined player's request, on the host
-local function OnServerCheat(selfParam, msgParam)
+local function OnHostMessage(selfParam, msgParam)
     if Joined() then return end       -- only the host answers
     local msg = ParamString(msgParam)
-    local cmd, value = msg:match("^" .. SERVER_TAG .. " (%a+)%s*([%d%.]*)")
+    local cmd, value = msg:match("^" .. SERVER_TAG .. "_(%u+)_?(%d*)$")
     if not cmd then return end
     local pc = nil
     pcall(function() pc = selfParam:get() end)
     if not pc then return end
     local key = AddressOf(pc)
     if key == AddressOf(myController) then return end
-    if cmd == "on" then
+    if cmd == "ON" then
         if not allowOthers then
             Tell(pc, "denied", "Radiation shields are disabled by the host")
             log(PlayerName(pc) .. " asked for a radiation shield - disabled (Others can use it: NO)")
             return
         end
-        local r = math.max(0.01, math.min(1, tonumber(value) or 0.25))
+        local r = math.max(0.01, math.min(1, (tonumber(value) or 25) / 100))
         others[key] = { pc = pc, reduction = r }
         RebuildOthers()
         StartLoop()
         Tell(pc, "on", "Radiation shield ON for you (" .. Percent(r) .. "% less radiation)")
         log(PlayerName(pc) .. " turned their radiation shield on (" .. Percent(r) .. "% less)")
-    elseif cmd == "off" then
+    elseif cmd == "OFF" then
         if others[key] then log(PlayerName(pc) .. " turned their radiation shield off") end
         others[key] = nil
         RebuildOthers()
@@ -854,7 +882,7 @@ local function OnServerCheat(selfParam, msgParam)
 end
 
 for path, fn in pairs({
-    ["/Script/Engine.PlayerController:ServerCheat"] = OnServerCheat,
+    ["/Script/Engine.PlayerController:ServerNotifyLoadedWorld"] = OnHostMessage,
     ["/Script/Engine.PlayerController:ClientMessage"] = OnClientMessage,
 }) do
     if not pcall(RegisterHook, path, fn) then log("Co-op messages unavailable (" .. path .. ")") end
@@ -890,7 +918,7 @@ local ROWS = {
           reduction = math.max(5, math.min(100, Percent(reduction) + 5 * dir)) / 100
           if isOn then ShowIndicator(true) end
           if isOn and Joined() then
-              pcall(function() myController:ServerCheat(SERVER_TAG .. " on " .. reduction) end)
+              SendToHost("ON_" .. Percent(reduction))
           end
           Changed("reduction " .. Percent(reduction) .. "%")
       end },
@@ -955,23 +983,199 @@ local ROWS = {
     { "Close", function() return "" end, function() CloseMenu() end },
 }
 
-UpdateMenu = function()
-    local p = EnsurePanel("menu", #ROWS + 3, 0.5, 0.5, 0, 0, "RADIATION SHIELD SETTINGS")
-    if not p then return end
+--  ┃ RADIATION SHIELD                       [ ON ]
+--  ┃ SETTINGS
+--  ─────────────────────────────────────────────
+--    SHIELD
+--  ▌ Shield                  <  ON  >
+--    Less radiation             25%    ████░░░░░░
+--    CO-OP
+--    Others can use it          NO
+--    ...
+--                     CLOSE
+--  ─────────────────────────────────────────────
+--    status line
+--    UP/DOWN select   LEFT/RIGHT change   .radmenu close
+local SECTIONS = { [1] = "SHIELD", [3] = "CO-OP", [4] = "DISPLAY", [7] = "STARTUP" }
+local MENU_WIDTH, LABEL_WIDTH, VALUE_WIDTH, BAR_WIDTH = 470, 190, 150, 110
+local CLEAR = { R = 0, G = 0, B = 0, A = 0 }
+local ROW_LIT = { R = 0.25, G = 1.0, B = 0.45, A = 0.13 }
+local DIM_LINE = { R = 0.25, G = 1.0, B = 0.45, A = 0.3 }
+local BAR_BG = { R = 1, G = 1, B = 1, A = 0.1 }
+
+local function Box(tree, w, h, child)
+    local box = Construct("SizeBox", tree)
+    if w then box:SetWidthOverride(w) end
+    if h then box:SetHeightOverride(h) end
+    if child then box:SetContent(child) end
+    return box
+end
+
+local function Fill(tree, color)
+    local b = Construct("Border", tree)
+    b:SetBrushColor(color)
+    return b
+end
+
+local function Text(tree, size, color, spacing)
+    local t = Construct("TextBlock", tree)
+    StyleText(t, size, color, spacing)
+    return t
+end
+
+local function Pad(slot, l, t, r, b)
+    pcall(function() slot:SetPadding({ Left = l, Top = t, Right = r, Bottom = b }) end)
+end
+
+local function Middle(slot) pcall(function() slot:SetVerticalAlignment(2) end) end
+
+local function BuildMenu(hud)
+    local tree = hud.WidgetTree
+    local m = { rows = {} }
+    m.panel = DarkPanel(tree, 0.9)
+    local width = Construct("SizeBox", tree)
+    pcall(function() width:SetMinDesiredWidth(MENU_WIDTH) end)
+    m.panel:SetContent(width)
+    local column = Construct("VerticalBox", tree)
+    width:SetContent(column)
+
+    -- header: accent bar, title, ON/OFF pill
+    local header = Fill(tree, { R = 0.03, G = 0.09, B = 0.05, A = 0.95 })
+    pcall(function() header:SetPadding({ Left = 14, Top = 12, Right = 14, Bottom = 12 }) end)
+    column:AddChildToVerticalBox(header)
+    local headRow = Construct("HorizontalBox", tree)
+    header:SetContent(headRow)
+    m.accent = Fill(tree, GREEN)
+    Middle(headRow:AddChildToHorizontalBox(Box(tree, 4, 34, m.accent)))
+    local titles = Construct("VerticalBox", tree)
+    local titlesSlot = headRow:AddChildToHorizontalBox(titles)
+    Pad(titlesSlot, 12, 0, 0, 0)
+    Middle(titlesSlot)
+    pcall(function() titlesSlot:SetSize({ SizeRule = 1, Value = 1.0 }) end)   -- fill: pushes the pill right
+    m.title = Text(tree, 17, WHITE, 120)
+    SetText(m.title, "RADIATION SHIELD")
+    titles:AddChildToVerticalBox(m.title)
+    local sub = Text(tree, 9, PALE_GREEN, 320)
+    SetText(sub, "SETTINGS")
+    titles:AddChildToVerticalBox(sub)
+    m.pill = Fill(tree, GREEN)
+    pcall(function() m.pill:SetPadding({ Left = 10, Top = 3, Right = 10, Bottom = 3 }) end)
+    m.pillText = Text(tree, 11, { R = 0.02, G = 0.05, B = 0.03, A = 1 }, 150)
+    m.pill:SetContent(m.pillText)
+    Middle(headRow:AddChildToHorizontalBox(m.pill))
+    column:AddChildToVerticalBox(Box(tree, nil, 1, Fill(tree, DIM_LINE)))
+
+    -- settings rows, grouped
     for i, row in ipairs(ROWS) do
-        local value = row[2]()
-        local label = (i == selected and ">  " or "    ") .. row[1]
-        if value ~= "" then label = label .. ":   < " .. value .. " >" end
-        SetText(p.lines[i], label)
-        SetTextColor(p.lines[i], i == selected and GREEN or WHITE)
+        if SECTIONS[i] then
+            local heading = Text(tree, 9, PALE_GREEN, 260)
+            SetText(heading, SECTIONS[i])
+            Pad(column:AddChildToVerticalBox(heading), 18, i == 1 and 10 or 12, 0, 3)
+        end
+        local r = {}
+        r.bg = Fill(tree, CLEAR)
+        pcall(function() r.bg:SetPadding({ Left = 0, Top = 0, Right = 14, Bottom = 0 }) end)
+        Pad(column:AddChildToVerticalBox(r.bg), 0, i == #ROWS and 12 or 1, 0, i == #ROWS and 6 or 1)
+        local line = Construct("HorizontalBox", tree)
+        r.bg:SetContent(line)
+        r.marker = Fill(tree, CLEAR)
+        line:AddChildToHorizontalBox(Box(tree, 4, 30, r.marker))
+        r.label = Text(tree, 13, WHITE)
+        SetText(r.label, row[1])
+        if row[1] == "Close" then
+            -- a centred button instead of a setting
+            local slot = line:AddChildToHorizontalBox(r.label)
+            pcall(function() slot:SetSize({ SizeRule = 1, Value = 1.0 }) end)
+            pcall(function() slot:SetHorizontalAlignment(2) end)
+            Middle(slot)
+            SetText(r.label, "CLOSE")
+            pcall(function() r.label.Font.LetterSpacing = 300 end)
+        else
+            local labelSlot = line:AddChildToHorizontalBox(Box(tree, LABEL_WIDTH, nil, r.label))
+            Pad(labelSlot, 14, 0, 0, 0)
+            Middle(labelSlot)
+            r.left = Text(tree, 13, GREEN)
+            SetText(r.left, "<")
+            Middle(line:AddChildToHorizontalBox(Box(tree, 18, nil, r.left)))
+            local valueRow = Construct("HorizontalBox", tree)
+            Middle(line:AddChildToHorizontalBox(Box(tree, VALUE_WIDTH, nil, valueRow)))
+            r.value = Text(tree, 13, WHITE)
+            Middle(valueRow:AddChildToHorizontalBox(r.value))
+            r.right = Text(tree, 13, GREEN)
+            SetText(r.right, ">")
+            Pad(valueRow:AddChildToHorizontalBox(r.right), 10, 0, 0, 0)
+            if row[1] == "Less radiation" then
+                -- a small gauge of the percentage
+                local gauge = Construct("HorizontalBox", tree)
+                Middle(line:AddChildToHorizontalBox(gauge))
+                r.barFill = Box(tree, 0, 6, Fill(tree, GREEN))
+                r.barRest = Box(tree, BAR_WIDTH, 6, Fill(tree, BAR_BG))
+                Middle(gauge:AddChildToHorizontalBox(r.barFill))
+                Middle(gauge:AddChildToHorizontalBox(r.barRest))
+            end
+        end
+        m.rows[i] = r
+    end
+
+    -- footer: status and keys
+    column:AddChildToVerticalBox(Box(tree, nil, 1, Fill(tree, DIM_LINE)))
+    local footer = Construct("VerticalBox", tree)
+    Pad(column:AddChildToVerticalBox(footer), 18, 10, 14, 12)
+    m.status = Text(tree, 12, PALE_GREEN)
+    footer:AddChildToVerticalBox(m.status)
+    m.keys = Text(tree, 9, PALE_GREY, 120)
+    SetText(m.keys, "UP / DOWN  select      LEFT / RIGHT  change      .radmenu  close")
+    Pad(footer:AddChildToVerticalBox(m.keys), 0, 6, 0, 0)
+
+    Attach(hud, m.panel, 0.5, 0.5, 0, 0, 102)
+    return m
+end
+
+local function ValueColor(value)
+    if value == "ON" or value == "YES" or value == "ALLOWED BY HOST" then return GREEN end
+    if value == "OFF" or value == "NO" then return PALE_GREY end
+    if value == "DISABLED BY HOST" then return AMBER end
+    return WHITE
+end
+
+UpdateMenu = function()
+    local hud = GetHud()
+    if not hud then return end
+    if not (ui.menu and ui.menu.panel:IsValid()) then
+        ui.menu = nil
+        local ok, err = pcall(function() ui.menu = BuildMenu(hud) end)
+        if not ok then Warn(err) return end
+    end
+    local m = ui.menu
+    SetText(m.pillText, isOn and "ON" or "OFF")
+    pcall(function() m.pill:SetBrushColor(isOn and GREEN or GREY) end)
+    pcall(function() m.accent:SetBrushColor(isOn and GREEN or GREY) end)
+    for i, row in ipairs(ROWS) do
+        local r = m.rows[i]
+        local lit = i == selected
+        pcall(function() r.bg:SetBrushColor(lit and ROW_LIT or CLEAR) end)
+        pcall(function() r.marker:SetBrushColor(lit and GREEN or CLEAR) end)
+        SetTextColor(r.label, lit and WHITE or PALE_GREY)
+        if r.value then
+            local value = row[2]()
+            SetText(r.value, value)
+            SetTextColor(r.value, ValueColor(value))
+            local arrows = lit and HIT_TEST_INVISIBLE or 2   -- 2 = Hidden: keeps the space
+            pcall(function() r.left:SetVisibility(arrows) end)
+            pcall(function() r.right:SetVisibility(arrows) end)
+        else
+            SetTextColor(r.label, lit and GREEN or PALE_GREY)
+        end
+        if r.barFill then
+            local filled = math.floor(BAR_WIDTH * reduction + 0.5)
+            pcall(function() r.barFill:SetWidthOverride(filled) end)
+            pcall(function() r.barRest:SetWidthOverride(BAR_WIDTH - filled) end)
+        end
     end
     local status, color = Status()
-    SetText(p.lines[#ROWS + 1], " ")
-    SetText(p.lines[#ROWS + 2], status)
-    SetTextColor(p.lines[#ROWS + 2], color)
-    SetText(p.lines[#ROWS + 3], "Up/Down: choose    Left/Right: change    .radmenu: close")
-    SetTextColor(p.lines[#ROWS + 3], PALE_GREY)
-    Show(p, true)
+    SetText(m.status, status)
+    SetTextColor(m.status, color)
+    Show(m, true)
 end
 
 CloseMenu = function()
