@@ -31,7 +31,7 @@ Each of these mods is switched on by the `enabled.txt` in its folder:
 | **MISERYModMenu** | PageUp menu with in-game item names, a search box, single spawn and console commands. |
 | **Mi8CargoHold** | The Mi-8 wreck becomes a 1,000-slot storage container. In co-op the host's hold is shared: everyone who has this mod can open it, and the host's save keeps it. |
 | **WorldTweaks** *(new)* | Day/night length (22 / 4), season and darker nights in one config. Replaces DayLengthTweaks and the Darker Nights pak. |
-| **RadiationShield** *(new)* | HOME toggles less radiation (for bunker hot spots), with an on-screen badge. `.radmenu` opens a settings menu with a live radiation readout. Works in co-op. |
+| **RadiationShield** *(new)* | HOME toggles less radiation (for bunker hot spots), with an on-screen badge. `.radmenu` opens a settings menu with a live radiation readout. In co-op each player has their own shield, if the host allows it. |
 | **BackpackWeightFix** *(new)* | Resets empty containers stuck with weight (e.g. 73/75 kg) to 0 every 30 s. |
 | **RandomEmissions** | Random emission times and a warning siren. Fixed so it no longer piles up. |
 | **MISERY_StructuralFreedom** | Relaxed building support rules (unchanged). |
@@ -89,7 +89,7 @@ Close it with the Close row or `.radmenu` again. HOME (or your chosen key) still
 |---|---|
 | Shield | On / off (same as HOME) |
 | Less radiation | 5–100% in 5% steps (`.radshield 73` for exact values) |
-| Protect | **Only me**, or **Everyone**: when you host, it also covers every player in your world |
+| Others can use it | Host only: whether players who joined your world may use their own shields |
 | Live readout | A panel with your radiation, what comes in per second, what the shield removes, the actual change and the time until maximum |
 | Badge / Badge position | Shows the on-screen badge, and where it sits |
 | Shield on at start | Switches the shield on as soon as the game starts |
@@ -97,9 +97,17 @@ Close it with the Close row or `.radmenu` again. HOME (or your chosen key) still
 
 Every change is saved immediately to `RadiationShield\settings.txt`.
 
-**Co-op:** your own shield always covers you. If you host, set **Protect: Everyone** to cover your friends too, even if
-they don't have the mod. If you join someone and the readout says *"Host's game adds your radiation"*, your
-game can't reduce it: the host needs this mod with **Protect: Everyone**.
+**Co-op:** every player's shield is their own. Pressing HOME protects only you, at your own percentage.
+The host decides whether players who join may use theirs, with **Others can use it** in the host's menu:
+
+- **YES:** when a joined player presses HOME, their game asks the host's game, the shield turns on for that player only,
+  and their badge shows it.
+- **NO:** the joined player's badge shows **DISABLED BY HOST** and the shield stays off. If the host switches it to NO
+  later, shields that are already on turn off.
+- **The host doesn't have the mod:** after 3 seconds the badge shows **HOST HAS NO SHIELD MOD**.
+
+Everyone needs this mod. The two games talk through two messages that are built into Unreal Engine, so it works
+whichever game works out the radiation. The host's answers also show as a line in the joined player's console.
 
 **Finding the right setting:** turn on **Live readout**, walk into the hot spot and watch **Maximum in**.
 Raise **Less radiation** until it's long enough to do what you need there.

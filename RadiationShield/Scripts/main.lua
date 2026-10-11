@@ -10,10 +10,12 @@
 --   .radshield 75          set 75% less radiation and switch the shield on
 --   .radmeter              measure a hot spot, then .radmeter for a summary
 --
--- Co-op: your shield always covers you. If you host, "Protect: Everyone"
--- covers every player in your world. If you join someone, the host's game
--- may be the one that adds your radiation - the menu tells you when, and then
--- the host's shield with "Protect: Everyone" is what protects you.
+-- Co-op: everyone's shield is their own - HOME protects only the player who
+-- pressed it. The host decides whether players who joined may use theirs
+-- ("Others can use it" in the host's menu); if not, they see "Disabled by
+-- host". The host's and the players' mods talk through two messages Unreal
+-- Engine always has (ServerCheat to the host, ClientMessage back), so this
+-- works whichever game adds the radiation. Everyone needs this mod.
 ------------------------------------------------------------
 -- Defaults. The menu saves your choices to settings.txt in this mod's
 -- folder; that file overrides these.
@@ -29,8 +31,8 @@ local showIndicator = true
 local badgePosition = "Top centre"
 -- Live readout of incoming radiation (also switchable in the menu)
 local showDebug = false
--- When you host: also protect the other players in your world
-local protectEveryone = false
+-- When you host: players who joined may use their own shields
+local allowOthers = false
 ----------------------------------
 
 local SETTINGS_PATH = "./ue4ss/Mods/RadiationShield/settings.txt"
@@ -73,7 +75,7 @@ local function LoadSettings()
     startOn = bool(values.startOn, startOn)
     showIndicator = bool(values.showIndicator, showIndicator)
     showDebug = bool(values.showDebug, showDebug)
-    protectEveryone = bool(values.protectEveryone, protectEveryone)
+    allowOthers = bool(values.allowOthers, allowOthers)
     for _, p in ipairs(POSITIONS) do if p[1] == values.badgePosition then badgePosition = p[1] end end
     if values.toggleKey and values.toggleKey:match("^[%w_]+$") then toggleKey = values.toggleKey end
 end
@@ -87,7 +89,7 @@ local function SaveSettings()
     file:write("showIndicator = " .. tostring(showIndicator) .. "\n")
     file:write("badgePosition = " .. badgePosition .. "\n")
     file:write("showDebug = " .. tostring(showDebug) .. "\n")
-    file:write("protectEveryone = " .. tostring(protectEveryone) .. "\n")
+    file:write("allowOthers = " .. tostring(allowOthers) .. "\n")
     file:write("toggleKey = " .. toggleKey .. "\n")
     file:close()
     return true
@@ -102,6 +104,7 @@ local boundKey = toggleKey   -- the key actually bound this session
 local isOn = startOn
 local isHooked = false
 local isLoopRunning = false
+local RebuildOthers
 local menuOpen = false
 -- "shrink": make the amount smaller before the game adds it (exact, also near
 -- the maximum). "takeback": remove it right after it was added - used if the
@@ -110,8 +113,16 @@ local mode = "shrink"
 local radiationField = nil
 local maxField = false   -- false = not looked for yet, nil = none exists
 local myInventory, myAddress = nil, nil
+local myController = nil
 local amHost = true      -- false when we joined someone else's world
-local hostSide = false   -- joined, and the host's game adds our radiation
+-- Joined someone: what the host's mod said. nil = not asked yet,
+-- "asking", "allowed", "denied", "nomod" (no answer: host lacks the mod)
+local hostAnswer = nil
+-- Hosting: players who joined and have their shield on.
+-- others[controller address] = { pc = controller, reduction = 0.25, name = "..." }
+local others = {}
+local othersByInv = {}     -- [inventory address] = reduction, for the hook
+local othersActive = false
 local intake, lastSample = 0, nil   -- shield check: radiation the game added since the last second
 local rawSecond, hitsSecond = 0, 0  -- what the game sent this second, before the shield
 local live = { raw = 0, rose = 0, now = nil, max = nil }   -- smoothed, for the readout
@@ -120,6 +131,7 @@ local meter = nil
 local reportedWorking = false   -- one log line per switch-on, so the log shows it's acting
 
 local function Measuring() return meterOn or showDebug or menuOpen end
+local function Joined() return myController ~= nil and not amHost end
 
 local function AddressOf(obj)
     local ok, address = pcall(function() return obj:GetAddress() end)
@@ -136,6 +148,7 @@ local function RefreshMyInventory()
     pcall(function()
         for _, ctrl in ipairs(FindAllOf("BP_SGKController_C") or {}) do
             if ctrl:IsLocalController() then
+                myController = ctrl
                 local candidate = ctrl.Character.PlayerInventory
                 if candidate:IsValid() then myInventory = candidate end
                 return
@@ -146,7 +159,6 @@ local function RefreshMyInventory()
     if myInventory then
         local ok, authority = pcall(function() return myInventory:GetOwner():HasAuthority() end)
         amHost = not (ok and authority == false)
-        if amHost then hostSide = false end
     end
     return myInventory
 end
@@ -191,26 +203,34 @@ end
 -- radiation zone, for every player on the host), before the game applies it
 -- - so this must stay cheap: no object searches, no widgets.
 local function OnIncreaseRadiation(selfParam, amountParam)
-    if not (isOn or Measuring()) then return end
+    if not (isOn or othersActive or Measuring()) then return end
     local inv = nil
     pcall(function() inv = selfParam:get() end)
     if not inv then return end
-    local mine = myAddress ~= nil and AddressOf(inv) == myAddress
-    if not mine and not (isOn and protectEveryone and amHost) then return end
+    local address = AddressOf(inv)
+    local mine = myAddress ~= nil and address == myAddress
+    local cut = nil
+    if mine then
+        if isOn then cut = reduction end
+    else
+        -- hosting: another player whose own shield is on
+        cut = othersByInv[address]
+        if not cut then return end
+    end
     local amount = nil
     pcall(function() amount = amountParam:get() end)
     if type(amount) ~= "number" or amount <= 0 then return end
     if mine then rawSecond, hitsSecond = rawSecond + amount, hitsSecond + 1 end
-    if not isOn then return end
+    if not cut then return end
     if mine then intake = intake + amount end
     if mode == "shrink" or not amHost then
-        pcall(function() amountParam:set(amount * (1 - reduction)) end)
+        pcall(function() amountParam:set(amount * (1 - cut)) end)
         if mine and not reportedWorking then
             reportedWorking = true
-            log(string.format("Working: radiation hit %.3f reduced to %.3f", amount, amount * (1 - reduction)))
+            log(string.format("Working: radiation hit %.3f reduced to %.3f", amount, amount * (1 - cut)))
         end
     else
-        local take = amount * reduction
+        local take = amount * cut
         -- queued: runs after the game's own function has added the radiation
         ExecuteInGameThread(function() TakeBack(inv, take) end)
     end
@@ -516,13 +536,12 @@ local function StartAnimation()
 end
 
 local function BadgeValue()
-    local text = "-" .. Percent(reduction) .. "% RADIATION"
-    if protectEveryone and amHost then text = text .. "  |  ALL PLAYERS" end
-    return text
+    return "-" .. Percent(reduction) .. "% RADIATION"
 end
 
--- Game thread only (widget calls)
-local function ShowIndicator(on)
+-- Game thread only (widget calls). on = true/false, or a short notice
+-- ("DISABLED BY HOST") shown like "SHIELD OFF" in amber.
+local function ShowIndicator(on, notice)
     if not showIndicator then
         if ui.badge then Show(ui.badge, false) end
         return
@@ -537,12 +556,12 @@ local function ShowIndicator(on)
         SetTextColor(b.value, WHITE)
         offUntil = nil
     else
-        SetText(b.value, "SHIELD OFF")
-        pcall(function() b.accent:SetBrushColor(GREY) end)
+        SetText(b.value, notice or "SHIELD OFF")
+        pcall(function() b.accent:SetBrushColor(notice and AMBER or GREY) end)
         pcall(function() b.accent:SetRenderOpacity(1) end)
-        SetTextColor(b.title, GREY)
-        SetTextColor(b.value, PALE_GREY)
-        offUntil = os.clock() + 1.5
+        SetTextColor(b.title, notice and AMBER or GREY)
+        SetTextColor(b.value, notice and WHITE or PALE_GREY)
+        offUntil = os.clock() + (notice and 3 or 1.5)
         fade = 1
     end
     pcall(function() b.panel:SetVisibility(HIT_TEST_INVISIBLE) end)
@@ -552,12 +571,26 @@ end
 ------------------------------------------------------------
 -- Live readout
 ------------------------------------------------------------
+local function CountOthers()
+    local n = 0
+    for _ in pairs(others) do n = n + 1 end
+    return n
+end
+
 local function Status()
     if not myAddress then return "Not in a world yet", GREY end
-    if hostSide then return "Host's game adds your radiation: host needs Protect: Everyone", AMBER end
-    if not amHost then return "Joined game: your shield covers you", PALE_GREEN end
+    if Joined() then
+        if hostAnswer == "denied" then return "Disabled by host", AMBER end
+        if hostAnswer == "nomod" then return "Host doesn't have RadiationShield", AMBER end
+        if hostAnswer == "asking" then return "Asking the host...", PALE_GREY end
+        if hostAnswer == "allowed" then return "Allowed by host: your shield covers only you", PALE_GREEN end
+        return "Joined game: press " .. boundKey .. " to ask the host", PALE_GREY
+    end
     if not isHooked then return "Backup mode: radiation taken back each second", AMBER end
-    if protectEveryone then return "Hosting: shield covers every player", PALE_GREEN end
+    if allowOthers then
+        local n = CountOthers()
+        return "Hosting: others may use shields (" .. n .. " on now)", PALE_GREEN
+    end
     return mode == "shrink" and "Shield cuts radiation as it comes in"
         or "Shield takes radiation back as it comes in", PALE_GREEN
 end
@@ -604,18 +637,72 @@ end
 -- if the game ignores the smaller amount), feeds the meter and the readout.
 local UpdateMenu   -- defined with the menu below
 local searchWait = 0
+
+------------------------------------------------------------
+-- Co-op messages
+------------------------------------------------------------
+-- Player -> host: APlayerController:ServerCheat("RSHIELD on 0.75"). Unreal
+--   sends it to the host in every build; a shipping game ignores its text, the
+--   host's mod reads it.
+-- Host -> player: APlayerController:ClientMessage("... #RS:allowed"). Shows
+--   as a line in that player's console; their mod reads the #RS: tag.
+local SERVER_TAG = "RSHIELD"
+
+local function ParamString(param)
+    local value = param
+    pcall(function() value = param:get() end)
+    if type(value) == "string" then return value end
+    local ok, s = pcall(function() return value:ToString() end)
+    return ok and s or ""
+end
+
+local function PlayerName(pc)
+    local name = "a player"
+    pcall(function() name = pc.PlayerState:GetPlayerName():ToString() end)
+    return name
+end
+
+local function Tell(pc, tag, text)
+    pcall(function() pc:ClientMessage("[RadiationShield] " .. text .. " #RS:" .. tag, FName("None"), 0.0) end)
+end
+
+-- Hosting: map each shielded player's current inventory to their reduction
+RebuildOthers = function()
+    local byInv, active = {}, false
+    for key, o in pairs(others) do
+        local inv = nil
+        local okPc = pcall(function() if o.pc:IsValid() then inv = o.pc.Character.PlayerInventory end end)
+        if not okPc or not o.pc:IsValid() then
+            others[key] = nil   -- left the game
+        elseif inv and inv:IsValid() then
+            local address = AddressOf(inv)
+            if address then byInv[address] = o.reduction; active = true end
+        end
+    end
+    othersByInv, othersActive = byInv, active
+end
+
+-- Hosting: tell every player who joined (permission changed)
+local function TellEveryone(tag, text)
+    pcall(function()
+        for _, ctrl in ipairs(FindAllOf("BP_SGKController_C") or {}) do
+            if not ctrl:IsLocalController() then Tell(ctrl, tag, text) end
+        end
+    end)
+end
 local function StartLoop()
     if isLoopRunning then return end
     isLoopRunning = true
     intake, lastSample = 0, nil
     LoopAsync(1000, function()
-        if not (isOn or Measuring()) then
+        if not (isOn or Measuring() or next(others)) then
             isLoopRunning = false
             return true
         end
         ExecuteInGameThread(function()
             local raw, hits = rawSecond, hitsSecond
             rawSecond, hitsSecond = 0, 0
+            if next(others) then RebuildOthers() end   -- respawns give players new inventories
             -- not in a world (main menu, loading): search only every 5 s,
             -- each search walks every object in the game
             local inv = nil
@@ -643,17 +730,6 @@ local function StartLoop()
                         mode = "takeback"
                         log("The game ignored the smaller radiation amount; taking back "
                             .. Percent(reduction) .. "% after it's added instead")
-                    end
-                end
-                -- Joined someone: radiation rising with nothing going through
-                -- this game's IncreaseRadiation means the host's game adds it.
-                if not amHost then
-                    if raw > 0 then
-                        hostSide = false
-                    elseif rose > 0.05 and not hostSide then
-                        hostSide = true
-                        log("Your radiation is added by the host's game, so your own shield can't reduce it. "
-                            .. "The host's RadiationShield with Protect: Everyone covers you.")
                     end
                 end
             end
@@ -686,6 +762,104 @@ local function SetShield(on)
     log("Radiation shield " .. (isOn and ("ON - " .. Percent(reduction) .. "% less radiation") or "OFF"))
 end
 
+-- Joined someone: the host's mod decides. Ask, and wait for the answer.
+local askId = 0
+local function AskHost(on)
+    if not on then
+        SetShield(false)
+        pcall(function() myController:ServerCheat(SERVER_TAG .. " off") end)
+        return
+    end
+    hostAnswer = "asking"
+    askId = askId + 1
+    local myAsk = askId
+    local sent = pcall(function() myController:ServerCheat(SERVER_TAG .. " on " .. reduction) end)
+    log("Asking the host to allow your radiation shield")
+    -- no answer in 3 s: the host doesn't run this mod
+    LoopAsync(3000, function()
+        ExecuteInGameThread(function()
+            if askId == myAsk and hostAnswer == "asking" then
+                hostAnswer = "nomod"
+                log("No answer from the host" .. (sent and "" or " (couldn't send)")
+                    .. " - the host needs RadiationShield for shields in their world")
+                ShowIndicator(false, "HOST HAS NO SHIELD MOD")
+                if menuOpen then UpdateMenu() end
+            end
+        end)
+        return true
+    end)
+end
+
+-- HOME, .radshield and the menu all come here
+local function ToggleTo(on)
+    ExecuteInGameThread(function()
+        RefreshMyInventory()
+        if Joined() then AskHost(on) else SetShield(on) end
+    end)
+end
+
+-- Host's answers, on a player who joined
+local function OnClientMessage(selfParam, textParam)
+    if not Joined() then return end   -- the host's own copies of its messages
+    local text = ParamString(textParam)
+    local tag = text:match("#RS:(%a+)%s*$")
+    if not tag then return end
+    if tag == "on" then
+        hostAnswer = "allowed"
+        if not isOn then SetShield(true) end
+    elseif tag == "denied" then
+        hostAnswer = "denied"
+        if isOn then
+            isOn = false
+            log("Radiation shield OFF - disabled by the host")
+        end
+        ShowIndicator(false, "DISABLED BY HOST")
+        log("The host has radiation shields disabled")
+    elseif tag == "allowed" then
+        hostAnswer = "allowed"
+        log("The host allows radiation shields - press " .. boundKey .. " to use yours")
+    end
+    if menuOpen then UpdateMenu() end
+end
+
+-- A joined player's request, on the host
+local function OnServerCheat(selfParam, msgParam)
+    if Joined() then return end       -- only the host answers
+    local msg = ParamString(msgParam)
+    local cmd, value = msg:match("^" .. SERVER_TAG .. " (%a+)%s*([%d%.]*)")
+    if not cmd then return end
+    local pc = nil
+    pcall(function() pc = selfParam:get() end)
+    if not pc then return end
+    local key = AddressOf(pc)
+    if key == AddressOf(myController) then return end
+    if cmd == "on" then
+        if not allowOthers then
+            Tell(pc, "denied", "Radiation shields are disabled by the host")
+            log(PlayerName(pc) .. " asked for a radiation shield - disabled (Others can use it: NO)")
+            return
+        end
+        local r = math.max(0.01, math.min(1, tonumber(value) or 0.25))
+        others[key] = { pc = pc, reduction = r }
+        RebuildOthers()
+        StartLoop()
+        Tell(pc, "on", "Radiation shield ON for you (" .. Percent(r) .. "% less radiation)")
+        log(PlayerName(pc) .. " turned their radiation shield on (" .. Percent(r) .. "% less)")
+    elseif cmd == "off" then
+        if others[key] then log(PlayerName(pc) .. " turned their radiation shield off") end
+        others[key] = nil
+        RebuildOthers()
+    end
+    if menuOpen then UpdateMenu() end
+end
+
+for path, fn in pairs({
+    ["/Script/Engine.PlayerController:ServerCheat"] = OnServerCheat,
+    ["/Script/Engine.PlayerController:ClientMessage"] = OnClientMessage,
+}) do
+    if not pcall(RegisterHook, path, fn) then log("Co-op messages unavailable (" .. path .. ")") end
+end
+
 ------------------------------------------------------------
 -- Settings menu (.radmenu)
 ------------------------------------------------------------
@@ -710,18 +884,36 @@ local CloseMenu
 -- label, current value, change(direction: -1 left, 1 right)
 local ROWS = {
     { "Shield", function() return isOn and "ON" or "OFF" end,
-      function() SetShield(not isOn) end },
+      function() ToggleTo(not isOn) end },
     { "Less radiation", function() return Percent(reduction) .. "%" end,
       function(dir)
           reduction = math.max(5, math.min(100, Percent(reduction) + 5 * dir)) / 100
           if isOn then ShowIndicator(true) end
+          if isOn and Joined() then
+              pcall(function() myController:ServerCheat(SERVER_TAG .. " on " .. reduction) end)
+          end
           Changed("reduction " .. Percent(reduction) .. "%")
       end },
-    { "Protect", function() return protectEveryone and "Everyone (when you host)" or "Only me" end,
+    { "Others can use it", function()
+          if Joined() then
+              return hostAnswer == "allowed" and "ALLOWED BY HOST" or (hostAnswer == "denied" and "DISABLED BY HOST" or "host decides")
+          end
+          return allowOthers and "YES" or "NO"
+      end,
       function()
-          protectEveryone = not protectEveryone
-          if isOn then ShowIndicator(true) end
-          Changed("protect " .. (protectEveryone and "everyone" or "only me"))
+          if Joined() then
+              log("Only the host can change this")
+              return
+          end
+          allowOthers = not allowOthers
+          if allowOthers then
+              TellEveryone("allowed", "The host allows radiation shields - press your shield key to use yours")
+          else
+              others = {}
+              RebuildOthers()
+              TellEveryone("denied", "The host disabled radiation shields")
+          end
+          Changed("others can use it " .. (allowOthers and "yes" or "no"))
       end },
     { "Live readout", function() return showDebug and "ON" or "OFF" end,
       function()
@@ -815,7 +1007,7 @@ end
 -- Keys and console commands
 ------------------------------------------------------------
 local okKey = pcall(function()
-    RegisterKeyBind(Key[boundKey], function() SetShield(not isOn) end)
+    RegisterKeyBind(Key[boundKey], function() ToggleTo(not isOn) end)
 end)
 if not okKey then log("Key '" .. tostring(boundKey) .. "' could not be bound; use .radshield instead") end
 -- Arrow keys only do something while the menu is open
@@ -833,12 +1025,12 @@ RegisterConsoleCommandHandler(".radshield", function(FullCommand, Parameters)
         end
         reduction = percent / 100
         Changed("reduction " .. Percent(reduction) .. "%")
-        SetShield(true)
+        ToggleTo(true)
         return true
     end
-    if arg == "on" then SetShield(true)
-    elseif arg == "off" then SetShield(false)
-    else SetShield(not isOn) end
+    if arg == "on" then ToggleTo(true)
+    elseif arg == "off" then ToggleTo(false)
+    else ToggleTo(not isOn) end
     return true
 end)
 
@@ -870,6 +1062,9 @@ RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
         ExecuteInGameThread(function()
             myInventory, myAddress = nil, nil
             ui.hudObj = nil
+            -- joined a world (or respawned) with the shield on: check with this host
+            RefreshMyInventory()
+            if isOn and Joined() then AskHost(true) end
             if isOn or Measuring() then RefreshMyInventory() end
             if isOn then ShowIndicator(true) end
             UpdateReadout()
