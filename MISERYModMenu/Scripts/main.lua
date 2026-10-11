@@ -3171,8 +3171,756 @@ function ItemMenu.SafeTick()
     end
 end
 
+-- ---------- modern look ----------
+-- The menu is the game's own developer panel (stone frame, grey stock
+-- buttons, black-on-black list). When it opens, its widgets are recoloured in
+-- place: dark rounded panel, dark rounded buttons with white text, a green
+-- SPAWN, readable list and fields. Nothing is added or moved, so every button
+-- keeps working; anything the game refuses simply keeps its old look.
+-- Set MenuStyle.enabled = false to keep the game's look.
+local MenuStyle = {
+    enabled = true,
+    donePath = nil,     -- cheat menu instance already styled
+    searchDone = nil,   -- search box already styled
+}
+local MS_PANEL = { R = 0.035, G = 0.04, B = 0.045, A = 0.97 }
+local MS_CLEAR = { R = 0, G = 0, B = 0, A = 0 }
+local MS_SURFACE = { R = 0.11, G = 0.12, B = 0.135, A = 1 }
+local MS_SURFACE_HOVER = { R = 0.17, G = 0.185, B = 0.2, A = 1 }
+local MS_SURFACE_DOWN = { R = 0.08, G = 0.085, B = 0.095, A = 1 }
+local MS_FIELD = { R = 0.06, G = 0.065, B = 0.075, A = 1 }
+local MS_LINE = { R = 1, G = 1, B = 1, A = 0.1 }
+local MS_ACCENT = { R = 0.32, G = 0.86, B = 0.56, A = 1 }
+local MS_ACCENT_HOVER = { R = 0.42, G = 0.93, B = 0.65, A = 1 }
+local MS_ACCENT_DOWN = { R = 0.24, G = 0.7, B = 0.45, A = 1 }
+local MS_CHIP = { R = 0.86, G = 0.88, B = 0.91, A = 1 }        -- list buttons keep dark text
+local MS_CHIP_HOVER = { R = 0.95, G = 0.96, B = 0.97, A = 1 }
+local MS_WHITE = { R = 0.95, G = 0.96, B = 0.97, A = 1 }
+local MS_LABEL = { R = 0.72, G = 0.75, B = 0.79, A = 1 }
+local MS_MUTED = { R = 0.5, G = 0.53, B = 0.57, A = 1 }
+local MS_INK = { R = 0.03, G = 0.06, B = 0.04, A = 1 }
+
+local function MsSetColor(target, c)
+    target.R, target.G, target.B, target.A = c.R, c.G, c.B, c.A
+end
+
+local function MsSlateColor(slateColor, c)
+    pcall(function() MsSetColor(slateColor.SpecifiedColor, c) end)
+    pcall(function() slateColor.ColorUseRule = 0 end)   -- use the specified colour
+end
+
+-- Edits a brush where it lives: flat colour, rounded corners, optional outline
+local function MsBrush(brush, color, radius, outline)
+    if brush == nil then return end
+    pcall(function() brush.DrawAs = 4 end)              -- RoundedBox
+    pcall(function()
+        local o = brush.OutlineSettings
+        o.RoundingType = 0
+        local r = o.CornerRadii
+        r.X, r.Y, r.Z, r.W = radius, radius, radius, radius
+        o.Width = outline and 1.0 or 0.0
+        if outline then MsSlateColor(o.Color, outline) end
+    end)
+    MsSlateColor(brush.TintColor, color)
+end
+
+local function MsClassName(w)
+    local name = ""
+    pcall(function() name = w:GetClass():GetFName():ToString() end)
+    return name
+end
+
+local function MsText(w)
+    local s = ""
+    pcall(function() s = w:GetText():ToString() end)
+    return s
+end
+
+local function MsFont(text, size, bold)
+    pcall(function()
+        local font = text.Font
+        font.Size = size
+        if bold ~= nil then font.TypefaceFontName = FName(bold and "Bold" or "Regular") end
+        text:SetFont(font)
+    end)
+end
+
+local function MsTextColor(text, c)
+    pcall(function() text:SetColorAndOpacity({ SpecifiedColor = c, ColorUseRule = 0 }) end)
+    pcall(function() text:SetShadowColorAndOpacity({ R = 0, G = 0, B = 0, A = 0 }) end)
+end
+
+local function MsButton(btn, primary)
+    local style = btn.WidgetStyle
+    if primary then
+        MsBrush(style.Normal, MS_ACCENT, 8)
+        MsBrush(style.Hovered, MS_ACCENT_HOVER, 8)
+        MsBrush(style.Pressed, MS_ACCENT_DOWN, 8)
+    else
+        MsBrush(style.Normal, MS_SURFACE, 8, MS_LINE)
+        MsBrush(style.Hovered, MS_SURFACE_HOVER, 8, MS_LINE)
+        MsBrush(style.Pressed, MS_SURFACE_DOWN, 8, MS_ACCENT)
+    end
+    MsBrush(style.Disabled, MS_SURFACE_DOWN, 8)
+    pcall(function() btn:SetBackgroundColor({ R = 1, G = 1, B = 1, A = 1 }) end)   -- no extra grey tint
+    pcall(function() btn:SetColorAndOpacity({ R = 1, G = 1, B = 1, A = 1 }) end)
+end
+
+local function MsCombo(combo)
+    local style = combo.WidgetStyle
+    pcall(function()
+        local b = style.ComboButtonStyle.ButtonStyle
+        MsBrush(b.Normal, MS_CHIP, 6)
+        MsBrush(b.Hovered, MS_CHIP_HOVER, 6)
+        MsBrush(b.Pressed, MS_CHIP, 6, MS_ACCENT)
+    end)
+    pcall(function() MsBrush(style.ComboButtonStyle.MenuBorderBrush, MS_FIELD, 8, MS_LINE) end)
+    -- the drop-down rows: dark, light text, green selection
+    pcall(function()
+        local rows = combo.ItemStyle
+        for _, k in ipairs({ "EvenRowBackgroundBrush", "OddRowBackgroundBrush" }) do
+            pcall(function() MsBrush(rows[k], MS_FIELD, 0) end)
+        end
+        for _, k in ipairs({ "EvenRowBackgroundHoveredBrush", "OddRowBackgroundHoveredBrush", "InactiveHoveredBrush" }) do
+            pcall(function() MsBrush(rows[k], MS_SURFACE_HOVER, 4) end)
+        end
+        for _, k in ipairs({ "ActiveBrush", "ActiveHoveredBrush", "InactiveBrush", "SelectorFocusedBrush" }) do
+            pcall(function() MsBrush(rows[k], MS_ACCENT, 4) end)
+        end
+        MsSlateColor(rows.TextColor, MS_LABEL)
+        MsSlateColor(rows.SelectedTextColor, MS_INK)
+    end)
+    pcall(function()
+        local bar = combo.ScrollBarStyle
+        for _, k in ipairs({ "NormalThumbImage", "HoveredThumbImage", "DraggedThumbImage" }) do
+            pcall(function() MsBrush(bar[k], MS_LINE, 3) end)
+        end
+        for _, k in ipairs({ "VerticalBackgroundImage", "VerticalTopSlotImage", "VerticalBottomSlotImage" }) do
+            pcall(function() MsBrush(bar[k], MS_CLEAR, 0) end)
+        end
+    end)
+    pcall(function() combo.Font.Size = 12 end)   -- used for rows made from now on
+end
+
+local function MsField(box)
+    local style = box.WidgetStyle
+    MsBrush(style.BackgroundImageNormal, MS_FIELD, 6, MS_LINE)
+    MsBrush(style.BackgroundImageHovered, MS_FIELD, 6, MS_MUTED)
+    MsBrush(style.BackgroundImageFocused, MS_FIELD, 6, MS_ACCENT)
+    MsBrush(style.BackgroundImageReadOnly, MS_FIELD, 6)
+    pcall(function() MsSlateColor(style.ForegroundColor, MS_WHITE) end)
+    pcall(function() MsSlateColor(style.BackgroundColor, { R = 1, G = 1, B = 1, A = 1 }) end)
+    pcall(function() MsSlateColor(style.TextStyle.ColorAndOpacity, MS_WHITE) end)
+    pcall(function() box:SetForegroundColor(MS_WHITE) end)
+end
+
+local function MsSpin(spin)
+    local style = spin.WidgetStyle
+    MsBrush(style.BackgroundBrush, MS_FIELD, 6, MS_LINE)
+    MsBrush(style.HoveredBackgroundBrush, MS_FIELD, 6, MS_MUTED)
+    pcall(function() MsBrush(style.ActiveBackgroundBrush, MS_FIELD, 6, MS_ACCENT) end)
+    MsBrush(style.ActiveFillBrush, { R = 0.32, G = 0.86, B = 0.56, A = 0.35 }, 6)
+    pcall(function() MsBrush(style.HoveredFillBrush, { R = 0.32, G = 0.86, B = 0.56, A = 0.25 }, 6) end)
+    MsBrush(style.InactiveFillBrush, MS_CLEAR, 6)
+    pcall(function() MsSlateColor(style.ForegroundColor, MS_WHITE) end)
+    pcall(function() spin:SetForegroundColor({ SpecifiedColor = MS_WHITE, ColorUseRule = 0 }) end)
+end
+
+-- Background pictures (the stone frame): the outermost becomes the dark
+-- rounded panel, any inner ones go clear so the panel shows through.
+local function MsBackground(w, outermost)
+    local color = outermost and MS_PANEL or MS_CLEAR
+    pcall(function() w:SetBrushFromTexture(nil) end)           -- flat colour where the game allows it
+    if MsClassName(w) == "Border" then
+        pcall(function() MsBrush(w.Background, color, 14, outermost and MS_LINE or nil) end)
+        pcall(function() w:SetBrushColor(color) end)
+    else
+        pcall(function() MsBrush(w.Brush, color, 14, outermost and MS_LINE or nil) end)
+        -- tints the texture too if it couldn't be removed: dark, not stone
+        pcall(function() w:SetColorAndOpacity(color) end)
+    end
+end
+
+function MenuStyle.Walk(w, inButton, counts, depth)
+    if depth > 30 or not ItemMenu.IsValid(w) then return end
+    local cls = MsClassName(w)
+    if cls == "Button" then
+        local label = ""
+        pcall(function() label = MsText(w:GetChildAt(0)) end)
+        local primary = label:upper() == "SPAWN"
+        pcall(MsButton, w, primary)
+        counts.buttons = counts.buttons + 1
+        inButton = primary and "primary" or "button"
+    elseif cls == "ComboBoxString" then
+        pcall(MsCombo, w)
+        counts.lists = counts.lists + 1
+    elseif cls == "EditableTextBox" then
+        pcall(MsField, w)
+        counts.fields = counts.fields + 1
+    elseif cls == "SpinBox" then
+        pcall(MsSpin, w)
+        counts.fields = counts.fields + 1
+    elseif cls == "Image" or (cls == "Border" and not inButton) then
+        pcall(MsBackground, w, counts.backgrounds == 0)
+        counts.backgrounds = counts.backgrounds + 1
+    elseif cls == "TextBlock" then
+        local text = MsText(w)
+        if inButton == "primary" then
+            MsFont(w, 14, true)
+            MsTextColor(w, MS_INK)
+        elseif inButton then
+            MsFont(w, 13, true)
+            MsTextColor(w, MS_WHITE)
+        elseif #text > 24 then          -- hints like "Scroll the mouse wheel ..."
+            MsFont(w, 10, false)
+            MsTextColor(w, MS_MUTED)
+        else                            -- section labels: Spawn Item, Time, Weather ...
+            MsFont(w, 13, true)
+            MsTextColor(w, MS_LABEL)
+        end
+        counts.texts = counts.texts + 1
+    end
+    local n = 0
+    pcall(function() n = w:GetChildrenCount() end)
+    for i = 0, (tonumber(n) or 0) - 1 do
+        local child = nil
+        pcall(function() child = w:GetChildAt(i) end)
+        if child then MenuStyle.Walk(child, inButton, counts, depth + 1) end
+    end
+end
+
+-- Game thread. Styles the live menu once (and again after a level load
+-- gives the HUD a new menu).
+function MenuStyle.Apply()
+    if not MenuStyle.enabled then return end
+    local cm = GetCheatMenuWidget()
+    if not ItemMenu.IsValid(cm) then return end
+    local path = ItemMenu.PathOf(cm)
+    if path == MenuStyle.donePath then return end
+    MenuStyle.donePath = path
+    local counts = { buttons = 0, lists = 0, fields = 0, texts = 0, backgrounds = 0 }
+    local ok, err = pcall(function()
+        MenuStyle.Walk(cm.WidgetTree.RootWidget, nil, counts, 0)
+    end)
+    if not ok then
+        Log("[MenuStyle] " .. tostring(err))
+        return
+    end
+    pcall(function() cm:InvalidateLayoutAndVolatility() end)
+    Log(string.format("[MenuStyle] Menu restyled: %d buttons, %d lists, %d fields, %d texts, %d backgrounds",
+        counts.buttons, counts.lists, counts.fields, counts.texts, counts.backgrounds))
+end
+
+-- .menudump: the menu's widgets, for layout work
+function MenuStyle.Dump(w, depth)
+    if depth > 30 or not ItemMenu.IsValid(w) then return end
+    local cls = MsClassName(w)
+    local name = ""
+    pcall(function() name = w:GetFName():ToString() end)
+    local text = cls == "TextBlock" and ("  \"" .. MsText(w) .. "\"") or ""
+    Log("[MenuDump] " .. string.rep("  ", depth) .. cls .. " " .. name .. text)
+    local n = 0
+    pcall(function() n = w:GetChildrenCount() end)
+    for i = 0, (tonumber(n) or 0) - 1 do
+        local child = nil
+        pcall(function() child = w:GetChildAt(i) end)
+        if child then MenuStyle.Dump(child, depth + 1) end
+    end
+end
+
+-- The search box can be added after the menu was styled
+function MenuStyle.StyleSearchBox()
+    if not MenuStyle.enabled or not ItemMenu.IsValid(ItemMenu.searchBox) then return end
+    if ItemMenu.searchPath == MenuStyle.searchDone then return end
+    MenuStyle.searchDone = ItemMenu.searchPath
+    pcall(MsField, ItemMenu.searchBox)
+end
+
+RegisterConsoleCommandHandler(".menudump", function()
+    ExecuteInGameThread(function()
+        local cm = GetCheatMenuWidget()
+        if not ItemMenu.IsValid(cm) then
+            Log("[MenuDump] No menu yet - load into a world first")
+            return
+        end
+        MenuStyle.Dump(cm.WidgetTree.RootWidget, 0)
+    end)
+    return true
+end)
+
+-- ---------- layout ----------
+-- The game places its widgets by hand on a big stone frame, so labels and
+-- fields overlap and the buttons float around. After styling, the same
+-- widgets (not copies: their clicks, hooks and values stay the game's) are
+-- moved into a tidy panel like the Radiation Shield menu:
+--
+--   Mod Menu                         (PageUp closes)
+--   SPAWN ITEM    [ item list                       ]
+--                 [ 1 ][ Search...       ][ Spawn ]
+--   SPAWN ENEMY   [ enemy list          ][ Spawn ]
+--   TIME          Time [ 0 ]  Day [ 1 ]  Month [ 1 ]
+--                 [ Sunny ][ Rain ][ Thunder ]
+--   EVENTS        [ Summon plane ][ Summon Grad ]
+--                 [ Skip 1 emission ][ Skip 5 emissions ]
+--   MOVEMENT      [ Fly ]  scroll the mouse wheel to change speed
+--
+-- Widgets it doesn't recognise go in an "Other" card, so nothing is lost.
+-- If anything fails before the move, the game's layout is left as it was.
+local MenuLayout = { enabled = true, donePath = nil }
+local ML_WIDTH = 500
+local ML_CARD = { R = 1, G = 1, B = 1, A = 0.035 }
+local ML_PANEL = { R = 0.016, G = 0.018, B = 0.022, A = 0.95 }
+local ML_LABELS = {   -- button texts as the game writes them -> as shown
+    SPAWN = "Spawn", FLY = "Fly", SUNNY = "Sunny", RAIN = "Rain", THUNDER = "Thunder",
+    ["SUMMON PLANE"] = "Summon plane", ["SUMMON GRAD"] = "Summon Grad",
+    ["SKIP 1 EMISSION"] = "Skip 1 emission", ["SKIP 5 EMISSION"] = "Skip 5 emissions",
+}
+
+local function MlNew(tree, cls)
+    local c = StaticFindObject("/Script/UMG." .. cls)
+    if not ItemMenu.IsValid(c) then error(cls .. " class not found", 0) end
+    local w = StaticConstructObject(c, tree)
+    if not ItemMenu.IsValid(w) then error("could not create " .. cls, 0) end
+    return w
+end
+
+local function MlSetText(text, s)
+    if not pcall(function() text:SetText(FText(s)) end) then pcall(function() text:SetText(s) end) end
+end
+
+local function MlText(tree, s, size, color, bold, spacing)
+    local t = MlNew(tree, "TextBlock")
+    pcall(function() t.Font.Size = size end)
+    if bold then pcall(function() t.Font.TypefaceFontName = FName("Bold") end) end
+    if spacing then pcall(function() t.Font.LetterSpacing = spacing end) end
+    MsTextColor(t, color)
+    MlSetText(t, s)
+    return t
+end
+
+local function MlPad(slot, l, t, r, b)
+    pcall(function() slot:SetPadding({ Left = l, Top = t, Right = r, Bottom = b }) end)
+    return slot
+end
+local function MlFill(slot, value)
+    pcall(function() slot:SetSize({ SizeRule = 1, Value = value or 1.0 }) end)
+    return slot
+end
+local function MlMiddle(slot) pcall(function() slot:SetVerticalAlignment(2) end) return slot end
+
+local function MlBox(tree, w, h, child)
+    local box = MlNew(tree, "SizeBox")
+    if w then box:SetWidthOverride(w) end
+    if h then box:SetHeightOverride(h) end
+    if child then box:SetContent(child) end
+    return box
+end
+
+-- Everything in the menu, sorted by what it is
+function MenuLayout.Collect(root)
+    local f = { buttons = {}, combos = {}, spins = {}, boxes = {}, texts = {}, backgrounds = {} }
+    local function walk(w, depth)
+        if depth > 30 or not ItemMenu.IsValid(w) then return end
+        local cls = MsClassName(w)
+        local item = { w = w, path = ItemMenu.PathOf(w), parent = "" }
+        pcall(function() item.parent = ItemMenu.PathOf(w:GetParent()) end)
+        if cls == "Button" then
+            pcall(function() item.text = w:GetChildAt(0) end)
+            item.label = item.text and MsText(item.text) or ""
+            table.insert(f.buttons, item)
+            return
+        elseif cls == "ComboBoxString" then table.insert(f.combos, item) return
+        elseif cls == "SpinBox" then table.insert(f.spins, item) return
+        elseif cls == "EditableTextBox" then table.insert(f.boxes, item) return
+        elseif cls == "TextBlock" then
+            item.label = MsText(w)
+            table.insert(f.texts, item)
+            return
+        elseif cls == "Image" or cls == "Border" then
+            table.insert(f.backgrounds, item)
+        end
+        local n = 0
+        pcall(function() n = w:GetChildrenCount() end)
+        for i = 0, (tonumber(n) or 0) - 1 do
+            local child = nil
+            pcall(function() child = w:GetChildAt(i) end)
+            if child then walk(child, depth + 1) end
+        end
+    end
+    walk(root, 0)
+    return f
+end
+
+-- Works out which widget is which. Returns the plan, or nil and why.
+function MenuLayout.Plan(f)
+    local p = { weather = {}, events = {}, other = {} }
+    local itemPath = ItemMenu.IsValid(ItemMenu.combo) and ItemMenu.PathOf(ItemMenu.combo) or nil
+    for _, c in ipairs(f.combos) do
+        if c.path == itemPath or (not itemPath and not p.itemList) then p.itemList = c
+        elseif not p.enemyList then p.enemyList = c
+        else table.insert(p.other, c) end
+    end
+    if not p.itemList then return nil, "item list not found" end
+
+    for _, b in ipairs(f.buttons) do
+        local key = b.label:upper():gsub("^%s+", ""):gsub("%s+$", "")
+        b.key = key
+        if key == "SPAWN" then
+            -- the item Spawn sits with the item list; the other is for enemies
+            if not p.itemSpawn and b.parent == p.itemList.parent then p.itemSpawn = b
+            else table.insert(p.other, b) end
+        elseif key == "FLY" then p.fly = b
+        elseif key == "SUNNY" or key == "RAIN" or key == "THUNDER" then table.insert(p.weather, b)
+        elseif key:find("^SUMMON") or key:find("^SKIP") then table.insert(p.events, b)
+        else table.insert(p.other, b) end
+    end
+    -- Spawn buttons not matched by their column: first is items, next enemies
+    local rest = {}
+    for _, b in ipairs(p.other) do
+        if b.key == "SPAWN" and not p.itemSpawn then p.itemSpawn = b
+        elseif b.key == "SPAWN" and not p.enemySpawn then p.enemySpawn = b
+        else table.insert(rest, b) end
+    end
+    p.other = rest
+    -- the enemy Spawn is the one left, whatever the column check said
+    if p.enemyList and not p.enemySpawn then
+        for i, b in ipairs(p.other) do
+            if b.key == "SPAWN" then p.enemySpawn = table.remove(p.other, i) break end
+        end
+    end
+
+    local searchPath = ItemMenu.searchPath
+    local amount = ItemMenu.FindAmountBox()
+    local amountPath = amount and ItemMenu.PathOf(amount) or nil
+    for _, b in ipairs(f.boxes) do
+        if b.path == searchPath then p.search = b
+        elseif b.path == amountPath or not p.amount then p.amount = b
+        else table.insert(p.other, b) end
+    end
+
+    -- Time / Day / Month: the label sharing the field's row, else tree order
+    local defaults = { "Time", "Day", "Month" }
+    p.spins = {}
+    for i, s in ipairs(f.spins) do
+        local name = defaults[i] or "Value"
+        for _, t in ipairs(f.texts) do
+            if t.parent == s.parent and #t.label > 0 and #t.label <= 12 then name = t.label end
+        end
+        s.name = name
+        table.insert(p.spins, s)
+    end
+    for _, t in ipairs(f.texts) do
+        if t.label:lower():find("mouse wheel", 1, true) then p.hint = t end
+    end
+    p.backgrounds = f.backgrounds
+    return p
+end
+
+-- attach(panel) puts the new panel on screen before anything moves into it,
+-- so a failure half way can't leave a widget somewhere invisible
+function MenuLayout.Build(cm, p, attach)
+    local tree = cm.WidgetTree
+    local root = tree.RootWidget
+    local L = {}
+
+    -- panel
+    L.panel = MlNew(tree, "Border")
+    L.panel:SetBrushColor(ML_PANEL)
+    MsBrush(L.panel.Background, { R = 1, G = 1, B = 1, A = 1 }, 14, MS_LINE)
+    pcall(function() L.panel:SetPadding({ Left = 18, Top = 16, Right = 18, Bottom = 16 }) end)
+    local width = MlNew(tree, "SizeBox")
+    pcall(function() width:SetWidthOverride(ML_WIDTH) end)
+    L.panel:SetContent(width)
+    local column = MlNew(tree, "VerticalBox")
+    width:SetContent(column)
+    attach(L.panel)
+
+    local head = MlNew(tree, "HorizontalBox")
+    MlPad(column:AddChildToVerticalBox(head), 4, 0, 4, 2)
+    MlMiddle(MlFill(head:AddChildToHorizontalBox(MlText(tree, "Mod Menu", 19, MS_WHITE, true))))
+    MlMiddle(head:AddChildToHorizontalBox(MlText(tree, "PageUp to close", 11, MS_MUTED)))
+
+    local card
+    local function Section(title)
+        MlPad(column:AddChildToVerticalBox(MlText(tree, title, 9, MS_MUTED, true, 140)), 6, 14, 0, 6)
+        local frame = MlNew(tree, "Border")
+        frame:SetBrushColor(ML_CARD)
+        MsBrush(frame.Background, { R = 1, G = 1, B = 1, A = 1 }, 10)
+        pcall(function() frame:SetPadding({ Left = 10, Top = 10, Right = 10, Bottom = 10 }) end)
+        column:AddChildToVerticalBox(frame)
+        card = MlNew(tree, "VerticalBox")
+        frame:SetContent(card)
+    end
+    -- one row of the card: items = { {item, width or nil (= share the rest)}, ... }
+    local function Row(items, height)
+        local row = MlNew(tree, "HorizontalBox")
+        MlPad(card:AddChildToVerticalBox(row), 0, card:GetChildrenCount() > 1 and 8 or 0, 0, 0)
+        for i, it in ipairs(items) do
+            local holder = MlBox(tree, it[2], height)
+            local slot = row:AddChildToHorizontalBox(holder)
+            if not it[2] then MlFill(slot, it[3]) end
+            MlMiddle(MlPad(slot, i > 1 and 8 or 0, 0, 0, 0))
+            if it[1].w then
+                it[1].w:RemoveFromParent()
+                holder:SetContent(it[1].w)
+                it[1].moved = true
+            else
+                holder:SetContent(it[1])   -- one of our own texts
+            end
+        end
+        return row
+    end
+    local function Relabel(b)
+        if b and b.text and ML_LABELS[b.key] then MlSetText(b.text, ML_LABELS[b.key]) end
+    end
+
+    Section("SPAWN ITEM")
+    Row({ { p.itemList } }, 34)
+    local spawnRow = {}
+    if p.amount then table.insert(spawnRow, { p.amount, 64 }) end
+    if p.search then table.insert(spawnRow, { p.search }) end
+    if p.itemSpawn then table.insert(spawnRow, { p.itemSpawn, 104 }) end
+    if #spawnRow > 0 then Row(spawnRow, 34) end
+    Relabel(p.itemSpawn)
+
+    if p.enemyList or p.enemySpawn then
+        Section("SPAWN ENEMY")
+        local r = {}
+        if p.enemyList then table.insert(r, { p.enemyList }) end
+        if p.enemySpawn then table.insert(r, { p.enemySpawn, 104 }) end
+        Row(r, 34)
+        Relabel(p.enemySpawn)
+    end
+
+    if #p.spins > 0 or #p.weather > 0 then
+        Section("TIME AND WEATHER")
+        if #p.spins > 0 then
+            -- labels take only their own width, the fields share the rest
+            local row = MlNew(tree, "HorizontalBox")
+            MlPad(card:AddChildToVerticalBox(row), 0, 0, 0, 0)
+            for i, s in ipairs(p.spins) do
+                local label = MlText(tree, s.name, 12, MS_LABEL, true)
+                MlMiddle(MlPad(row:AddChildToHorizontalBox(label), i > 1 and 14 or 0, 0, 8, 0))
+                local holder = MlBox(tree, nil, 30)
+                MlMiddle(MlFill(row:AddChildToHorizontalBox(holder)))
+                s.w:RemoveFromParent()
+                holder:SetContent(s.w)
+                s.moved = true
+            end
+        end
+        if #p.weather > 0 then
+            local r = {}
+            for _, b in ipairs(p.weather) do table.insert(r, { b }) Relabel(b) end
+            Row(r, 32)
+        end
+    end
+
+    if #p.events > 0 then
+        Section("EVENTS")
+        for i = 1, #p.events, 2 do
+            local r = { { p.events[i] } }
+            if p.events[i + 1] then table.insert(r, { p.events[i + 1] }) end
+            for _, it in ipairs(r) do Relabel(it[1]) end
+            Row(r, 32)
+        end
+    end
+
+    if p.fly then
+        Section("MOVEMENT")
+        Relabel(p.fly)
+        local r = { { p.fly, 120 } }
+        if p.hint then
+            MlSetText(p.hint.w, "Scroll the mouse wheel to change speed")
+            table.insert(r, { p.hint })
+        end
+        Row(r, 32)
+        if p.hint then
+            MsFont(p.hint.w, 11, false)
+            MsTextColor(p.hint.w, MS_MUTED)
+        end
+    end
+
+    if #p.other > 0 then
+        Section("OTHER")
+        for i = 1, #p.other, 2 do
+            local r = { { p.other[i] } }
+            if p.other[i + 1] then table.insert(r, { p.other[i + 1] }) end
+            Row(r, 32)
+        end
+    end
+    return L
+end
+
+-- Moving the Time / Day / Month fields rebuilds them, and a rebuilt field
+-- commits its value (0, 1, 1) - the game then sets 0:00 on the 1st. So the
+-- weather manager's time and date values are saved before the move and any
+-- the move changed are put back.
+function MenuLayout.WeatherManager()
+    local wm = nil
+    pcall(function()
+        local wms = FindAllOf("BP_MultiplayerDynamicWeatherManager_C")
+        if wms and #wms > 0 and wms[1]:IsValid() then wm = wms[1] end
+    end)
+    return wm
+end
+
+local ML_NUMBER_PROPS = { FloatProperty = true, DoubleProperty = true, IntProperty = true, ByteProperty = true }
+function MenuLayout.SaveClock()
+    local wm = MenuLayout.WeatherManager()
+    if not wm then return nil end
+    local saved = {}
+    pcall(function()
+        local cls = wm:GetClass()
+        for _ = 1, 10 do
+            if not ItemMenu.IsValid(cls) then break end
+            cls:ForEachProperty(function(prop)
+                local name, kind = "", ""
+                pcall(function() name = prop:GetFName():ToString() end)
+                pcall(function() kind = prop:GetClass():GetFName():ToString() end)
+                local l = name:lower()
+                if ML_NUMBER_PROPS[kind] and (l:find("time") or l:find("day") or l:find("month")
+                    or l:find("date") or l:find("year") or l:find("season")) then
+                    local v = nil
+                    pcall(function() v = wm[name] end)
+                    if type(v) == "number" then saved[name] = v end
+                end
+            end)
+            local super = nil
+            pcall(function() super = cls:GetSuperStruct() end)
+            cls = super
+        end
+    end)
+    return saved
+end
+
+function MenuLayout.RestoreClock(saved)
+    if not saved then return end
+    local wm = MenuLayout.WeatherManager()
+    if not wm then return end
+    local restored = {}
+    for name, v in pairs(saved) do
+        local now = nil
+        pcall(function() now = wm[name] end)
+        if type(now) == "number" and math.abs(now - v) > 1e-4 then
+            pcall(function() wm[name] = v end)
+            table.insert(restored, string.format("%s %.1f", name, v))
+        end
+    end
+    if #restored == 0 then return end
+    pcall(function() wm["Set Light Rotation"](wm) end)
+    pcall(function() wm["Set Elements"](wm) end)
+    table.sort(restored)
+    Log("[MenuLayout] Moving the time fields reset the clock - put back: " .. table.concat(restored, ", "))
+end
+
+-- Game thread, after MenuStyle.Apply: once per menu instance
+function MenuLayout.Apply()
+    if not MenuLayout.enabled then return end
+    local cm = GetCheatMenuWidget()
+    if not ItemMenu.IsValid(cm) then return end
+    local path = ItemMenu.PathOf(cm)
+    if path == MenuLayout.donePath then return end
+    MenuLayout.donePath = path
+
+    local root, p, why, wrapper = nil, nil, nil, nil
+    local ok, err = pcall(function()
+        root = cm.WidgetTree.RootWidget
+        -- the game wraps everything in its stone frame (a Border, maybe with more
+        -- one-child wrappers): work in the first container holding several things
+        for _ = 1, 6 do
+            if root:GetChildrenCount() ~= 1 then break end
+            if MsClassName(root) == "Border" and not wrapper then wrapper = root end
+            root = root:GetChildAt(0)
+        end
+        if root:GetChildrenCount() < 1 then error("menu root " .. MsClassName(root) .. " holds nothing", 0) end
+        p, why = MenuLayout.Plan(MenuLayout.Collect(root))
+        if not p then error(why, 0) end
+        -- every class we need, checked before anything moves
+        for _, cls in ipairs({ "Border", "SizeBox", "VerticalBox", "HorizontalBox", "TextBlock" }) do
+            if not ItemMenu.IsValid(StaticFindObject("/Script/UMG." .. cls)) then error(cls .. " class not found", 0) end
+        end
+    end)
+    if not ok then
+        Log("[MenuLayout] Keeping the game's layout (" .. tostring(err) .. ") - the menu's widgets follow:")
+        pcall(MenuStyle.Dump, cm.WidgetTree.RootWidget, 0)
+        return
+    end
+
+    -- remember where the frame was, to put the new panel there
+    local frame = p.backgrounds[1]
+    local geo = nil
+    if wrapper then
+        -- the frame holds the whole menu: the new panel goes in its top-left corner
+        geo = { anchors = { Minimum = { X = 0, Y = 0 }, Maximum = { X = 0, Y = 0 } },
+                alignment = { X = 0, Y = 0 }, position = { X = 0, Y = 0 } }
+    end
+    if not geo then pcall(function()
+        local s = frame.w.Slot
+        local a, al = s:GetAnchors(), s:GetAlignment()
+        local pos = s:GetPosition()
+        geo = { anchors = { Minimum = { X = a.Minimum.X, Y = a.Minimum.Y }, Maximum = { X = a.Minimum.X, Y = a.Minimum.Y } },
+                alignment = { X = al.X, Y = al.Y }, position = { X = pos.X, Y = pos.Y } }
+    end) end
+
+    local panelPath = nil
+    local function attach(panel)
+        panelPath = ItemMenu.PathOf(panel)
+        if MsClassName(root) ~= "CanvasPanel" then
+            -- an Overlay or a box: the panel goes in its top-left corner
+            local slot = root:AddChild(panel)
+            pcall(function() slot:SetHorizontalAlignment(1) end)
+            pcall(function() slot:SetVerticalAlignment(1) end)
+            pcall(function() slot:SetPadding({ Left = 0, Top = 0, Right = 0, Bottom = 0 }) end)
+            return
+        end
+        local slot = root:AddChildToCanvas(panel)
+        pcall(function() slot:SetAutoSize(true) end)
+        pcall(function() slot:SetZOrder(10) end)
+        if geo then
+            pcall(function() slot:SetAnchors(geo.anchors) end)
+            pcall(function() slot:SetAlignment(geo.alignment) end)
+            pcall(function() slot:SetPosition(geo.position) end)
+        else
+            pcall(function() slot:SetAnchors({ Minimum = { X = 0.5, Y = 0.5 }, Maximum = { X = 0.5, Y = 0.5 } }) end)
+            pcall(function() slot:SetAlignment({ X = 0.5, Y = 0.5 }) end)
+        end
+    end
+
+    local clock = MenuLayout.SaveClock()
+    local built, err2 = pcall(MenuLayout.Build, cm, p, attach)
+    MenuLayout.RestoreClock(clock)
+    if not built then
+        -- some widgets may already be in the new panel: show both rather than lose any
+        Log("[MenuLayout] Layout failed part way (" .. tostring(err2) .. ") - nothing hidden")
+        return
+    end
+
+    -- the old layout now only holds the frame, labels and empty boxes
+    if wrapper then
+        -- can't hide the frame (the new panel is inside it): make it see-through
+        pcall(function() wrapper:SetBrushColor({ R = 0, G = 0, B = 0, A = 0 }) end)
+        pcall(function() MsBrush(wrapper.Background, { R = 0, G = 0, B = 0, A = 0 }, 14) end)
+        pcall(function() wrapper.Background.OutlineSettings.Width = 0.0 end)
+        pcall(function() wrapper:SetPadding({ Left = 0, Top = 0, Right = 0, Bottom = 0 }) end)
+    end
+    local n = 0
+    pcall(function() n = root:GetChildrenCount() end)
+    for i = 0, (tonumber(n) or 0) - 1 do
+        pcall(function()
+            local child = root:GetChildAt(i)
+            if ItemMenu.PathOf(child) ~= panelPath then child:SetVisibility(1) end   -- collapsed
+        end)
+    end
+    Log(string.format("[MenuLayout] Menu rearranged: %d buttons, %d fields, %d unrecognised kept under Other",
+        #p.weather + #p.events + (p.fly and 1 or 0) + (p.itemSpawn and 1 or 0) + (p.enemySpawn and 1 or 0),
+        #p.spins + (p.amount and 1 or 0) + (p.search and 1 or 0), #p.other))
+end
+
 OnCheatMenuShown = function()
     ItemMenu.SafeTick()
+    MenuStyle.Apply()
+    MenuStyle.StyleSearchBox()
+    MenuLayout.Apply()
     if ItemMenu.polling then return end
     ItemMenu.polling = true
     LoopAsync(250, function()
@@ -3180,7 +3928,10 @@ OnCheatMenuShown = function()
             ItemMenu.polling = false
             return true
         end
-        ExecuteInGameThread(ItemMenu.SafeTick)
+        ExecuteInGameThread(function()
+            ItemMenu.SafeTick()
+            MenuStyle.StyleSearchBox()
+        end)
         return false
     end)
 end

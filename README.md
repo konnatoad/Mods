@@ -28,7 +28,7 @@ Each of these mods is switched on by the `enabled.txt` in its folder:
 | Mod | What it does |
 |---|---|
 | **StackThemAll** | Bigger stacks. Adds items from game updates automatically. Money stacks to 250. |
-| **MISERYModMenu** | PageUp menu with in-game item names, a search box, single spawn and console commands. |
+| **MISERYModMenu** | PageUp menu with a modern dark look, in-game item names, a search box, single spawn and console commands. |
 | **Mi8CargoHold** | The Mi-8 wreck becomes a 1,000-slot storage container. In co-op the host's hold is shared: everyone who has this mod can open it, and the host's save keeps it. |
 | **WorldTweaks** *(new)* | Day/night length (22 / 4), season and darker nights in one config. Replaces DayLengthTweaks and the Darker Nights pak. |
 | **RadiationShield** *(new)* | HOME toggles less radiation (for bunker hot spots), with an on-screen badge. `.radmenu` opens a settings menu with a live radiation readout. In co-op each player has their own shield, if the host allows it. |
@@ -78,6 +78,7 @@ Press `~` in game to open the console.
 | `.weatherdump` | Writes the weather presets to a file |
 | `.find <name>` | Searches the mod menu's item list (`.find` alone clears it) |
 | `.spawnmode game\|mod` | Chooses who adds items when you press Spawn |
+| `.menudump` | Writes the PageUp menu's widgets to the log (for reporting layout problems) |
 | `.help` | Lists all mod menu commands |
 
 ## Radiation Shield menu
@@ -97,14 +98,19 @@ Close it with the Close row or `.radmenu` again. HOME (or your chosen key) still
 
 Every change is saved immediately to `RadiationShield\settings.txt`.
 
-**Co-op:** every player's shield is their own. Pressing HOME protects only you, at your own percentage.
-The host decides whether players who join may use theirs, with **Others can use it** in the host's menu:
+**Co-op:** every player's shield is their own. Pressing HOME protects only you. The host decides the rest:
+whether players who join may use shields (**Others can use it**) and how strong they are (the host's **Less radiation**).
 
-- **YES:** when a joined player presses HOME, their game asks the host's game, the shield turns on for that player only,
-  and their badge shows it.
+- **YES:** when a joined player presses HOME, their game asks the host's game, the shield turns on for that player only
+  at the host's percentage, and their badge shows it. If the host changes **Less radiation** later, shields that are on
+  follow straight away.
 - **NO:** the joined player's badge shows **DISABLED BY HOST** and the shield stays off. If the host switches it to NO
   later, shields that are already on turn off.
 - **The host doesn't have the mod:** after 3 seconds the badge shows **HOST HAS NO SHIELD MOD**.
+
+In someone else's world, `.radmenu` only has **Shield**, **Live readout**, **Badge**, **Badge position** and **Toggle key**, and shows the host's
+percentage under the title. `.radshield 75` is refused there (`.radshield on/off` works). Your own saved percentage is
+kept for when you host.
 
 Everyone needs this mod. The two games talk through two messages that are built into Unreal Engine, so it works
 whichever game works out the radiation. The host's answers also show as a line in the joined player's console.
@@ -142,6 +148,9 @@ If something is broken, please open an issue and include those lines.
 - The item list shows in-game names sorted A–Z, including items from newer patches.
 - Search box next to the amount field, and `.find` in the console.
 - Spawn gives one copy instead of two (`.spawnmode`), and no longer crashes the game.
+- New look: the stone frame and grey stock buttons become a dark rounded panel (like the Radiation Shield menu) with dark buttons,
+  a green Spawn and a readable item list. Everything is arranged in sections: Spawn item, Spawn enemy, Time and weather, Events, Movement.
+  To keep the game's layout, set `MenuLayout = { enabled = false ...` in `Scripts\main.lua`; for the old colours too, `MenuStyle = { enabled = false ...`.
 
 **Mi8CargoHold** (was the "Mi 8 Cargo Hold 1.0.1" download, folder `ChopperStorage`)
 - Renamed, and given an `enabled.txt`.
