@@ -3760,9 +3760,17 @@ function MenuLayout.Apply()
     if path == MenuLayout.donePath then return end
     MenuLayout.donePath = path
 
-    local root, p, why = nil, nil, nil
+    local root, p, why, wrapper = nil, nil, nil, nil
     local ok, err = pcall(function()
         root = cm.WidgetTree.RootWidget
+        -- the game wraps everything in its stone frame (a Border): work inside it
+        for _ = 1, 4 do
+            local cls = MsClassName(root)
+            if cls == "CanvasPanel" then break end
+            if root:GetChildrenCount() ~= 1 then break end
+            if cls == "Border" and not wrapper then wrapper = root end
+            root = root:GetChildAt(0)
+        end
         if MsClassName(root) ~= "CanvasPanel" then error("menu root is a " .. MsClassName(root), 0) end
         p, why = MenuLayout.Plan(MenuLayout.Collect(root))
         if not p then error(why, 0) end
@@ -3779,13 +3787,18 @@ function MenuLayout.Apply()
     -- remember where the frame was, to put the new panel there
     local frame = p.backgrounds[1]
     local geo = nil
-    pcall(function()
+    if wrapper then
+        -- the frame holds the whole menu: the new panel goes in its top-left corner
+        geo = { anchors = { Minimum = { X = 0, Y = 0 }, Maximum = { X = 0, Y = 0 } },
+                alignment = { X = 0, Y = 0 }, position = { X = 0, Y = 0 } }
+    end
+    if not geo then pcall(function()
         local s = frame.w.Slot
         local a, al = s:GetAnchors(), s:GetAlignment()
         local pos = s:GetPosition()
         geo = { anchors = { Minimum = { X = a.Minimum.X, Y = a.Minimum.Y }, Maximum = { X = a.Minimum.X, Y = a.Minimum.Y } },
                 alignment = { X = al.X, Y = al.Y }, position = { X = pos.X, Y = pos.Y } }
-    end)
+    end) end
 
     local panelPath = nil
     local function attach(panel)
@@ -3811,6 +3824,13 @@ function MenuLayout.Apply()
     end
 
     -- the old layout now only holds the frame, labels and empty boxes
+    if wrapper then
+        -- can't hide the frame (the new panel is inside it): make it see-through
+        pcall(function() wrapper:SetBrushColor({ R = 0, G = 0, B = 0, A = 0 }) end)
+        pcall(function() MsBrush(wrapper.Background, { R = 0, G = 0, B = 0, A = 0 }, 14) end)
+        pcall(function() wrapper.Background.OutlineSettings.Width = 0.0 end)
+        pcall(function() wrapper:SetPadding({ Left = 0, Top = 0, Right = 0, Bottom = 0 }) end)
+    end
     local n = 0
     pcall(function() n = root:GetChildrenCount() end)
     for i = 0, (tonumber(n) or 0) - 1 do

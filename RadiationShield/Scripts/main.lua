@@ -312,7 +312,7 @@ end
 -- Built at runtime from plain UMG widgets inside the game's own HUD
 -- (BP_InventoryHUD, which also hosts the mod menu). A stand-alone UserWidget
 -- is not used: that class is abstract and creating one can crash the game.
---   badge:   | RADIATION SHIELD / -25% RADIATION, softly pulsing green bar
+--   badge:   | RADIATION SHIELD / -25% RADIATION, green bar
 --   readout: radiation now, what comes in, what the shield removes, time to max
 --   menu:    settings, changed with the arrow keys
 local UMG = "/Script/UMG."
@@ -326,10 +326,6 @@ local RED = { R = 1.0, G = 0.35, B = 0.3, A = 1.0 }
 local ui = { hud = nil, hudObj = nil }   -- widgets of the current HUD
 local lastText = setmetatable({}, { __mode = "k" })   -- text each widget shows now
 local indicatorWarned = false
-local isAnimating = false
-local animStop = false         -- set in the game thread, read by the timer
-local animPhase, fade = 0, 0
-local offUntil = nil
 
 local function ClassName(obj)
     local name = ""
@@ -544,39 +540,19 @@ local function Show(p, on)
     if p then pcall(function() p.panel:SetVisibility(on and HIT_TEST_INVISIBLE or COLLAPSED) end) end
 end
 
-local function StartAnimation()
-    animStop = false   -- also cancels a fade-out that was about to stop the loop
-    if isAnimating then return end
-    isAnimating = true
-    LoopAsync(80, function()
-        if animStop then
-            isAnimating = false
-            return true
-        end
+-- No animation on purpose: a timer waking the game thread many times a
+-- second crashed UE4SS (its game-thread queue races with the timer thread).
+-- The badge just shows; "SHIELD OFF" hides itself with one delayed call.
+local hideToken = 0
+local function HideLater(seconds)
+    hideToken = hideToken + 1
+    local token = hideToken
+    LoopAsync(math.floor(seconds * 1000), function()
         ExecuteInGameThread(function()
-            local b = ui.badge
-            if not b or not b.panel:IsValid() then
-                if not isOn then animStop = true end
-                return
-            end
-            animPhase = animPhase + 0.08
-            if isOn then
-                fade = math.min(1, fade + 0.25)
-                local pulse = 0.55 + 0.45 * (0.5 + 0.5 * math.sin(animPhase * 2 * math.pi / 1.6))
-                pcall(function() b.accent:SetRenderOpacity(pulse) end)
-                pcall(function() b.panel:SetRenderOpacity(fade) end)
-            elseif offUntil and os.clock() < offUntil then
-                pcall(function() b.panel:SetRenderOpacity(1) end)
-            else
-                fade = math.max(0, fade - 0.2)
-                pcall(function() b.panel:SetRenderOpacity(fade) end)
-                if fade <= 0 then
-                    pcall(function() b.panel:SetVisibility(COLLAPSED) end)
-                    animStop = true
-                end
-            end
+            if token ~= hideToken or isOn then return end
+            if ui.badge then Show(ui.badge, false) end
         end)
-        return false
+        return true   -- once
     end)
 end
 
@@ -599,18 +575,15 @@ local function ShowIndicator(on, notice)
         pcall(function() b.accent:SetBrushColor(GREEN) end)
         SetTextColor(b.title, PALE_GREEN)
         SetTextColor(b.value, WHITE)
-        offUntil = nil
+        hideToken = hideToken + 1   -- cancels a pending hide
     else
         SetText(b.value, notice or "SHIELD OFF")
         pcall(function() b.accent:SetBrushColor(notice and AMBER or GREY) end)
-        pcall(function() b.accent:SetRenderOpacity(1) end)
         SetTextColor(b.title, notice and AMBER or GREY)
         SetTextColor(b.value, notice and WHITE or PALE_GREY)
-        offUntil = os.clock() + (notice and 3 or 1.5)
-        fade = 1
+        HideLater(notice and 3 or 1.5)
     end
     pcall(function() b.panel:SetVisibility(HIT_TEST_INVISIBLE) end)
-    StartAnimation()
 end
 
 ------------------------------------------------------------
@@ -1288,7 +1261,14 @@ end
 -- Keys and console commands
 ------------------------------------------------------------
 local okKey = pcall(function()
-    RegisterKeyBind(Key[boundKey], function() ToggleTo(not isOn) end)
+    -- a held key repeats: one press is one toggle, however long it's held
+    local lastKeyAt = -1
+    RegisterKeyBind(Key[boundKey], function()
+        local now = os.clock()
+        local repeated = now - lastKeyAt < 0.4
+        lastKeyAt = now
+        if not repeated then ToggleTo(not isOn) end
+    end)
 end)
 if not okKey then log("Key '" .. tostring(boundKey) .. "' could not be bound; use .radshield instead") end
 -- Arrow keys only do something while the menu is open
