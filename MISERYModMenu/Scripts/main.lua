@@ -3171,8 +3171,287 @@ function ItemMenu.SafeTick()
     end
 end
 
+-- ---------- modern look ----------
+-- The menu is the game's own developer panel (stone frame, grey stock
+-- buttons, black-on-black list). When it opens, its widgets are recoloured in
+-- place: dark rounded panel, dark rounded buttons with white text, a green
+-- SPAWN, readable list and fields. Nothing is added or moved, so every button
+-- keeps working; anything the game refuses simply keeps its old look.
+-- Set MenuStyle.enabled = false to keep the game's look.
+local MenuStyle = {
+    enabled = true,
+    donePath = nil,     -- cheat menu instance already styled
+    searchDone = nil,   -- search box already styled
+}
+local MS_PANEL = { R = 0.035, G = 0.04, B = 0.045, A = 0.97 }
+local MS_CLEAR = { R = 0, G = 0, B = 0, A = 0 }
+local MS_SURFACE = { R = 0.11, G = 0.12, B = 0.135, A = 1 }
+local MS_SURFACE_HOVER = { R = 0.17, G = 0.185, B = 0.2, A = 1 }
+local MS_SURFACE_DOWN = { R = 0.08, G = 0.085, B = 0.095, A = 1 }
+local MS_FIELD = { R = 0.06, G = 0.065, B = 0.075, A = 1 }
+local MS_LINE = { R = 1, G = 1, B = 1, A = 0.1 }
+local MS_ACCENT = { R = 0.32, G = 0.86, B = 0.56, A = 1 }
+local MS_ACCENT_HOVER = { R = 0.42, G = 0.93, B = 0.65, A = 1 }
+local MS_ACCENT_DOWN = { R = 0.24, G = 0.7, B = 0.45, A = 1 }
+local MS_CHIP = { R = 0.86, G = 0.88, B = 0.91, A = 1 }        -- list buttons keep dark text
+local MS_CHIP_HOVER = { R = 0.95, G = 0.96, B = 0.97, A = 1 }
+local MS_WHITE = { R = 0.95, G = 0.96, B = 0.97, A = 1 }
+local MS_LABEL = { R = 0.72, G = 0.75, B = 0.79, A = 1 }
+local MS_MUTED = { R = 0.5, G = 0.53, B = 0.57, A = 1 }
+local MS_INK = { R = 0.03, G = 0.06, B = 0.04, A = 1 }
+
+local function MsSetColor(target, c)
+    target.R, target.G, target.B, target.A = c.R, c.G, c.B, c.A
+end
+
+local function MsSlateColor(slateColor, c)
+    pcall(function() MsSetColor(slateColor.SpecifiedColor, c) end)
+    pcall(function() slateColor.ColorUseRule = 0 end)   -- use the specified colour
+end
+
+-- Edits a brush where it lives: flat colour, rounded corners, optional outline
+local function MsBrush(brush, color, radius, outline)
+    if brush == nil then return end
+    pcall(function() brush.DrawAs = 4 end)              -- RoundedBox
+    pcall(function()
+        local o = brush.OutlineSettings
+        o.RoundingType = 0
+        local r = o.CornerRadii
+        r.X, r.Y, r.Z, r.W = radius, radius, radius, radius
+        o.Width = outline and 1.0 or 0.0
+        if outline then MsSlateColor(o.Color, outline) end
+    end)
+    MsSlateColor(brush.TintColor, color)
+end
+
+local function MsClassName(w)
+    local name = ""
+    pcall(function() name = w:GetClass():GetFName():ToString() end)
+    return name
+end
+
+local function MsText(w)
+    local s = ""
+    pcall(function() s = w:GetText():ToString() end)
+    return s
+end
+
+local function MsFont(text, size, bold)
+    pcall(function()
+        local font = text.Font
+        font.Size = size
+        if bold ~= nil then font.TypefaceFontName = FName(bold and "Bold" or "Regular") end
+        text:SetFont(font)
+    end)
+end
+
+local function MsTextColor(text, c)
+    pcall(function() text:SetColorAndOpacity({ SpecifiedColor = c, ColorUseRule = 0 }) end)
+    pcall(function() text:SetShadowColorAndOpacity({ R = 0, G = 0, B = 0, A = 0 }) end)
+end
+
+local function MsButton(btn, primary)
+    local style = btn.WidgetStyle
+    if primary then
+        MsBrush(style.Normal, MS_ACCENT, 8)
+        MsBrush(style.Hovered, MS_ACCENT_HOVER, 8)
+        MsBrush(style.Pressed, MS_ACCENT_DOWN, 8)
+    else
+        MsBrush(style.Normal, MS_SURFACE, 8, MS_LINE)
+        MsBrush(style.Hovered, MS_SURFACE_HOVER, 8, MS_LINE)
+        MsBrush(style.Pressed, MS_SURFACE_DOWN, 8, MS_ACCENT)
+    end
+    MsBrush(style.Disabled, MS_SURFACE_DOWN, 8)
+    pcall(function() btn:SetBackgroundColor({ R = 1, G = 1, B = 1, A = 1 }) end)   -- no extra grey tint
+    pcall(function() btn:SetColorAndOpacity({ R = 1, G = 1, B = 1, A = 1 }) end)
+end
+
+local function MsCombo(combo)
+    local style = combo.WidgetStyle
+    pcall(function()
+        local b = style.ComboButtonStyle.ButtonStyle
+        MsBrush(b.Normal, MS_CHIP, 6)
+        MsBrush(b.Hovered, MS_CHIP_HOVER, 6)
+        MsBrush(b.Pressed, MS_CHIP, 6, MS_ACCENT)
+    end)
+    pcall(function() MsBrush(style.ComboButtonStyle.MenuBorderBrush, MS_FIELD, 8, MS_LINE) end)
+    -- the drop-down rows: dark, light text, green selection
+    pcall(function()
+        local rows = combo.ItemStyle
+        for _, k in ipairs({ "EvenRowBackgroundBrush", "OddRowBackgroundBrush" }) do
+            pcall(function() MsBrush(rows[k], MS_FIELD, 0) end)
+        end
+        for _, k in ipairs({ "EvenRowBackgroundHoveredBrush", "OddRowBackgroundHoveredBrush", "InactiveHoveredBrush" }) do
+            pcall(function() MsBrush(rows[k], MS_SURFACE_HOVER, 4) end)
+        end
+        for _, k in ipairs({ "ActiveBrush", "ActiveHoveredBrush", "InactiveBrush", "SelectorFocusedBrush" }) do
+            pcall(function() MsBrush(rows[k], MS_ACCENT, 4) end)
+        end
+        MsSlateColor(rows.TextColor, MS_LABEL)
+        MsSlateColor(rows.SelectedTextColor, MS_INK)
+    end)
+    pcall(function()
+        local bar = combo.ScrollBarStyle
+        for _, k in ipairs({ "NormalThumbImage", "HoveredThumbImage", "DraggedThumbImage" }) do
+            pcall(function() MsBrush(bar[k], MS_LINE, 3) end)
+        end
+        for _, k in ipairs({ "VerticalBackgroundImage", "VerticalTopSlotImage", "VerticalBottomSlotImage" }) do
+            pcall(function() MsBrush(bar[k], MS_CLEAR, 0) end)
+        end
+    end)
+    pcall(function() combo.Font.Size = 12 end)   -- used for rows made from now on
+end
+
+local function MsField(box)
+    local style = box.WidgetStyle
+    MsBrush(style.BackgroundImageNormal, MS_FIELD, 6, MS_LINE)
+    MsBrush(style.BackgroundImageHovered, MS_FIELD, 6, MS_MUTED)
+    MsBrush(style.BackgroundImageFocused, MS_FIELD, 6, MS_ACCENT)
+    MsBrush(style.BackgroundImageReadOnly, MS_FIELD, 6)
+    pcall(function() MsSlateColor(style.ForegroundColor, MS_WHITE) end)
+    pcall(function() MsSlateColor(style.BackgroundColor, { R = 1, G = 1, B = 1, A = 1 }) end)
+    pcall(function() MsSlateColor(style.TextStyle.ColorAndOpacity, MS_WHITE) end)
+    pcall(function() box:SetForegroundColor(MS_WHITE) end)
+end
+
+local function MsSpin(spin)
+    local style = spin.WidgetStyle
+    MsBrush(style.BackgroundBrush, MS_FIELD, 6, MS_LINE)
+    MsBrush(style.HoveredBackgroundBrush, MS_FIELD, 6, MS_MUTED)
+    pcall(function() MsBrush(style.ActiveBackgroundBrush, MS_FIELD, 6, MS_ACCENT) end)
+    MsBrush(style.ActiveFillBrush, { R = 0.32, G = 0.86, B = 0.56, A = 0.35 }, 6)
+    pcall(function() MsBrush(style.HoveredFillBrush, { R = 0.32, G = 0.86, B = 0.56, A = 0.25 }, 6) end)
+    MsBrush(style.InactiveFillBrush, MS_CLEAR, 6)
+    pcall(function() MsSlateColor(style.ForegroundColor, MS_WHITE) end)
+    pcall(function() spin:SetForegroundColor({ SpecifiedColor = MS_WHITE, ColorUseRule = 0 }) end)
+end
+
+-- Background pictures (the stone frame): the outermost becomes the dark
+-- rounded panel, any inner ones go clear so the panel shows through.
+local function MsBackground(w, outermost)
+    local color = outermost and MS_PANEL or MS_CLEAR
+    pcall(function() w:SetBrushFromTexture(nil) end)           -- flat colour where the game allows it
+    if MsClassName(w) == "Border" then
+        pcall(function() MsBrush(w.Background, color, 14, outermost and MS_LINE or nil) end)
+        pcall(function() w:SetBrushColor(color) end)
+    else
+        pcall(function() MsBrush(w.Brush, color, 14, outermost and MS_LINE or nil) end)
+        -- tints the texture too if it couldn't be removed: dark, not stone
+        pcall(function() w:SetColorAndOpacity(color) end)
+    end
+end
+
+function MenuStyle.Walk(w, inButton, counts, depth)
+    if depth > 30 or not ItemMenu.IsValid(w) then return end
+    local cls = MsClassName(w)
+    if cls == "Button" then
+        local label = ""
+        pcall(function() label = MsText(w:GetChildAt(0)) end)
+        local primary = label:upper() == "SPAWN"
+        pcall(MsButton, w, primary)
+        counts.buttons = counts.buttons + 1
+        inButton = primary and "primary" or "button"
+    elseif cls == "ComboBoxString" then
+        pcall(MsCombo, w)
+        counts.lists = counts.lists + 1
+    elseif cls == "EditableTextBox" then
+        pcall(MsField, w)
+        counts.fields = counts.fields + 1
+    elseif cls == "SpinBox" then
+        pcall(MsSpin, w)
+        counts.fields = counts.fields + 1
+    elseif cls == "Image" or (cls == "Border" and not inButton) then
+        pcall(MsBackground, w, counts.backgrounds == 0)
+        counts.backgrounds = counts.backgrounds + 1
+    elseif cls == "TextBlock" then
+        local text = MsText(w)
+        if inButton == "primary" then
+            MsFont(w, 14, true)
+            MsTextColor(w, MS_INK)
+        elseif inButton then
+            MsFont(w, 13, true)
+            MsTextColor(w, MS_WHITE)
+        elseif #text > 24 then          -- hints like "Scroll the mouse wheel ..."
+            MsFont(w, 10, false)
+            MsTextColor(w, MS_MUTED)
+        else                            -- section labels: Spawn Item, Time, Weather ...
+            MsFont(w, 13, true)
+            MsTextColor(w, MS_LABEL)
+        end
+        counts.texts = counts.texts + 1
+    end
+    local n = 0
+    pcall(function() n = w:GetChildrenCount() end)
+    for i = 0, (tonumber(n) or 0) - 1 do
+        local child = nil
+        pcall(function() child = w:GetChildAt(i) end)
+        if child then MenuStyle.Walk(child, inButton, counts, depth + 1) end
+    end
+end
+
+-- Game thread. Styles the live menu once (and again after a level load
+-- gives the HUD a new menu).
+function MenuStyle.Apply()
+    if not MenuStyle.enabled then return end
+    local cm = GetCheatMenuWidget()
+    if not ItemMenu.IsValid(cm) then return end
+    local path = ItemMenu.PathOf(cm)
+    if path == MenuStyle.donePath then return end
+    MenuStyle.donePath = path
+    local counts = { buttons = 0, lists = 0, fields = 0, texts = 0, backgrounds = 0 }
+    local ok, err = pcall(function()
+        MenuStyle.Walk(cm.WidgetTree.RootWidget, nil, counts, 0)
+    end)
+    if not ok then
+        Log("[MenuStyle] " .. tostring(err))
+        return
+    end
+    pcall(function() cm:InvalidateLayoutAndVolatility() end)
+    Log(string.format("[MenuStyle] Menu restyled: %d buttons, %d lists, %d fields, %d texts, %d backgrounds",
+        counts.buttons, counts.lists, counts.fields, counts.texts, counts.backgrounds))
+end
+
+-- .menudump: the menu's widgets, for layout work
+function MenuStyle.Dump(w, depth)
+    if depth > 30 or not ItemMenu.IsValid(w) then return end
+    local cls = MsClassName(w)
+    local name = ""
+    pcall(function() name = w:GetFName():ToString() end)
+    local text = cls == "TextBlock" and ("  \"" .. MsText(w) .. "\"") or ""
+    Log("[MenuDump] " .. string.rep("  ", depth) .. cls .. " " .. name .. text)
+    local n = 0
+    pcall(function() n = w:GetChildrenCount() end)
+    for i = 0, (tonumber(n) or 0) - 1 do
+        local child = nil
+        pcall(function() child = w:GetChildAt(i) end)
+        if child then MenuStyle.Dump(child, depth + 1) end
+    end
+end
+
+-- The search box can be added after the menu was styled
+function MenuStyle.StyleSearchBox()
+    if not MenuStyle.enabled or not ItemMenu.IsValid(ItemMenu.searchBox) then return end
+    if ItemMenu.searchPath == MenuStyle.searchDone then return end
+    MenuStyle.searchDone = ItemMenu.searchPath
+    pcall(MsField, ItemMenu.searchBox)
+end
+
+RegisterConsoleCommandHandler(".menudump", function()
+    ExecuteInGameThread(function()
+        local cm = GetCheatMenuWidget()
+        if not ItemMenu.IsValid(cm) then
+            Log("[MenuDump] No menu yet - load into a world first")
+            return
+        end
+        MenuStyle.Dump(cm.WidgetTree.RootWidget, 0)
+    end)
+    return true
+end)
+
 OnCheatMenuShown = function()
     ItemMenu.SafeTick()
+    MenuStyle.Apply()
+    MenuStyle.StyleSearchBox()
     if ItemMenu.polling then return end
     ItemMenu.polling = true
     LoopAsync(250, function()
@@ -3180,7 +3459,10 @@ OnCheatMenuShown = function()
             ItemMenu.polling = false
             return true
         end
-        ExecuteInGameThread(ItemMenu.SafeTick)
+        ExecuteInGameThread(function()
+            ItemMenu.SafeTick()
+            MenuStyle.StyleSearchBox()
+        end)
         return false
     end)
 end

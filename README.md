@@ -28,7 +28,7 @@ Each of these mods is switched on by the `enabled.txt` in its folder:
 | Mod | What it does |
 |---|---|
 | **StackThemAll** | Bigger stacks. Adds items from game updates automatically. Money stacks to 250. |
-| **MISERYModMenu** | PageUp menu with in-game item names, a search box, single spawn and console commands. |
+| **MISERYModMenu** | PageUp menu with a modern dark look, in-game item names, a search box, single spawn and console commands. |
 | **Mi8CargoHold** | The Mi-8 wreck becomes a 1,000-slot storage container. In co-op the host's hold is shared: everyone who has this mod can open it, and the host's save keeps it. |
 | **WorldTweaks** *(new)* | Day/night length (22 / 4), season and darker nights in one config. Replaces DayLengthTweaks and the Darker Nights pak. |
 | **RadiationShield** *(new)* | HOME toggles less radiation (for bunker hot spots), with an on-screen badge. `.radmenu` opens a settings menu with a live radiation readout. In co-op each player has their own shield, if the host allows it. |
@@ -78,6 +78,7 @@ Press `~` in game to open the console.
 | `.weatherdump` | Writes the weather presets to a file |
 | `.find <name>` | Searches the mod menu's item list (`.find` alone clears it) |
 | `.spawnmode game\|mod` | Chooses who adds items when you press Spawn |
+| `.menudump` | Writes the PageUp menu's widgets to the log (for reporting layout problems) |
 | `.help` | Lists all mod menu commands |
 
 ## Radiation Shield menu
@@ -142,6 +143,8 @@ If something is broken, please open an issue and include those lines.
 - The item list shows in-game names sorted A–Z, including items from newer patches.
 - Search box next to the amount field, and `.find` in the console.
 - Spawn gives one copy instead of two (`.spawnmode`), and no longer crashes the game.
+- New look: the stone frame and grey stock buttons become a dark rounded panel with dark buttons, a green SPAWN and a readable item list.
+  To keep the old look, set `enabled = false` under "modern look" in `Scripts\main.lua`.
 
 **Mi8CargoHold** (was the "Mi 8 Cargo Hold 1.0.1" download, folder `ChopperStorage`)
 - Renamed, and given an `enabled.txt`.

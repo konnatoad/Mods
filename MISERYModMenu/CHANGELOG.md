@@ -4,6 +4,12 @@
 
 ## Version 4.5
 
+### New Look
+- The PageUp menu is restyled when it opens: the stone frame becomes a dark rounded panel, the grey stock buttons become dark rounded buttons with white text, SPAWN is green, and the item list has light text with a green selection (it was black on black)
+- Labels, buttons and the amount, search and time fields share one smaller, consistent style
+- Nothing is moved or replaced, so every button works as before; anything the game won't let the mod recolour keeps its old look
+- `.menudump` writes the menu's widgets to the log, for reporting layout problems
+
 ### Items Show Their In-Game Names
 - The dev menu's item list now shows the names you see in game (`Rubles`, `Vodka`) instead of the internal IDs (`Resource_Rubles`), sorted A-Z
 - Items that share a name get their number or category added (`Poster 3`, `Bandage (Resource)`); items without a name get one made from their ID
