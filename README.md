@@ -69,6 +69,8 @@ Press `~` in game to open the console.
 | Command | Effect |
 |---|---|
 | `.radshield [on\|off]` | Radiation Shield toggle (same as HOME) |
+| `.radshield 75` | Sets the shield to 75% less radiation and switches it on (until the game restarts) |
+| `.radmeter` | Measures a radiation hot spot; run it again to get the suggested reduction |
 | `.fixweight` | Fix stuck container weight right now |
 | `.weightreport` | Use if the weight fix can't find the weight value: empty the backpack, then run it |
 | `.worldinfo` | Shows the day/night settings |
@@ -90,6 +92,8 @@ Open `...\Win64\ue4ss\UE4SS.log` and look for the mod's lines:
   - "Working: radiation hit X reduced to Y": the shield is cutting radiation.
   - "ignored the smaller radiation amount": it switched to its backup method. That's fine.
   - "Indicator unavailable (...)": there's no badge, but the shield still works.
+  - "Meter summary": from `.radmeter`. It shows how fast radiation comes in, how long until the maximum,
+    and the reduction needed to last 30, 60, 120 or 300 s.
 - **[ItemMenu] / [Spawn]**: lines about the mod menu's item list and spawning.
 
 If something is broken, please open an issue and include those lines.

@@ -6,6 +6,8 @@
 -- it on before walking in, off again afterwards.
 --
 -- Toggle: the key below, or type .radshield in the UE4SS console.
+-- .radshield 75 changes the reduction to 75% until the game restarts.
+-- .radmeter measures how hard a spot hits you and suggests a reduction.
 ------------------------------------------------------------
 -- Config
 ------------------------------------------------------------
@@ -36,6 +38,12 @@ local mode = "shrink"
 local radiationField = nil
 local myInventory, myAddress = nil, nil
 local intake, lastSample = 0, nil   -- radiation the game added since the last check
+local MAX_FIELDS = { "MaxRadiation", "MaximumRadiation", "RadiationMax", "MaxRadiationLevel" }
+
+-- Radiation meter (.radmeter): what the game sends, before the shield
+local meterOn = false
+local meterRaw, meterHits = 0, 0        -- this second
+local meter = nil                        -- totals since the meter was switched on
 
 local function log(msg)
     print("[RadiationShield] " .. tostring(msg) .. "\n")
@@ -83,6 +91,20 @@ local function ReadRadiation(inv)
     return nil
 end
 
+local maxField = false   -- false = not looked for yet, nil = none exists
+local function ReadMax(inv)
+    if maxField == false then
+        maxField = nil
+        for _, name in ipairs(MAX_FIELDS) do
+            local ok, value = pcall(function() return inv[name] end)
+            if ok and type(value) == "number" and value > 0 then maxField = name break end
+        end
+    end
+    if not maxField then return nil end
+    local ok, value = pcall(function() return inv[maxField] end)
+    return ok and type(value) == "number" and value or nil
+end
+
 local function TakeBack(inv, amount)
     if amount > 0.0001 then pcall(function() inv:DecreaseRadiation(amount) end) end
 end
@@ -92,13 +114,15 @@ end
 local reportedWorking = false   -- one log line per switch-on, so the log shows it's acting
 
 local function OnIncreaseRadiation(selfParam, amountParam)
-    if not isOn or not myAddress then return end
+    if not (isOn or meterOn) or not myAddress then return end
     local inv = nil
     pcall(function() inv = selfParam:get() end)
     if not inv or AddressOf(inv) ~= myAddress then return end
     local amount = nil
     pcall(function() amount = amountParam:get() end)
     if type(amount) ~= "number" or amount <= 0 then return end
+    if meterOn then meterRaw, meterHits = meterRaw + amount, meterHits + 1 end
+    if not isOn then return end
     intake = intake + amount
     if mode == "shrink" then
         pcall(function() amountParam:set(amount * (1 - reduction)) end)
@@ -151,6 +175,80 @@ local function StartLoop()
         end)
         return false
     end)
+end
+
+------------------------------------------------------------
+-- Radiation meter
+------------------------------------------------------------
+-- Logs once a second while radiation is coming in: what the game sends
+-- (before the shield), what the shield lets through, and your radiation.
+-- The summary turns that into "how much reduction makes this spot usable".
+local function Percent(x) return math.floor(x * 100 + 0.5) end
+
+local function MeterSummary()
+    local m = meter
+    if not m or m.seconds == 0 then
+        log("Meter: no radiation measured - stand in the hot spot with .radmeter on")
+        return
+    end
+    local avg = m.total / m.seconds
+    local maxRad, maxNote = m.max, ""
+    if not maxRad then maxRad, maxNote = math.max(m.highest, 1), " (highest seen; real maximum unknown)" end
+    log(string.format("Meter summary: %d s in radiation, game sent +%.2f/s on average, peak +%.2f/s; maximum radiation %.0f%s",
+        m.seconds, avg, m.peak, maxRad, maxNote))
+    if m.unhooked > 0.5 * (m.total + m.unhooked) then
+        log(string.format("Meter: radiation rose +%.1f outside IncreaseRadiation (vs +%.1f through it) - "
+            .. "the shield can only reduce the part that goes through it", m.unhooked, m.total))
+    end
+    log(string.format("  From 0 to maximum: %.0f s with no shield, %.0f s with the current %d%%",
+        maxRad / avg, maxRad / (avg * math.max(0.001, 1 - reduction)), Percent(reduction)))
+    for _, seconds in ipairs({ 30, 60, 120, 300 }) do
+        local needed = 1 - (maxRad / seconds) / avg
+        local text
+        if needed <= 0 then text = "no shield needed"
+        elseif needed >= 0.995 then text = "needs ~100%"
+        else text = Percent(needed) .. "%" .. (needed <= reduction and " (current setting is enough)" or "") end
+        log(string.format("  To last %3d s: %s", seconds, text))
+    end
+end
+
+local function StartMeter()
+    meterOn = true
+    meterRaw, meterHits = 0, 0
+    meter = { seconds = 0, total = 0, peak = 0, highest = 0, max = nil, unhooked = 0, last = nil }
+    local session = meter
+    LoopAsync(1000, function()
+        if not meterOn or meter ~= session then return true end
+        ExecuteInGameThread(function()
+            local raw, hits = meterRaw, meterHits
+            meterRaw, meterHits = 0, 0
+            local inv = RefreshMyInventory()
+            if not inv then return end
+            local now = ReadRadiation(inv)
+            local max = ReadMax(inv)
+            local m = session
+            if max then m.max = max end
+            if now and now > m.highest then m.highest = now end
+            local rose = (now and m.last) and (now - m.last) or 0
+            m.last = now
+            local through = isOn and raw * (1 - reduction) or raw
+            if rose > through + 0.05 then m.unhooked = m.unhooked + (rose - through) end
+            if raw > 0 then
+                m.seconds = m.seconds + 1
+                m.total = m.total + raw
+                if raw > m.peak then m.peak = raw end
+                log(string.format("Meter: game sends +%.2f/s (%d hits)%s | radiation %s%s (%+.2f)",
+                    raw, hits,
+                    isOn and string.format(", through shield +%.2f/s", through) or ", shield off",
+                    now and string.format("%.1f", now) or "?",
+                    max and string.format(" / %.0f", max) or "", rose))
+            elseif rose > 0.05 then
+                log(string.format("Meter: radiation rose %+.2f without IncreaseRadiation", rose))
+            end
+        end)
+        return false
+    end)
+    log("Radiation meter ON - walk into the hot spot; .radmeter again for the summary")
 end
 
 ------------------------------------------------------------
@@ -372,9 +470,33 @@ if not okKey then log("Key '" .. tostring(toggleKey) .. "' could not be bound; u
 
 RegisterConsoleCommandHandler(".radshield", function(FullCommand, Parameters)
     local arg = string.lower((Parameters and Parameters[1]) or "")
+    local percent = tonumber((arg:gsub("%%", "")))
+    if percent then
+        if percent < 1 or percent > 100 then
+            log("Use a percentage from 1 to 100, e.g. .radshield 75")
+            return true
+        end
+        reduction = percent / 100
+        log("Reduction set to " .. Percent(reduction) .. "% until the game restarts "
+            .. "(set reduction = " .. reduction .. " in main.lua to keep it)")
+        SetShield(true)
+        return true
+    end
     if arg == "on" then SetShield(true)
     elseif arg == "off" then SetShield(false)
     else SetShield(not isOn) end
+    return true
+end)
+
+RegisterConsoleCommandHandler(".radmeter", function()
+    InstallHook()
+    if meterOn then
+        meterOn = false
+        ExecuteInGameThread(function() MeterSummary() end)
+        log("Radiation meter OFF")
+    else
+        StartMeter()
+    end
     return true
 end)
 
@@ -385,10 +507,8 @@ RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
     LoopAsync(2000, function()
         ExecuteInGameThread(function()
             myInventory, myAddress = nil, nil
-            if isOn then
-                RefreshMyInventory()
-                ShowIndicator(true)
-            end
+            if isOn or meterOn then RefreshMyInventory() end
+            if isOn then ShowIndicator(true) end
         end)
         return true
     end)
