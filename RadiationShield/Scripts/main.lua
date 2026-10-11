@@ -318,8 +318,8 @@ end
 local UMG = "/Script/UMG."
 local HIT_TEST_INVISIBLE = 3   -- ESlateVisibility: shown, never blocks the mouse
 local COLLAPSED = 1
-local GREEN, PALE_GREEN, WHITE = { R = 0.25, G = 1.0, B = 0.45, A = 1.0 }, { R = 0.55, G = 1.0, B = 0.62, A = 1.0 }, { R = 0.92, G = 1.0, B = 0.94, A = 1.0 }
-local GREY, PALE_GREY = { R = 0.45, G = 0.47, B = 0.46, A = 1.0 }, { R = 0.7, G = 0.72, B = 0.71, A = 1.0 }
+local GREEN, PALE_GREEN, WHITE = { R = 0.32, G = 0.86, B = 0.56, A = 1.0 }, { R = 0.62, G = 0.9, B = 0.72, A = 1.0 }, { R = 0.94, G = 0.95, B = 0.96, A = 1.0 }
+local GREY, PALE_GREY = { R = 0.5, G = 0.53, B = 0.57, A = 1.0 }, { R = 0.72, G = 0.75, B = 0.79, A = 1.0 }
 local AMBER = { R = 1.0, G = 0.75, B = 0.25, A = 1.0 }
 local RED = { R = 1.0, G = 0.35, B = 0.3, A = 1.0 }
 
@@ -360,8 +360,36 @@ local function StyleText(text, size, color, letterSpacing)
     pcall(function() text.Font.Size = size end)
     if letterSpacing then pcall(function() text.Font.LetterSpacing = letterSpacing end) end
     SetTextColor(text, color)
-    pcall(function() text:SetShadowOffset({ X = 1.0, Y = 1.0 }) end)
-    pcall(function() text:SetShadowColorAndOpacity({ R = 0, G = 0, B = 0, A = 0.85 }) end)
+    pcall(function() text:SetShadowOffset({ X = 0.0, Y = 1.0 }) end)
+    pcall(function() text:SetShadowColorAndOpacity({ R = 0, G = 0, B = 0, A = 0.45 }) end)
+end
+
+local function Bold(text)
+    pcall(function() text.Font.TypefaceFontName = FName("Bold") end)
+end
+
+-- Rounded corners: UE5 brushes can draw as a rounded box. No radius = a pill
+-- (half the height). Only looks: if the game refuses, corners stay square.
+local function Round(border, radius, outline)
+    pcall(function()
+        local brush = border.Background
+        brush.DrawAs = 4                      -- ESlateBrushDrawType::RoundedBox
+        local o = brush.OutlineSettings
+        if radius then
+            o.RoundingType = 0                -- fixed radius
+            local c = o.CornerRadii
+            c.X, c.Y, c.Z, c.W = radius, radius, radius, radius
+        else
+            o.RoundingType = 1                -- half the height
+        end
+        if outline then
+            o.Width = 1.0
+            local c = o.Color.SpecifiedColor
+            c.R, c.G, c.B, c.A = outline.R, outline.G, outline.B, outline.A
+            o.Color.ColorUseRule = 0
+        end
+    end)
+    return border
 end
 
 -- The HUD, remembered between calls: FindFirstOf searches every object, so
@@ -419,8 +447,8 @@ end
 
 local function DarkPanel(tree, alpha)
     local panel = Construct("Border", tree)
-    panel:SetBrushColor({ R = 0.01, G = 0.04, B = 0.02, A = alpha })
-    return panel
+    panel:SetBrushColor({ R = 0.016, G = 0.018, B = 0.022, A = alpha })
+    return Round(panel, 10)
 end
 
 local function BuildBadge(tree)
@@ -433,7 +461,7 @@ local function BuildBadge(tree)
     local bar = Construct("SizeBox", tree)
     bar:SetWidthOverride(4.0)
     bar:SetHeightOverride(34.0)
-    b.accent = Construct("Border", tree)
+    b.accent = Round(Construct("Border", tree))
     b.accent:SetBrushColor(GREEN)
     bar:SetContent(b.accent)
     local barSlot = row:AddChildToHorizontalBox(bar)
@@ -445,10 +473,11 @@ local function BuildBadge(tree)
     pcall(function() columnSlot:SetVerticalAlignment(2) end)
 
     b.title = Construct("TextBlock", tree)
-    StyleText(b.title, 10, PALE_GREEN, 180)
+    StyleText(b.title, 10, PALE_GREEN, 120)
     column:AddChildToVerticalBox(b.title)
     b.value = Construct("TextBlock", tree)
     StyleText(b.value, 17, WHITE)
+    Bold(b.value)
     column:AddChildToVerticalBox(b.value)
     return b
 end
@@ -485,7 +514,8 @@ local function BuildTextPanel(hud, lineCount, ax, ay, ox, oy, titleText)
     local column = Construct("VerticalBox", tree)
     p.panel:SetContent(column)
     p.title = Construct("TextBlock", tree)
-    StyleText(p.title, 10, PALE_GREEN, 180)
+    StyleText(p.title, 10, GREY, 120)
+    Bold(p.title)
     SetText(p.title, titleText)
     column:AddChildToVerticalBox(p.title)
     for i = 1, lineCount do
@@ -911,7 +941,7 @@ end
 local CloseMenu
 -- label, current value, change(direction: -1 left, 1 right)
 local ROWS = {
-    { "Shield", function() return isOn and "ON" or "OFF" end,
+    { "Shield", function() return isOn and "On" or "Off" end,
       function() ToggleTo(not isOn) end },
     { "Less radiation", function() return Percent(reduction) .. "%" end,
       function(dir)
@@ -924,9 +954,9 @@ local ROWS = {
       end },
     { "Others can use it", function()
           if Joined() then
-              return hostAnswer == "allowed" and "ALLOWED BY HOST" or (hostAnswer == "denied" and "DISABLED BY HOST" or "host decides")
+              return hostAnswer == "allowed" and "Allowed by host" or (hostAnswer == "denied" and "Disabled by host" or "Host decides")
           end
-          return allowOthers and "YES" or "NO"
+          return allowOthers and "Yes" or "No"
       end,
       function()
           if Joined() then
@@ -943,14 +973,14 @@ local ROWS = {
           end
           Changed("others can use it " .. (allowOthers and "yes" or "no"))
       end },
-    { "Live readout", function() return showDebug and "ON" or "OFF" end,
+    { "Live readout", function() return showDebug and "On" or "Off" end,
       function()
           showDebug = not showDebug
           StartLoop()
           UpdateReadout()
           Changed("live readout " .. (showDebug and "on" or "off"))
       end },
-    { "Badge", function() return showIndicator and "ON" or "OFF" end,
+    { "Badge", function() return showIndicator and "On" or "Off" end,
       function()
           showIndicator = not showIndicator
           if showIndicator then
@@ -970,7 +1000,7 @@ local ROWS = {
           if isOn then ShowIndicator(true) end
           Changed("badge position " .. badgePosition)
       end },
-    { "Shield on at start", function() return startOn and "YES" or "NO" end,
+    { "Shield on at start", function() return startOn and "Yes" or "No" end,
       function()
           startOn = not startOn
           Changed("shield on at start " .. (startOn and "yes" or "no"))
@@ -983,25 +1013,33 @@ local ROWS = {
     { "Close", function() return "" end, function() CloseMenu() end },
 }
 
---  ┃ RADIATION SHIELD                       [ ON ]
---  ┃ SETTINGS
---  ─────────────────────────────────────────────
---    SHIELD
---  ▌ Shield                  <  ON  >
---    Less radiation             25%    ████░░░░░░
---    CO-OP
---    Others can use it          NO
---    ...
---                     CLOSE
---  ─────────────────────────────────────────────
---    status line
---    UP/DOWN select   LEFT/RIGHT change   .radmenu close
+-- Rounded dark panel, settings grouped into cards, one accent colour:
+--
+--   Radiation Shield                              On  (==o)
+--   Settings
+--   SHIELD
+--   .--------------------------------------------------.
+--   | Shield                                  On (==o) |  <- selected row lit
+--   | Less radiation               ====o-------   75%  |
+--   '--------------------------------------------------'
+--   CO-OP / DISPLAY / STARTUP cards ...
+--   (                     Close                        )
+--   o status
+--   [UP / DOWN] select   [LEFT / RIGHT] change   [.radmenu] close
 local SECTIONS = { [1] = "SHIELD", [3] = "CO-OP", [4] = "DISPLAY", [7] = "STARTUP" }
-local MENU_WIDTH, LABEL_WIDTH, VALUE_WIDTH, BAR_WIDTH = 470, 190, 150, 110
+local KIND = { ["Less radiation"] = "slider", ["Badge position"] = "choice", ["Toggle key"] = "choice", Close = "button" }
+local SWITCH_STATE = { On = true, Yes = true, Off = false, No = false }   -- other values: text only
+local MENU_WIDTH, ROW_HEIGHT, SLIDER_WIDTH = 440, 38, 120
 local CLEAR = { R = 0, G = 0, B = 0, A = 0 }
-local ROW_LIT = { R = 0.25, G = 1.0, B = 0.45, A = 0.13 }
-local DIM_LINE = { R = 0.25, G = 1.0, B = 0.45, A = 0.3 }
-local BAR_BG = { R = 1, G = 1, B = 1, A = 0.1 }
+local CARD = { R = 1, G = 1, B = 1, A = 0.035 }
+local ROW_LIT = { R = 1, G = 1, B = 1, A = 0.08 }
+local BUTTON = { R = 1, G = 1, B = 1, A = 0.07 }
+local TRACK = { R = 1, G = 1, B = 1, A = 0.16 }
+local HAIRLINE = { R = 1, G = 1, B = 1, A = 0.09 }
+local LABEL = { R = 0.8, G = 0.82, B = 0.85, A = 1 }
+local BRIGHT = { R = 1, G = 1, B = 1, A = 1 }
+local INK = { R = 0.03, G = 0.06, B = 0.04, A = 1 }   -- dark text on the accent
+local NO_SHADOW = { R = 0, G = 0, B = 0, A = 0 }
 
 local function Box(tree, w, h, child)
     local box = Construct("SizeBox", tree)
@@ -1020,122 +1058,156 @@ end
 local function Text(tree, size, color, spacing)
     local t = Construct("TextBlock", tree)
     StyleText(t, size, color, spacing)
+    pcall(function() t:SetShadowColorAndOpacity(NO_SHADOW) end)   -- flat on the panel
     return t
 end
 
 local function Pad(slot, l, t, r, b)
     pcall(function() slot:SetPadding({ Left = l, Top = t, Right = r, Bottom = b }) end)
+    return slot
 end
 
-local function Middle(slot) pcall(function() slot:SetVerticalAlignment(2) end) end
+local function Middle(slot) pcall(function() slot:SetVerticalAlignment(2) end) return slot end
+local function Grow(slot) pcall(function() slot:SetSize({ SizeRule = 1, Value = 1.0 }) end) return slot end
+
+-- A toggle switch: rounded track, white knob that sits right when on
+local function Switch(tree)
+    local s = {}
+    s.track = Round(Fill(tree, TRACK))
+    pcall(function() s.track:SetPadding({ Left = 3, Top = 3, Right = 3, Bottom = 3 }) end)
+    local row = Construct("HorizontalBox", tree)
+    s.gap = Box(tree, 0, 14)
+    row:AddChildToHorizontalBox(s.gap)
+    row:AddChildToHorizontalBox(Box(tree, 14, 14, Round(Fill(tree, BRIGHT))))
+    s.track:SetContent(Box(tree, 32, 14, row))
+    return s
+end
+
+local function SetSwitch(s, on)
+    pcall(function() s.track:SetBrushColor(on and GREEN or TRACK) end)
+    pcall(function() s.gap:SetWidthOverride(on and 18 or 0) end)
+end
 
 local function BuildMenu(hud)
     local tree = hud.WidgetTree
     local m = { rows = {} }
-    m.panel = DarkPanel(tree, 0.9)
+    m.panel = DarkPanel(tree, 0.94)
+    Round(m.panel, 14, HAIRLINE)
+    pcall(function() m.panel:SetPadding({ Left = 18, Top = 16, Right = 18, Bottom = 14 }) end)
     local width = Construct("SizeBox", tree)
-    pcall(function() width:SetMinDesiredWidth(MENU_WIDTH) end)
+    pcall(function() width:SetWidthOverride(MENU_WIDTH) end)
     m.panel:SetContent(width)
     local column = Construct("VerticalBox", tree)
     width:SetContent(column)
 
-    -- header: accent bar, title, ON/OFF pill
-    local header = Fill(tree, { R = 0.03, G = 0.09, B = 0.05, A = 0.95 })
-    pcall(function() header:SetPadding({ Left = 14, Top = 12, Right = 14, Bottom = 12 }) end)
-    column:AddChildToVerticalBox(header)
-    local headRow = Construct("HorizontalBox", tree)
-    header:SetContent(headRow)
-    m.accent = Fill(tree, GREEN)
-    Middle(headRow:AddChildToHorizontalBox(Box(tree, 4, 34, m.accent)))
+    -- header: title, and the shield's own switch
+    local head = Construct("HorizontalBox", tree)
+    Pad(column:AddChildToVerticalBox(head), 4, 0, 4, 2)
     local titles = Construct("VerticalBox", tree)
-    local titlesSlot = headRow:AddChildToHorizontalBox(titles)
-    Pad(titlesSlot, 12, 0, 0, 0)
-    Middle(titlesSlot)
-    pcall(function() titlesSlot:SetSize({ SizeRule = 1, Value = 1.0 }) end)   -- fill: pushes the pill right
-    m.title = Text(tree, 17, WHITE, 120)
-    SetText(m.title, "RADIATION SHIELD")
+    Middle(Grow(head:AddChildToHorizontalBox(titles)))
+    m.title = Text(tree, 19, BRIGHT)
+    Bold(m.title)
+    SetText(m.title, "Radiation Shield")
     titles:AddChildToVerticalBox(m.title)
-    local sub = Text(tree, 9, PALE_GREEN, 320)
-    SetText(sub, "SETTINGS")
+    local sub = Text(tree, 11, GREY)
+    SetText(sub, "Settings")
     titles:AddChildToVerticalBox(sub)
-    m.pill = Fill(tree, GREEN)
-    pcall(function() m.pill:SetPadding({ Left = 10, Top = 3, Right = 10, Bottom = 3 }) end)
-    m.pillText = Text(tree, 11, { R = 0.02, G = 0.05, B = 0.03, A = 1 }, 150)
-    m.pill:SetContent(m.pillText)
-    Middle(headRow:AddChildToHorizontalBox(m.pill))
-    column:AddChildToVerticalBox(Box(tree, nil, 1, Fill(tree, DIM_LINE)))
+    m.stateText = Text(tree, 12, PALE_GREY)
+    Middle(Pad(head:AddChildToHorizontalBox(m.stateText), 0, 0, 10, 0))
+    m.switch = Switch(tree)
+    Middle(head:AddChildToHorizontalBox(m.switch.track))
 
-    -- settings rows, grouped
+    -- settings, one card per section
+    local card
     for i, row in ipairs(ROWS) do
+        local kind = KIND[row[1]] or "switch"
         if SECTIONS[i] then
-            local heading = Text(tree, 9, PALE_GREEN, 260)
+            local heading = Text(tree, 9, GREY, 140)
+            Bold(heading)
             SetText(heading, SECTIONS[i])
-            Pad(column:AddChildToVerticalBox(heading), 18, i == 1 and 10 or 12, 0, 3)
+            Pad(column:AddChildToVerticalBox(heading), 6, 14, 0, 6)
+            local frame = Round(Fill(tree, CARD), 10)
+            pcall(function() frame:SetPadding({ Left = 4, Top = 4, Right = 4, Bottom = 4 }) end)
+            column:AddChildToVerticalBox(frame)
+            card = Construct("VerticalBox", tree)
+            frame:SetContent(card)
         end
-        local r = {}
-        r.bg = Fill(tree, CLEAR)
-        pcall(function() r.bg:SetPadding({ Left = 0, Top = 0, Right = 14, Bottom = 0 }) end)
-        Pad(column:AddChildToVerticalBox(r.bg), 0, i == #ROWS and 12 or 1, 0, i == #ROWS and 6 or 1)
-        local line = Construct("HorizontalBox", tree)
-        r.bg:SetContent(line)
-        r.marker = Fill(tree, CLEAR)
-        line:AddChildToHorizontalBox(Box(tree, 4, 30, r.marker))
-        r.label = Text(tree, 13, WHITE)
-        SetText(r.label, row[1])
-        if row[1] == "Close" then
-            -- a centred button instead of a setting
-            local slot = line:AddChildToHorizontalBox(r.label)
-            pcall(function() slot:SetSize({ SizeRule = 1, Value = 1.0 }) end)
-            pcall(function() slot:SetHorizontalAlignment(2) end)
-            Middle(slot)
-            SetText(r.label, "CLOSE")
-            pcall(function() r.label.Font.LetterSpacing = 300 end)
+        local r = { kind = kind }
+        r.bg = Round(Fill(tree, CLEAR), 8)
+        pcall(function() r.bg:SetPadding({ Left = 12, Top = 0, Right = 12, Bottom = 0 }) end)
+        if kind == "button" then
+            Pad(column:AddChildToVerticalBox(r.bg), 0, 16, 0, 0)
         else
-            local labelSlot = line:AddChildToHorizontalBox(Box(tree, LABEL_WIDTH, nil, r.label))
-            Pad(labelSlot, 14, 0, 0, 0)
-            Middle(labelSlot)
-            r.left = Text(tree, 13, GREEN)
-            SetText(r.left, "<")
-            Middle(line:AddChildToHorizontalBox(Box(tree, 18, nil, r.left)))
-            local valueRow = Construct("HorizontalBox", tree)
-            Middle(line:AddChildToHorizontalBox(Box(tree, VALUE_WIDTH, nil, valueRow)))
-            r.value = Text(tree, 13, WHITE)
-            Middle(valueRow:AddChildToHorizontalBox(r.value))
-            r.right = Text(tree, 13, GREEN)
-            SetText(r.right, ">")
-            Pad(valueRow:AddChildToHorizontalBox(r.right), 10, 0, 0, 0)
-            if row[1] == "Less radiation" then
-                -- a small gauge of the percentage
-                local gauge = Construct("HorizontalBox", tree)
-                Middle(line:AddChildToHorizontalBox(gauge))
-                r.barFill = Box(tree, 0, 6, Fill(tree, GREEN))
-                r.barRest = Box(tree, BAR_WIDTH, 6, Fill(tree, BAR_BG))
-                Middle(gauge:AddChildToHorizontalBox(r.barFill))
-                Middle(gauge:AddChildToHorizontalBox(r.barRest))
-            end
+            card:AddChildToVerticalBox(r.bg)
+        end
+        local line = Construct("HorizontalBox", tree)
+        r.bg:SetContent(Box(tree, nil, ROW_HEIGHT, line))
+        r.label = Text(tree, 13, LABEL)
+        SetText(r.label, row[1])
+        local labelSlot = Middle(Grow(line:AddChildToHorizontalBox(r.label)))
+        if kind == "button" then
+            Bold(r.label)
+            pcall(function() labelSlot:SetHorizontalAlignment(2) end)   -- centred
+        elseif kind == "switch" then
+            r.value = Text(tree, 12, GREY)
+            Middle(Pad(line:AddChildToHorizontalBox(r.value), 0, 0, 10, 0))
+            r.switch = Switch(tree)
+            Middle(line:AddChildToHorizontalBox(r.switch.track))
+        elseif kind == "slider" then
+            local slider = Construct("HorizontalBox", tree)
+            Middle(line:AddChildToHorizontalBox(slider))
+            r.barFill = Box(tree, 0, 4, Round(Fill(tree, GREEN)))
+            r.barRest = Box(tree, SLIDER_WIDTH, 4, Round(Fill(tree, TRACK)))
+            Middle(slider:AddChildToHorizontalBox(r.barFill))
+            Middle(slider:AddChildToHorizontalBox(Box(tree, 12, 12, Round(Fill(tree, BRIGHT)))))
+            Middle(slider:AddChildToHorizontalBox(r.barRest))
+            r.value = Text(tree, 13, BRIGHT)
+            Bold(r.value)
+            pcall(function() r.value:SetJustification(2) end)   -- right
+            Middle(line:AddChildToHorizontalBox(Box(tree, 52, nil, r.value)))
+        else   -- choice
+            r.left = Text(tree, 17, GREY)
+            SetText(r.left, "\u{2039}")
+            Middle(Pad(line:AddChildToHorizontalBox(r.left), 0, 0, 10, 0))
+            r.value = Text(tree, 13, LABEL)
+            Middle(line:AddChildToHorizontalBox(r.value))
+            r.right = Text(tree, 17, GREY)
+            SetText(r.right, "\u{203A}")
+            Middle(Pad(line:AddChildToHorizontalBox(r.right), 10, 0, 0, 0))
         end
         m.rows[i] = r
     end
 
-    -- footer: status and keys
-    column:AddChildToVerticalBox(Box(tree, nil, 1, Fill(tree, DIM_LINE)))
-    local footer = Construct("VerticalBox", tree)
-    Pad(column:AddChildToVerticalBox(footer), 18, 10, 14, 12)
-    m.status = Text(tree, 12, PALE_GREEN)
-    footer:AddChildToVerticalBox(m.status)
-    m.keys = Text(tree, 9, PALE_GREY, 120)
-    SetText(m.keys, "UP / DOWN  select      LEFT / RIGHT  change      .radmenu  close")
-    Pad(footer:AddChildToVerticalBox(m.keys), 0, 6, 0, 0)
+    -- footer: status with a coloured dot, then the keys as key caps
+    local statusRow = Construct("HorizontalBox", tree)
+    Pad(column:AddChildToVerticalBox(statusRow), 4, 14, 4, 0)
+    m.dot = Round(Fill(tree, GREEN))
+    Middle(statusRow:AddChildToHorizontalBox(Box(tree, 8, 8, m.dot)))
+    m.status = Text(tree, 12, LABEL)
+    Middle(Pad(statusRow:AddChildToHorizontalBox(m.status), 8, 0, 0, 0))
+    local hints = Construct("HorizontalBox", tree)
+    Pad(column:AddChildToVerticalBox(hints), 4, 10, 4, 0)
+    for _, hint in ipairs({ { "UP / DOWN", "select" }, { "LEFT / RIGHT", "change" }, { ".radmenu", "close" } }) do
+        local cap = Round(Fill(tree, BUTTON), 4, HAIRLINE)
+        pcall(function() cap:SetPadding({ Left = 6, Top = 2, Right = 6, Bottom = 2 }) end)
+        local capText = Text(tree, 9, PALE_GREY, 60)
+        Bold(capText)
+        SetText(capText, hint[1])
+        cap:SetContent(capText)
+        Middle(hints:AddChildToHorizontalBox(cap))
+        local what = Text(tree, 10, GREY)
+        SetText(what, hint[2])
+        Middle(Pad(hints:AddChildToHorizontalBox(what), 6, 0, 14, 0))
+    end
 
     Attach(hud, m.panel, 0.5, 0.5, 0, 0, 102)
     return m
 end
 
 local function ValueColor(value)
-    if value == "ON" or value == "YES" or value == "ALLOWED BY HOST" then return GREEN end
-    if value == "OFF" or value == "NO" then return PALE_GREY end
-    if value == "DISABLED BY HOST" then return AMBER end
-    return WHITE
+    if value == "Disabled by host" then return AMBER end
+    if value == "Allowed by host" then return GREEN end
+    return GREY
 end
 
 UpdateMenu = function()
@@ -1147,34 +1219,39 @@ UpdateMenu = function()
         if not ok then Warn(err) return end
     end
     local m = ui.menu
-    SetText(m.pillText, isOn and "ON" or "OFF")
-    pcall(function() m.pill:SetBrushColor(isOn and GREEN or GREY) end)
-    pcall(function() m.accent:SetBrushColor(isOn and GREEN or GREY) end)
+    SetText(m.stateText, isOn and "On" or "Off")
+    SetSwitch(m.switch, isOn)
     for i, row in ipairs(ROWS) do
         local r = m.rows[i]
         local lit = i == selected
-        pcall(function() r.bg:SetBrushColor(lit and ROW_LIT or CLEAR) end)
-        pcall(function() r.marker:SetBrushColor(lit and GREEN or CLEAR) end)
-        SetTextColor(r.label, lit and WHITE or PALE_GREY)
-        if r.value then
+        if r.kind == "button" then
+            pcall(function() r.bg:SetBrushColor(lit and GREEN or BUTTON) end)
+            SetTextColor(r.label, lit and INK or BRIGHT)
+        else
+            pcall(function() r.bg:SetBrushColor(lit and ROW_LIT or CLEAR) end)
+            SetTextColor(r.label, lit and BRIGHT or LABEL)
             local value = row[2]()
             SetText(r.value, value)
-            SetTextColor(r.value, ValueColor(value))
-            local arrows = lit and HIT_TEST_INVISIBLE or 2   -- 2 = Hidden: keeps the space
-            pcall(function() r.left:SetVisibility(arrows) end)
-            pcall(function() r.right:SetVisibility(arrows) end)
-        else
-            SetTextColor(r.label, lit and GREEN or PALE_GREY)
-        end
-        if r.barFill then
-            local filled = math.floor(BAR_WIDTH * reduction + 0.5)
-            pcall(function() r.barFill:SetWidthOverride(filled) end)
-            pcall(function() r.barRest:SetWidthOverride(BAR_WIDTH - filled) end)
+            if r.kind == "switch" then
+                local state = SWITCH_STATE[value]
+                -- a joined player sees the host's answer as text, without a switch
+                pcall(function() r.switch.track:SetVisibility(state == nil and COLLAPSED or HIT_TEST_INVISIBLE) end)
+                if state ~= nil then SetSwitch(r.switch, state) end
+                SetTextColor(r.value, ValueColor(value))
+            elseif r.kind == "choice" then
+                SetTextColor(r.value, lit and BRIGHT or LABEL)
+                SetTextColor(r.left, lit and GREEN or GREY)
+                SetTextColor(r.right, lit and GREEN or GREY)
+            else   -- slider
+                local filled = math.floor(SLIDER_WIDTH * reduction + 0.5)
+                pcall(function() r.barFill:SetWidthOverride(filled) end)
+                pcall(function() r.barRest:SetWidthOverride(SLIDER_WIDTH - filled) end)
+            end
         end
     end
     local status, color = Status()
     SetText(m.status, status)
-    SetTextColor(m.status, color)
+    pcall(function() m.dot:SetBrushColor(color) end)
     Show(m, true)
 end
 
