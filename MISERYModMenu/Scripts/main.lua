@@ -3763,15 +3763,14 @@ function MenuLayout.Apply()
     local root, p, why, wrapper = nil, nil, nil, nil
     local ok, err = pcall(function()
         root = cm.WidgetTree.RootWidget
-        -- the game wraps everything in its stone frame (a Border): work inside it
-        for _ = 1, 4 do
-            local cls = MsClassName(root)
-            if cls == "CanvasPanel" then break end
+        -- the game wraps everything in its stone frame (a Border, maybe with more
+        -- one-child wrappers): work in the first container holding several things
+        for _ = 1, 6 do
             if root:GetChildrenCount() ~= 1 then break end
-            if cls == "Border" and not wrapper then wrapper = root end
+            if MsClassName(root) == "Border" and not wrapper then wrapper = root end
             root = root:GetChildAt(0)
         end
-        if MsClassName(root) ~= "CanvasPanel" then error("menu root is a " .. MsClassName(root), 0) end
+        if root:GetChildrenCount() < 1 then error("menu root " .. MsClassName(root) .. " holds nothing", 0) end
         p, why = MenuLayout.Plan(MenuLayout.Collect(root))
         if not p then error(why, 0) end
         -- every class we need, checked before anything moves
@@ -3780,7 +3779,8 @@ function MenuLayout.Apply()
         end
     end)
     if not ok then
-        Log("[MenuLayout] Keeping the game's layout (" .. tostring(err) .. ")")
+        Log("[MenuLayout] Keeping the game's layout (" .. tostring(err) .. ") - the menu's widgets follow:")
+        pcall(MenuStyle.Dump, cm.WidgetTree.RootWidget, 0)
         return
     end
 
@@ -3803,6 +3803,14 @@ function MenuLayout.Apply()
     local panelPath = nil
     local function attach(panel)
         panelPath = ItemMenu.PathOf(panel)
+        if MsClassName(root) ~= "CanvasPanel" then
+            -- an Overlay or a box: the panel goes in its top-left corner
+            local slot = root:AddChild(panel)
+            pcall(function() slot:SetHorizontalAlignment(1) end)
+            pcall(function() slot:SetVerticalAlignment(1) end)
+            pcall(function() slot:SetPadding({ Left = 0, Top = 0, Right = 0, Bottom = 0 }) end)
+            return
+        end
         local slot = root:AddChildToCanvas(panel)
         pcall(function() slot:SetAutoSize(true) end)
         pcall(function() slot:SetZOrder(10) end)
