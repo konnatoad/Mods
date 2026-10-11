@@ -53,9 +53,21 @@ local function FindWeightField(inv)
     return nil
 end
 
+-- Calling anything on an object that doesn't exist (a missing owner,
+-- character or player state) crashes the game outright - pcall can't catch
+-- it - so every link in a chain is checked first.
+local function Valid(obj)
+    if obj == nil then return false end
+    local ok, valid = pcall(function() return obj:IsValid() end)
+    return ok and valid == true
+end
+
 local function OwnerName(inv)
     local name = "container"
-    pcall(function() name = inv:GetOwner():GetFName():ToString() end)
+    pcall(function()
+        local owner = inv:GetOwner()
+        if Valid(owner) then name = owner:GetFName():ToString() end
+    end)
     return name
 end
 
@@ -83,10 +95,10 @@ local function FixStuckWeights(verbose)
     local containers = Containers()
     for _, inv in ipairs(containers) do
         local field = FindWeightField(inv)
-        if field and ReadNumber(inv, "ItemCount") == 0 and not IsSkipped(inv) then
+        if field and ReadNumber(inv, "ItemCount") == 0 then
             empty = empty + 1
             local weight = ReadNumber(inv, field)
-            if weight and weight > 0.01 then
+            if weight and weight > 0.01 and not IsSkipped(inv) then
                 if pcall(function() inv[field] = 0.0 end) then
                     fixed = fixed + 1
                     log(string.format("Reset stuck weight on empty %s: %.2f kg -> 0", OwnerName(inv), weight))
