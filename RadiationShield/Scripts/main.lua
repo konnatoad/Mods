@@ -1033,7 +1033,8 @@ local SECTION_OF = { Shield = "SHIELD", ["Less radiation"] = "SHIELD", ["Others 
     ["Live readout"] = "DISPLAY", Badge = "DISPLAY", ["Badge position"] = "DISPLAY",
     ["Shield on at start"] = "STARTUP", ["Toggle key"] = "STARTUP" }
 -- In someone else's world the host decides strength and sharing: only these
-local JOINED_ROWS = { Shield = true, ["Live readout"] = true, ["Badge position"] = true, Close = true }
+local JOINED_ROWS = { Shield = true, ["Live readout"] = true, Badge = true, ["Badge position"] = true,
+    ["Toggle key"] = true, Close = true }
 local function VisibleRows()
     local order = {}
     for i, row in ipairs(ROWS) do

@@ -108,7 +108,7 @@ whether players who join may use shields (**Others can use it**) and how strong 
   later, shields that are already on turn off.
 - **The host doesn't have the mod:** after 3 seconds the badge shows **HOST HAS NO SHIELD MOD**.
 
-In someone else's world, `.radmenu` only has **Shield**, **Live readout** and **Badge position**, and shows the host's
+In someone else's world, `.radmenu` only has **Shield**, **Live readout**, **Badge**, **Badge position** and **Toggle key**, and shows the host's
 percentage under the title. `.radshield 75` is refused there (`.radshield on/off` works). Your own saved percentage is
 kept for when you host.
 
