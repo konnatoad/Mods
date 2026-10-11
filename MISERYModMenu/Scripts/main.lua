@@ -3448,10 +3448,387 @@ RegisterConsoleCommandHandler(".menudump", function()
     return true
 end)
 
+-- ---------- layout ----------
+-- The game places its widgets by hand on a big stone frame, so labels and
+-- fields overlap and the buttons float around. After styling, the same
+-- widgets (not copies: their clicks, hooks and values stay the game's) are
+-- moved into a tidy panel like the Radiation Shield menu:
+--
+--   Mod Menu                         (PageUp closes)
+--   SPAWN ITEM    [ item list                       ]
+--                 [ 1 ][ Search...       ][ Spawn ]
+--   SPAWN ENEMY   [ enemy list          ][ Spawn ]
+--   TIME          Time [ 0 ]  Day [ 1 ]  Month [ 1 ]
+--                 [ Sunny ][ Rain ][ Thunder ]
+--   EVENTS        [ Summon plane ][ Summon Grad ]
+--                 [ Skip 1 emission ][ Skip 5 emissions ]
+--   MOVEMENT      [ Fly ]  scroll the mouse wheel to change speed
+--
+-- Widgets it doesn't recognise go in an "Other" card, so nothing is lost.
+-- If anything fails before the move, the game's layout is left as it was.
+local MenuLayout = { enabled = true, donePath = nil }
+local ML_WIDTH = 500
+local ML_CARD = { R = 1, G = 1, B = 1, A = 0.035 }
+local ML_PANEL = { R = 0.016, G = 0.018, B = 0.022, A = 0.95 }
+local ML_LABELS = {   -- button texts as the game writes them -> as shown
+    SPAWN = "Spawn", FLY = "Fly", SUNNY = "Sunny", RAIN = "Rain", THUNDER = "Thunder",
+    ["SUMMON PLANE"] = "Summon plane", ["SUMMON GRAD"] = "Summon Grad",
+    ["SKIP 1 EMISSION"] = "Skip 1 emission", ["SKIP 5 EMISSION"] = "Skip 5 emissions",
+}
+
+local function MlNew(tree, cls)
+    local c = StaticFindObject("/Script/UMG." .. cls)
+    if not ItemMenu.IsValid(c) then error(cls .. " class not found", 0) end
+    local w = StaticConstructObject(c, tree)
+    if not ItemMenu.IsValid(w) then error("could not create " .. cls, 0) end
+    return w
+end
+
+local function MlSetText(text, s)
+    if not pcall(function() text:SetText(FText(s)) end) then pcall(function() text:SetText(s) end) end
+end
+
+local function MlText(tree, s, size, color, bold, spacing)
+    local t = MlNew(tree, "TextBlock")
+    pcall(function() t.Font.Size = size end)
+    if bold then pcall(function() t.Font.TypefaceFontName = FName("Bold") end) end
+    if spacing then pcall(function() t.Font.LetterSpacing = spacing end) end
+    MsTextColor(t, color)
+    MlSetText(t, s)
+    return t
+end
+
+local function MlPad(slot, l, t, r, b)
+    pcall(function() slot:SetPadding({ Left = l, Top = t, Right = r, Bottom = b }) end)
+    return slot
+end
+local function MlFill(slot, value)
+    pcall(function() slot:SetSize({ SizeRule = 1, Value = value or 1.0 }) end)
+    return slot
+end
+local function MlMiddle(slot) pcall(function() slot:SetVerticalAlignment(2) end) return slot end
+
+local function MlBox(tree, w, h, child)
+    local box = MlNew(tree, "SizeBox")
+    if w then box:SetWidthOverride(w) end
+    if h then box:SetHeightOverride(h) end
+    if child then box:SetContent(child) end
+    return box
+end
+
+-- Everything in the menu, sorted by what it is
+function MenuLayout.Collect(root)
+    local f = { buttons = {}, combos = {}, spins = {}, boxes = {}, texts = {}, backgrounds = {} }
+    local function walk(w, depth)
+        if depth > 30 or not ItemMenu.IsValid(w) then return end
+        local cls = MsClassName(w)
+        local item = { w = w, path = ItemMenu.PathOf(w), parent = "" }
+        pcall(function() item.parent = ItemMenu.PathOf(w:GetParent()) end)
+        if cls == "Button" then
+            pcall(function() item.text = w:GetChildAt(0) end)
+            item.label = item.text and MsText(item.text) or ""
+            table.insert(f.buttons, item)
+            return
+        elseif cls == "ComboBoxString" then table.insert(f.combos, item) return
+        elseif cls == "SpinBox" then table.insert(f.spins, item) return
+        elseif cls == "EditableTextBox" then table.insert(f.boxes, item) return
+        elseif cls == "TextBlock" then
+            item.label = MsText(w)
+            table.insert(f.texts, item)
+            return
+        elseif cls == "Image" or cls == "Border" then
+            table.insert(f.backgrounds, item)
+        end
+        local n = 0
+        pcall(function() n = w:GetChildrenCount() end)
+        for i = 0, (tonumber(n) or 0) - 1 do
+            local child = nil
+            pcall(function() child = w:GetChildAt(i) end)
+            if child then walk(child, depth + 1) end
+        end
+    end
+    walk(root, 0)
+    return f
+end
+
+-- Works out which widget is which. Returns the plan, or nil and why.
+function MenuLayout.Plan(f)
+    local p = { weather = {}, events = {}, other = {} }
+    local itemPath = ItemMenu.IsValid(ItemMenu.combo) and ItemMenu.PathOf(ItemMenu.combo) or nil
+    for _, c in ipairs(f.combos) do
+        if c.path == itemPath or (not itemPath and not p.itemList) then p.itemList = c
+        elseif not p.enemyList then p.enemyList = c
+        else table.insert(p.other, c) end
+    end
+    if not p.itemList then return nil, "item list not found" end
+
+    for _, b in ipairs(f.buttons) do
+        local key = b.label:upper():gsub("^%s+", ""):gsub("%s+$", "")
+        b.key = key
+        if key == "SPAWN" then
+            -- the item Spawn sits with the item list; the other is for enemies
+            if not p.itemSpawn and b.parent == p.itemList.parent then p.itemSpawn = b
+            else table.insert(p.other, b) end
+        elseif key == "FLY" then p.fly = b
+        elseif key == "SUNNY" or key == "RAIN" or key == "THUNDER" then table.insert(p.weather, b)
+        elseif key:find("^SUMMON") or key:find("^SKIP") then table.insert(p.events, b)
+        else table.insert(p.other, b) end
+    end
+    -- Spawn buttons not matched by their column: first is items, next enemies
+    local rest = {}
+    for _, b in ipairs(p.other) do
+        if b.key == "SPAWN" and not p.itemSpawn then p.itemSpawn = b
+        elseif b.key == "SPAWN" and not p.enemySpawn then p.enemySpawn = b
+        else table.insert(rest, b) end
+    end
+    p.other = rest
+    -- the enemy Spawn is the one left, whatever the column check said
+    if p.enemyList and not p.enemySpawn then
+        for i, b in ipairs(p.other) do
+            if b.key == "SPAWN" then p.enemySpawn = table.remove(p.other, i) break end
+        end
+    end
+
+    local searchPath = ItemMenu.searchPath
+    local amount = ItemMenu.FindAmountBox()
+    local amountPath = amount and ItemMenu.PathOf(amount) or nil
+    for _, b in ipairs(f.boxes) do
+        if b.path == searchPath then p.search = b
+        elseif b.path == amountPath or not p.amount then p.amount = b
+        else table.insert(p.other, b) end
+    end
+
+    -- Time / Day / Month: the label sharing the field's row, else tree order
+    local defaults = { "Time", "Day", "Month" }
+    p.spins = {}
+    for i, s in ipairs(f.spins) do
+        local name = defaults[i] or "Value"
+        for _, t in ipairs(f.texts) do
+            if t.parent == s.parent and #t.label > 0 and #t.label <= 12 then name = t.label end
+        end
+        s.name = name
+        table.insert(p.spins, s)
+    end
+    for _, t in ipairs(f.texts) do
+        if t.label:lower():find("mouse wheel", 1, true) then p.hint = t end
+    end
+    p.backgrounds = f.backgrounds
+    return p
+end
+
+-- attach(panel) puts the new panel on screen before anything moves into it,
+-- so a failure half way can't leave a widget somewhere invisible
+function MenuLayout.Build(cm, p, attach)
+    local tree = cm.WidgetTree
+    local root = tree.RootWidget
+    local L = {}
+
+    -- panel
+    L.panel = MlNew(tree, "Border")
+    L.panel:SetBrushColor(ML_PANEL)
+    MsBrush(L.panel.Background, { R = 1, G = 1, B = 1, A = 1 }, 14, MS_LINE)
+    pcall(function() L.panel:SetPadding({ Left = 18, Top = 16, Right = 18, Bottom = 16 }) end)
+    local width = MlNew(tree, "SizeBox")
+    pcall(function() width:SetWidthOverride(ML_WIDTH) end)
+    L.panel:SetContent(width)
+    local column = MlNew(tree, "VerticalBox")
+    width:SetContent(column)
+    attach(L.panel)
+
+    local head = MlNew(tree, "HorizontalBox")
+    MlPad(column:AddChildToVerticalBox(head), 4, 0, 4, 2)
+    MlMiddle(MlFill(head:AddChildToHorizontalBox(MlText(tree, "Mod Menu", 19, MS_WHITE, true))))
+    MlMiddle(head:AddChildToHorizontalBox(MlText(tree, "PageUp to close", 11, MS_MUTED)))
+
+    local card
+    local function Section(title)
+        MlPad(column:AddChildToVerticalBox(MlText(tree, title, 9, MS_MUTED, true, 140)), 6, 14, 0, 6)
+        local frame = MlNew(tree, "Border")
+        frame:SetBrushColor(ML_CARD)
+        MsBrush(frame.Background, { R = 1, G = 1, B = 1, A = 1 }, 10)
+        pcall(function() frame:SetPadding({ Left = 10, Top = 10, Right = 10, Bottom = 10 }) end)
+        column:AddChildToVerticalBox(frame)
+        card = MlNew(tree, "VerticalBox")
+        frame:SetContent(card)
+    end
+    -- one row of the card: items = { {item, width or nil (= share the rest)}, ... }
+    local function Row(items, height)
+        local row = MlNew(tree, "HorizontalBox")
+        MlPad(card:AddChildToVerticalBox(row), 0, card:GetChildrenCount() > 1 and 8 or 0, 0, 0)
+        for i, it in ipairs(items) do
+            local holder = MlBox(tree, it[2], height)
+            local slot = row:AddChildToHorizontalBox(holder)
+            if not it[2] then MlFill(slot, it[3]) end
+            MlMiddle(MlPad(slot, i > 1 and 8 or 0, 0, 0, 0))
+            if it[1].w then
+                it[1].w:RemoveFromParent()
+                holder:SetContent(it[1].w)
+                it[1].moved = true
+            else
+                holder:SetContent(it[1])   -- one of our own texts
+            end
+        end
+        return row
+    end
+    local function Relabel(b)
+        if b and b.text and ML_LABELS[b.key] then MlSetText(b.text, ML_LABELS[b.key]) end
+    end
+
+    Section("SPAWN ITEM")
+    Row({ { p.itemList } }, 34)
+    local spawnRow = {}
+    if p.amount then table.insert(spawnRow, { p.amount, 64 }) end
+    if p.search then table.insert(spawnRow, { p.search }) end
+    if p.itemSpawn then table.insert(spawnRow, { p.itemSpawn, 104 }) end
+    if #spawnRow > 0 then Row(spawnRow, 34) end
+    Relabel(p.itemSpawn)
+
+    if p.enemyList or p.enemySpawn then
+        Section("SPAWN ENEMY")
+        local r = {}
+        if p.enemyList then table.insert(r, { p.enemyList }) end
+        if p.enemySpawn then table.insert(r, { p.enemySpawn, 104 }) end
+        Row(r, 34)
+        Relabel(p.enemySpawn)
+    end
+
+    if #p.spins > 0 or #p.weather > 0 then
+        Section("TIME AND WEATHER")
+        if #p.spins > 0 then
+            -- labels take only their own width, the fields share the rest
+            local row = MlNew(tree, "HorizontalBox")
+            MlPad(card:AddChildToVerticalBox(row), 0, 0, 0, 0)
+            for i, s in ipairs(p.spins) do
+                local label = MlText(tree, s.name, 12, MS_LABEL, true)
+                MlMiddle(MlPad(row:AddChildToHorizontalBox(label), i > 1 and 14 or 0, 0, 8, 0))
+                local holder = MlBox(tree, nil, 30)
+                MlMiddle(MlFill(row:AddChildToHorizontalBox(holder)))
+                s.w:RemoveFromParent()
+                holder:SetContent(s.w)
+                s.moved = true
+            end
+        end
+        if #p.weather > 0 then
+            local r = {}
+            for _, b in ipairs(p.weather) do table.insert(r, { b }) Relabel(b) end
+            Row(r, 32)
+        end
+    end
+
+    if #p.events > 0 then
+        Section("EVENTS")
+        for i = 1, #p.events, 2 do
+            local r = { { p.events[i] } }
+            if p.events[i + 1] then table.insert(r, { p.events[i + 1] }) end
+            for _, it in ipairs(r) do Relabel(it[1]) end
+            Row(r, 32)
+        end
+    end
+
+    if p.fly then
+        Section("MOVEMENT")
+        Relabel(p.fly)
+        local r = { { p.fly, 120 } }
+        if p.hint then
+            MlSetText(p.hint.w, "Scroll the mouse wheel to change speed")
+            table.insert(r, { p.hint })
+        end
+        Row(r, 32)
+        if p.hint then
+            MsFont(p.hint.w, 11, false)
+            MsTextColor(p.hint.w, MS_MUTED)
+        end
+    end
+
+    if #p.other > 0 then
+        Section("OTHER")
+        for i = 1, #p.other, 2 do
+            local r = { { p.other[i] } }
+            if p.other[i + 1] then table.insert(r, { p.other[i + 1] }) end
+            Row(r, 32)
+        end
+    end
+    return L
+end
+
+-- Game thread, after MenuStyle.Apply: once per menu instance
+function MenuLayout.Apply()
+    if not MenuLayout.enabled then return end
+    local cm = GetCheatMenuWidget()
+    if not ItemMenu.IsValid(cm) then return end
+    local path = ItemMenu.PathOf(cm)
+    if path == MenuLayout.donePath then return end
+    MenuLayout.donePath = path
+
+    local root, p, why = nil, nil, nil
+    local ok, err = pcall(function()
+        root = cm.WidgetTree.RootWidget
+        if MsClassName(root) ~= "CanvasPanel" then error("menu root is a " .. MsClassName(root), 0) end
+        p, why = MenuLayout.Plan(MenuLayout.Collect(root))
+        if not p then error(why, 0) end
+        -- every class we need, checked before anything moves
+        for _, cls in ipairs({ "Border", "SizeBox", "VerticalBox", "HorizontalBox", "TextBlock" }) do
+            if not ItemMenu.IsValid(StaticFindObject("/Script/UMG." .. cls)) then error(cls .. " class not found", 0) end
+        end
+    end)
+    if not ok then
+        Log("[MenuLayout] Keeping the game's layout (" .. tostring(err) .. ")")
+        return
+    end
+
+    -- remember where the frame was, to put the new panel there
+    local frame = p.backgrounds[1]
+    local geo = nil
+    pcall(function()
+        local s = frame.w.Slot
+        local a, al = s:GetAnchors(), s:GetAlignment()
+        local pos = s:GetPosition()
+        geo = { anchors = { Minimum = { X = a.Minimum.X, Y = a.Minimum.Y }, Maximum = { X = a.Minimum.X, Y = a.Minimum.Y } },
+                alignment = { X = al.X, Y = al.Y }, position = { X = pos.X, Y = pos.Y } }
+    end)
+
+    local panelPath = nil
+    local function attach(panel)
+        panelPath = ItemMenu.PathOf(panel)
+        local slot = root:AddChildToCanvas(panel)
+        pcall(function() slot:SetAutoSize(true) end)
+        pcall(function() slot:SetZOrder(10) end)
+        if geo then
+            pcall(function() slot:SetAnchors(geo.anchors) end)
+            pcall(function() slot:SetAlignment(geo.alignment) end)
+            pcall(function() slot:SetPosition(geo.position) end)
+        else
+            pcall(function() slot:SetAnchors({ Minimum = { X = 0.5, Y = 0.5 }, Maximum = { X = 0.5, Y = 0.5 } }) end)
+            pcall(function() slot:SetAlignment({ X = 0.5, Y = 0.5 }) end)
+        end
+    end
+
+    local built, err2 = pcall(MenuLayout.Build, cm, p, attach)
+    if not built then
+        -- some widgets may already be in the new panel: show both rather than lose any
+        Log("[MenuLayout] Layout failed part way (" .. tostring(err2) .. ") - nothing hidden")
+        return
+    end
+
+    -- the old layout now only holds the frame, labels and empty boxes
+    local n = 0
+    pcall(function() n = root:GetChildrenCount() end)
+    for i = 0, (tonumber(n) or 0) - 1 do
+        pcall(function()
+            local child = root:GetChildAt(i)
+            if ItemMenu.PathOf(child) ~= panelPath then child:SetVisibility(1) end   -- collapsed
+        end)
+    end
+    Log(string.format("[MenuLayout] Menu rearranged: %d buttons, %d fields, %d unrecognised kept under Other",
+        #p.weather + #p.events + (p.fly and 1 or 0) + (p.itemSpawn and 1 or 0) + (p.enemySpawn and 1 or 0),
+        #p.spins + (p.amount and 1 or 0) + (p.search and 1 or 0), #p.other))
+end
+
 OnCheatMenuShown = function()
     ItemMenu.SafeTick()
     MenuStyle.Apply()
     MenuStyle.StyleSearchBox()
+    MenuLayout.Apply()
     if ItemMenu.polling then return end
     ItemMenu.polling = true
     LoopAsync(250, function()
