@@ -80,11 +80,15 @@ local function LoadSettings()
     if values.toggleKey and values.toggleKey:match("^[%w_]+$") then toggleKey = values.toggleKey end
 end
 
+-- Your own strength (saved). `reduction` is the one in effect: the same,
+-- except in someone else's world, where the host's strength applies.
+local myReduction = nil
+
 local function SaveSettings()
     local file = io.open(SETTINGS_PATH, "w")
     if not file then return false end
     file:write("# Radiation Shield settings - written by the .radmenu menu\n")
-    file:write("reduction = " .. reduction .. "\n")
+    file:write("reduction = " .. (myReduction or reduction) .. "\n")
     file:write("startOn = " .. tostring(startOn) .. "\n")
     file:write("showIndicator = " .. tostring(showIndicator) .. "\n")
     file:write("badgePosition = " .. badgePosition .. "\n")
@@ -96,6 +100,7 @@ local function SaveSettings()
 end
 
 LoadSettings()
+myReduction = reduction
 local boundKey = toggleKey   -- the key actually bound this session
 
 ------------------------------------------------------------
@@ -119,7 +124,7 @@ local amHost = true      -- false when we joined someone else's world
 -- "asking", "allowed", "denied", "nomod" (no answer: host lacks the mod)
 local hostAnswer = nil
 -- Hosting: players who joined and have their shield on.
--- others[controller address] = { pc = controller, reduction = 0.25, name = "..." }
+-- others[controller address] = { pc = controller } (they get the host's strength)
 local others = {}
 local othersByInv = {}     -- [inventory address] = reduction, for the hook
 local othersActive = false
@@ -693,7 +698,7 @@ local function Tell(pc, tag, text)
     pcall(function() pc:ClientMessage("[RadiationShield] " .. text .. " #RS:" .. tag, FName("None"), 0.0) end)
 end
 
--- Hosting: map each shielded player's current inventory to their reduction
+-- Hosting: map each shielded player's current inventory to the host's strength
 RebuildOthers = function()
     local byInv, active = {}, false
     for key, o in pairs(others) do
@@ -707,7 +712,7 @@ RebuildOthers = function()
             others[key] = nil   -- left the game
         elseif Valid(inv) then
             local address = AddressOf(inv)
-            if address then byInv[address] = o.reduction; active = true end
+            if address then byInv[address] = reduction; active = true end
         end
     end
     othersByInv, othersActive = byInv, active
@@ -721,6 +726,16 @@ local function TellEveryone(tag, text)
         end
     end)
 end
+-- Hosting: the strength changed - players with their shield on follow
+local function TellStrength()
+    if not next(others) then return end
+    RebuildOthers()
+    for _, o in pairs(others) do
+        Tell(o.pc, "on:" .. Percent(reduction),
+            "The host set radiation shields to " .. Percent(reduction) .. "% less radiation")
+    end
+end
+
 local function StartLoop()
     if isLoopRunning then return end
     isLoopRunning = true
@@ -804,7 +819,7 @@ local function AskHost(on)
     hostAnswer = "asking"
     askId = askId + 1
     local myAsk = askId
-    local sent = SendToHost("ON_" .. Percent(reduction))
+    local sent = SendToHost("ON")
     log("Asking the host to allow your radiation shield")
     -- no answer in 3 s: the host doesn't run this mod
     LoopAsync(3000, function()
@@ -825,7 +840,12 @@ end
 local function ToggleTo(on)
     ExecuteInGameThread(function()
         RefreshMyInventory()
-        if Joined() then AskHost(on) else SetShield(on) end
+        if Joined() then
+            AskHost(on)
+        else
+            reduction = myReduction   -- in your own world: your own strength
+            SetShield(on)
+        end
     end)
 end
 
@@ -833,10 +853,20 @@ end
 local function OnClientMessage(selfParam, textParam)
     if not Joined() then return end   -- the host's own copies of its messages
     local text = ParamString(textParam)
-    local tag = text:match("#RS:(%a+)%s*$")
+    local tag, percent = text:match("#RS:(%a+):?(%d*)%s*$")
     if not tag then return end
     if tag == "on" then
         hostAnswer = "allowed"
+        local hostPercent = tonumber(percent)
+        if hostPercent and hostPercent >= 1 and hostPercent <= 100 then
+            -- the host decides how strong shields are in their world
+            local changed = isOn and Percent(reduction) ~= hostPercent
+            reduction = hostPercent / 100
+            if changed then
+                log("The host set radiation shields to " .. hostPercent .. "% less radiation")
+                ShowIndicator(true)
+            end
+        end
         if not isOn then SetShield(true) end
     elseif tag == "denied" then
         hostAnswer = "denied"
@@ -870,12 +900,12 @@ local function OnHostMessage(selfParam, msgParam)
             log(PlayerName(pc) .. " asked for a radiation shield - disabled (Others can use it: NO)")
             return
         end
-        local r = math.max(0.01, math.min(1, (tonumber(value) or 25) / 100))
-        others[key] = { pc = pc, reduction = r }
+        -- the host's strength, whatever the player asked for
+        others[key] = { pc = pc }
         RebuildOthers()
         StartLoop()
-        Tell(pc, "on", "Radiation shield ON for you (" .. Percent(r) .. "% less radiation)")
-        log(PlayerName(pc) .. " turned their radiation shield on (" .. Percent(r) .. "% less)")
+        Tell(pc, "on:" .. Percent(reduction), "Radiation shield ON for you (" .. Percent(reduction) .. "% less radiation)")
+        log(PlayerName(pc) .. " turned their radiation shield on (" .. Percent(reduction) .. "% less)")
     elseif cmd == "OFF" then
         if others[key] then log(PlayerName(pc) .. " turned their radiation shield off") end
         others[key] = nil
@@ -918,11 +948,11 @@ local ROWS = {
       function() ToggleTo(not isOn) end },
     { "Less radiation", function() return Percent(reduction) .. "%" end,
       function(dir)
+          if Joined() then return end   -- the host sets it (row hidden anyway)
           reduction = math.max(5, math.min(100, Percent(reduction) + 5 * dir)) / 100
+          myReduction = reduction
           if isOn then ShowIndicator(true) end
-          if isOn and Joined() then
-              SendToHost("ON_" .. Percent(reduction))
-          end
+          TellStrength()
           Changed("reduction " .. Percent(reduction) .. "%")
       end },
     { "Others can use it", function()
@@ -999,7 +1029,18 @@ local ROWS = {
 --   (                     Close                        )
 --   o status
 --   [UP / DOWN] select   [LEFT / RIGHT] change   [.radmenu] close
-local SECTIONS = { [1] = "SHIELD", [3] = "CO-OP", [4] = "DISPLAY", [7] = "STARTUP" }
+local SECTION_OF = { Shield = "SHIELD", ["Less radiation"] = "SHIELD", ["Others can use it"] = "CO-OP",
+    ["Live readout"] = "DISPLAY", Badge = "DISPLAY", ["Badge position"] = "DISPLAY",
+    ["Shield on at start"] = "STARTUP", ["Toggle key"] = "STARTUP" }
+-- In someone else's world the host decides strength and sharing: only these
+local JOINED_ROWS = { Shield = true, ["Live readout"] = true, ["Badge position"] = true, Close = true }
+local function VisibleRows()
+    local order = {}
+    for i, row in ipairs(ROWS) do
+        if not Joined() or JOINED_ROWS[row[1]] then table.insert(order, i) end
+    end
+    return order
+end
 local KIND = { ["Less radiation"] = "slider", ["Badge position"] = "choice", ["Toggle key"] = "choice", Close = "button" }
 local SWITCH_STATE = { On = true, Yes = true, Off = false, No = false }   -- other values: text only
 local MENU_WIDTH, ROW_HEIGHT, SLIDER_WIDTH = 440, 38, 120
@@ -1063,7 +1104,7 @@ end
 
 local function BuildMenu(hud)
     local tree = hud.WidgetTree
-    local m = { rows = {} }
+    local m = { rows = {}, order = VisibleRows(), joined = Joined() }
     m.panel = DarkPanel(tree, 0.94)
     Round(m.panel, 14, HAIRLINE)
     pcall(function() m.panel:SetPadding({ Left = 18, Top = 16, Right = 18, Bottom = 14 }) end)
@@ -1082,22 +1123,25 @@ local function BuildMenu(hud)
     Bold(m.title)
     SetText(m.title, "Radiation Shield")
     titles:AddChildToVerticalBox(m.title)
-    local sub = Text(tree, 11, GREY)
-    SetText(sub, "Settings")
-    titles:AddChildToVerticalBox(sub)
+    m.sub = Text(tree, 11, GREY)
+    SetText(m.sub, "Settings")
+    titles:AddChildToVerticalBox(m.sub)
     m.stateText = Text(tree, 12, PALE_GREY)
     Middle(Pad(head:AddChildToHorizontalBox(m.stateText), 0, 0, 10, 0))
     m.switch = Switch(tree)
     Middle(head:AddChildToHorizontalBox(m.switch.track))
 
     -- settings, one card per section
-    local card
-    for i, row in ipairs(ROWS) do
+    local card, lastSection
+    for _, i in ipairs(m.order) do
+        local row = ROWS[i]
         local kind = KIND[row[1]] or "switch"
-        if SECTIONS[i] then
+        local section = SECTION_OF[row[1]]
+        if section and section ~= lastSection then
+            lastSection = section
             local heading = Text(tree, 9, GREY, 140)
             Bold(heading)
-            SetText(heading, SECTIONS[i])
+            SetText(heading, section)
             Pad(column:AddChildToVerticalBox(heading), 6, 14, 0, 6)
             local frame = Round(Fill(tree, CARD), 10)
             pcall(function() frame:SetPadding({ Left = 4, Top = 4, Right = 4, Bottom = 4 }) end)
@@ -1186,17 +1230,27 @@ end
 UpdateMenu = function()
     local hud = GetHud()
     if not hud then return end
+    if ui.menu and ui.menu.panel:IsValid() and ui.menu.joined ~= Joined() then
+        -- became host / joined someone since it was built: other rows
+        pcall(function() ui.menu.panel:RemoveFromParent() end)
+        ui.menu, selected = nil, 1
+    end
     if not (ui.menu and ui.menu.panel:IsValid()) then
         ui.menu = nil
         local ok, err = pcall(function() ui.menu = BuildMenu(hud) end)
         if not ok then Warn(err) return end
     end
     local m = ui.menu
+    if m.joined then
+        SetText(m.sub, hostAnswer == "allowed" and ("Strength set by host: " .. Percent(reduction) .. "%")
+            or "Strength set by host")
+    end
     SetText(m.stateText, isOn and "On" or "Off")
     SetSwitch(m.switch, isOn)
-    for i, row in ipairs(ROWS) do
+    for n, i in ipairs(m.order) do
+        local row = ROWS[i]
         local r = m.rows[i]
-        local lit = i == selected
+        local lit = n == selected
         if r.kind == "button" then
             pcall(function() r.bg:SetBrushColor(lit and GREEN or BUTTON) end)
             SetTextColor(r.label, lit and INK or BRIGHT)
@@ -1250,9 +1304,10 @@ local function MenuKey(action)
     if not menuOpen then return end
     ExecuteInGameThread(function()
         if not menuOpen then return end
-        if action == "up" then selected = (selected - 2) % #ROWS + 1
-        elseif action == "down" then selected = selected % #ROWS + 1
-        else ROWS[selected][3](action == "right" and 1 or -1) end
+        local order = ui.menu and ui.menu.order or VisibleRows()
+        if action == "up" then selected = (selected - 2) % #order + 1
+        elseif action == "down" then selected = selected % #order + 1
+        else ROWS[order[selected]][3](action == "right" and 1 or -1) end
         if menuOpen then UpdateMenu() end
     end)
 end
@@ -1284,7 +1339,13 @@ RegisterConsoleCommandHandler(".radshield", function(FullCommand, Parameters)
             log("Use a percentage from 1 to 100, e.g. .radshield 75")
             return true
         end
+        if Joined() then
+            log("In someone else's world the host sets the strength - .radshield on/off still works")
+            return true
+        end
         reduction = percent / 100
+        myReduction = reduction
+        TellStrength()
         Changed("reduction " .. Percent(reduction) .. "%")
         ToggleTo(true)
         return true

@@ -98,14 +98,19 @@ Close it with the Close row or `.radmenu` again. HOME (or your chosen key) still
 
 Every change is saved immediately to `RadiationShield\settings.txt`.
 
-**Co-op:** every player's shield is their own. Pressing HOME protects only you, at your own percentage.
-The host decides whether players who join may use theirs, with **Others can use it** in the host's menu:
+**Co-op:** every player's shield is their own. Pressing HOME protects only you. The host decides the rest:
+whether players who join may use shields (**Others can use it**) and how strong they are (the host's **Less radiation**).
 
-- **YES:** when a joined player presses HOME, their game asks the host's game, the shield turns on for that player only,
-  and their badge shows it.
+- **YES:** when a joined player presses HOME, their game asks the host's game, the shield turns on for that player only
+  at the host's percentage, and their badge shows it. If the host changes **Less radiation** later, shields that are on
+  follow straight away.
 - **NO:** the joined player's badge shows **DISABLED BY HOST** and the shield stays off. If the host switches it to NO
   later, shields that are already on turn off.
 - **The host doesn't have the mod:** after 3 seconds the badge shows **HOST HAS NO SHIELD MOD**.
+
+In someone else's world, `.radmenu` only has **Shield**, **Live readout** and **Badge position**, and shows the host's
+percentage under the title. `.radshield 75` is refused there (`.radshield on/off` works). Your own saved percentage is
+kept for when you host.
 
 Everyone needs this mod. The two games talk through two messages that are built into Unreal Engine, so it works
 whichever game works out the radiation. The host's answers also show as a line in the joined player's console.
