@@ -163,7 +163,7 @@ pcall(RegisterHook, "/Script/Engine.PlayerController:ClientMessage", OnClientMes
 local isUnloadHooked = false
 local isTickLoopStarted = false
 
-RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
+local function Setup()
 	if not isUnloadHooked then
 		isUnloadHooked = pcall(RegisterHook, "/Game/Blueprints/BP_GlobalManager.BP_GlobalManager_C:UnloadPreviousLevels", OnUnloadPreviousLevels)
 	end
@@ -175,4 +175,13 @@ RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
 			return false
 		end)
 	end
+end
+
+RegisterHook("/Script/Engine.PlayerController:ClientRestart", Setup)
+
+-- Restarted in a world (.reloadmods, or the Mod Hub after a settings
+-- change): start now, not only at the next load. At the game's start there's
+-- no global manager yet, and the next load starts it as before.
+ExecuteInGameThread(function()
+	if GlobalManager() then Setup() end
 end)

@@ -1,4 +1,4 @@
-ModName, ModVersion = "Stack Them All", "1.3.0"
+ModName, ModVersion = "Stack Them All", "1.3.1"
 local stackThemAllConfig = require("stackThemAllConfig")
 -- Your own settings go in StackThemAll\config.lua (start from config.example.lua),
 -- not in this file, so `git pull` can always update the mod. config.lua
@@ -365,4 +365,16 @@ RegisterHook("/Script/Engine.PlayerController:ClientRestart", function(self, New
     end
     isInitRunning = true
     ExecuteWithDelay(3000, try_init)
+end)
+
+-- Restarted in a world (.reloadmods, or the Mod Hub after a settings
+-- change): apply the stack sizes now, not only at the next load. At the
+-- game's start there's no player yet, and the next load does it as before.
+ExecuteInGameThread(function()
+    local pc = nil
+    pcall(function() pc = FindFirstOf("PlayerController") end)
+    if pc and pc:IsValid() and not isInitRunning then
+        isInitRunning = true
+        ExecuteWithDelay(3000, try_init)
+    end
 end)

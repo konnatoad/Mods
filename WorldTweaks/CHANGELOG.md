@@ -2,6 +2,10 @@
 
 ---
 
+## 1.2.1 (2026-10-13)
+
+- Changing a setting (in the Mod Hub's Settings, or `config.lua`) and restarting the mod in a world now applies it straight away; before, nothing happened until the next load or respawn
+
 ## 1.2.0 (2026-10-12)
 
 ### Updating with git pull
