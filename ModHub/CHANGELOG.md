@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.1 (2026-10-13)
+
+- Mods with settings say SETTINGS next to their name in the list, so it's clear which pages have a Settings button (CHANGED still shows instead when a mod has changed)
+
 ## 1.4.0 (2026-10-12)
 
 ### Settings Page

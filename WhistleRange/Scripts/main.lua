@@ -19,7 +19,7 @@
 --
 -- Range: config.lua (see config.example.lua), rangeMeters; 0 = no limit.
 ------------------------------------------------------------
-local VERSION = "1.0.0"
+local VERSION = "1.0.1"
 
 local rangeMeters = 0    -- 0 = no limit (like the host)
 
@@ -62,7 +62,7 @@ end
 local function Meters(squared)
     if type(squared) ~= "number" or squared <= 0 then return "?" end
     local m = math.sqrt(squared) / 100
-    return m >= NO_LIMIT_METERS and "no limit" or string.format("%d m", math.floor(m + 0.5))
+    return m >= NO_LIMIT_METERS * 0.999 and "no limit" or string.format("%d m", math.floor(m + 0.5))
 end
 
 -- Hosting (or alone): this game decides what is sent where
@@ -71,8 +71,7 @@ local function OwnsIt(actor)
     return ok and authority == true
 end
 
-local applied = setmetatable({}, { __mode = "k" })
-local reportedJoin = false
+local applied = {}   -- characters already logged, by name (each hook call has a new Lua handle)
 
 -- A player's character: sent to everyone within the range
 local function Widen(pawn)
@@ -80,9 +79,11 @@ local function Widen(pawn)
     local want = RangeSquared()
     local now = nil
     pcall(function() now = pawn.NetCullDistanceSquared end)
-    if type(now) == "number" and math.abs(now - want) < 1 then return end
-    if pcall(function() pawn.NetCullDistanceSquared = want end) and not applied[pawn] then
-        applied[pawn] = true
+    -- the game keeps it as a float: a value this big comes back rounded
+    if type(now) == "number" and math.abs(now - want) <= want * 0.001 then return end
+    local name = NameOf(pawn)
+    if pcall(function() pawn.NetCullDistanceSquared = want end) and not applied[name] then
+        applied[name] = true
         log(string.format("%s: sent to players up to %s away (was %s)", NameOf(pawn),
             Meters(want), Meters(now)))
     end

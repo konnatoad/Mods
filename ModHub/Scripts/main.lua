@@ -895,7 +895,12 @@ local function ListView(tree, body)
             local info = INFO_BY_NAME[name]
             local isChanged = Changed(name)
             if isChanged then changed = changed + 1 end
-            ActionRow(tree, card, info and info.title or name, isChanged and "CHANGED" or nil, WARN, ShowMod(name))
+            if isChanged then
+                ActionRow(tree, card, info and info.title or name, "CHANGED", WARN, ShowMod(name))
+            else
+                -- mods whose page has a Settings button
+                ActionRow(tree, card, info and info.title or name, Settings(name) and "SETTINGS" or nil, MUTED, ShowMod(name))
+            end
         end
     end
     if #builtins > 0 then

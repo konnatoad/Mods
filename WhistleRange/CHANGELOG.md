@@ -2,6 +2,11 @@
 
 ---
 
+## 1.0.1 (2026-10-13)
+
+- The log line for a character came several times in a row: the game stores the range as a rounded number, so it looked unchanged every time. Each character is now changed and logged once
+- The first game log confirms players' characters were limited to 150 m before the mod raised it
+
 ## 1.0.0 (2026-10-12)
 
 ### First Release

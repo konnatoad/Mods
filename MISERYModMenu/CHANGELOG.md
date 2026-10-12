@@ -2,6 +2,17 @@
 
 ---
 
+## Version 4.6.2
+
+### Performance
+- Opening the PageUp menu walked through every object in the game to find the HUD, a small hitch on every press. The HUD is now found once and kept until the next level
+- At the main menu, the check that switches the game's cheats on looked for a player every 5 s by walking every object, though there is none until a world loads. It now waits for the player to appear
+
+### Stability
+- That check, and building the item list, ran on a timer thread beside the game; touching game objects from there can crash. Both now run on the game thread
+
+---
+
 ## Version 4.6.1
 
 ### Performance
