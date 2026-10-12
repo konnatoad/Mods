@@ -18,9 +18,9 @@ You need UE4SS installed in MISERY (the game has `MISERY\Binaries\Win64\ue4ss`) 
    cd "C:\Program Files (x86)\Steam\steamapps\common\MISERY\MISERY\Binaries\Win64\ue4ss"
    ```
    (use your own Steam library path).
-3. Move the old `Mods` folder out of the way, then clone this repository as `Mods`:
+3. Move the old `Mods` folder out of the way, then clone this repository (it makes the `Mods` folder):
    ```powershell
-   Rename-Item Mods Mods.old; git clone https://github.com/konnatoad/miserymods.git Mods
+   Rename-Item Mods Mods.old; git clone https://github.com/konnatoad/Mods.git
    ```
 4. Start the game. Every mod writes a "Loaded" line to `ue4ss\UE4SS.log`.
 
