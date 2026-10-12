@@ -4,6 +4,13 @@
 
 ## Version 4.5
 
+### Co-op
+- In someone else's world the host's game owns the world and everyone's inventory, so the menu no longer changes things only in your own game (where they were undone or seen by nobody else)
+- Spawn, `.heal`, `.damage`, `.stamina`, `.feed`, `.drink`, `.radcure`, `.sanitycure`, `.instaheal`, `.infstam` and `.god` ask the host's Mod Menu, which does them for you; its answer shows in your console, and after 3 s without one the log says the host needs this mod
+- Time (also the time field), weather, season, enemies, `.summon`, `.slomo`, `.freeze`, `.destroyall`, `.destroypawns`, `.restartlevel`, the movement cheats (Fly, `.ghost`, `.noclip`, `.tp`, `.loadpos`, `.size`) and the old item commands (`.spawn`, `.give`, ...) are the host's: they say so instead
+- Hosting: the host's log shows what each player asked for. `allowJoined = false` in the `Coop` table turns it off
+- `.spawnmode game` still makes the game's own spawn add the item in co-op
+
 ### New Look
 - The PageUp menu is restyled when it opens: the stone frame becomes a square, see-through dark navy panel with soft steel-blue highlights, the grey stock buttons become dark buttons with light text, Spawn is blue, and the item list has light text with a blue selection (it was black on black)
 - Labels, buttons and the amount, search and time fields share one smaller, consistent style

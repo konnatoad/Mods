@@ -27,15 +27,15 @@ Each of these mods is switched on by the `enabled.txt` in its folder:
 
 | Mod | What it does |
 |---|---|
-| **StackThemAll** | Bigger stacks. Adds items from game updates automatically. Money stacks to 250. |
-| **MISERYModMenu** | PageUp menu with a modern dark look, in-game item names, a search box, single spawn and console commands. |
+| **StackThemAll** | Bigger stacks. Adds items from game updates automatically. Money stacks to 250. In co-op everyone needs the same stack settings. |
+| **MISERYModMenu** | PageUp menu with a modern dark look, in-game item names, a search box, single spawn and console commands. In co-op the host's menu gives joined players their items and stats; time, weather and enemies are the host's. |
 | **Mi8CargoHold** | The Mi-8 wreck becomes a 1,000-slot storage container. In co-op the host's hold is shared: everyone who has this mod can open it, and the host's save keeps it. |
-| **WorldTweaks** *(new)* | Day/night length (22 / 4), season and darker nights in one config. Replaces DayLengthTweaks and the Darker Nights pak. |
+| **WorldTweaks** *(new)* | Day/night length (22 / 4), season and darker nights in one config. Replaces DayLengthTweaks and the Darker Nights pak. In co-op the host's day length and season apply to everyone. |
 | **RadiationShield** *(new)* | HOME toggles less radiation (for bunker hot spots), with an on-screen badge. `.radmenu` opens a settings menu with a live radiation readout. In co-op each player has their own shield, if the host allows it. |
-| **BackpackWeightFix** *(new)* | Resets empty containers stuck with weight (e.g. 73/75 kg) to 0 every 30 s. |
-| **ModHub** *(new)* | `.mods` opens a menu of the loaded mods: each one's hotkeys and console commands, a button for mods with their own menu, and restarting mods you've changed (no game restart). |
-| **RandomEmissions** | Random emission times and a warning siren. Fixed so it no longer piles up. |
-| **MISERY_StructuralFreedom** | Relaxed building support rules (unchanged). |
+| **BackpackWeightFix** *(new)* | Resets empty containers stuck with weight (e.g. 73/75 kg) to 0 every 30 s. In co-op the host's copy fixes everyone's. |
+| **ModHub** *(new)* | `.mods` opens a menu of the loaded mods: each one's hotkeys and console commands, its changelog, a button for mods with their own menu, and restarting mods you've changed (no game restart). |
+| **RandomEmissions** | Random emission times and a warning siren. Fixed so it no longer piles up. In co-op the host's game picks the times and everyone hears the siren. |
+| **MISERY_StructuralFreedom** | Relaxed building support rules (unchanged). In co-op everyone needs it. |
 | **NotSoShaky** | Softer camera shake when hit (unchanged). |
 
 UE4SS's own mods are switched on or off in `mods.txt`; leave them as they are:
@@ -50,6 +50,29 @@ UE4SS's own mods are switched on or off in `mods.txt`; leave them as they are:
   The pak only lowered the night sky brightness from 20 to 7.5 in spring, summer and autumn; winter is already 0.4.
   Delete its three files. If you keep both, the pak's older copy of the weather table wins.
 - **DayLengthTweaks**: also part of WorldTweaks.
+
+## Co-op
+
+Every mod works in co-op. Install the same mods (and settings) on every player's game; the host's game decides what
+happens in the host's world. The mods talk to each other through two messages that are built into Unreal Engine.
+The host's answers show as lines in the joined player's console.
+
+| Mod | In someone else's world |
+|---|---|
+| RadiationShield | Your own shield, if the host allows it, at the host's strength (see [Radiation Shield menu](#radiation-shield-menu)) |
+| MISERYModMenu | Spawn, `.heal`, `.feed` and the other stats, `.instaheal`, `.infstam` and `.god` are done for you by the host's menu. Time, weather, season, enemies, events, slow motion and the movement cheats (`.ghost`, `.tp`, ...) are the host's: they say so instead of doing anything |
+| Mi8CargoHold | You use the host's hold; the host's save keeps it |
+| WorldTweaks | The host's day/night length and season; your own darker nights setting (it only changes your sky) |
+| BackpackWeightFix | The host's copy fixes every container, yours too |
+| RandomEmissions | The host's game picks the emission times; your siren plays when the host's does |
+| StackThemAll, MISERY_StructuralFreedom | Everyone needs them, with the same settings |
+| NotSoShaky, ModHub | Only affect your own game |
+
+If the host doesn't have a mod, the joined player's copy says so after 3 seconds (e.g. "No answer from the host")
+and changes nothing in the host's world.
+
+In the Mod Menu the host can stop giving items and stats to other players with `allowJoined = false` in the `Coop`
+table near the top of `MISERYModMenu\Scripts\main.lua`.
 
 ## Settings
 
@@ -80,7 +103,7 @@ Press `~` in game to open the console.
 | `.worldinfo` | Shows the day/night settings |
 | `.weatherdump` | Writes the weather presets to a file |
 | `.find <name>` | Searches the mod menu's item list (`.find` alone clears it) |
-| `.spawnmode game\|mod` | Chooses who adds items when you press Spawn |
+| `.spawnmode game\|mod` | Chooses who adds items when you press Spawn (not chosen: in co-op the host's menu adds it) |
 | `.menudump` | Writes the PageUp menu's widgets to the log (for reporting layout problems) |
 | `.help` | Lists all mod menu commands |
 
@@ -141,6 +164,8 @@ Open `...\Win64\ue4ss\UE4SS.log` and look for the mod's lines:
 If something is broken, please open an issue and include those lines.
 
 ## Changes to the included community mods
+
+Every mod we've changed or made has a `CHANGELOG.md` in its folder; the Mod Hub shows it (`.mods`, pick the mod, **Changelog**).
 
 **StackThemAll 1.2.0** (was 1.1.0)
 - At launch, items added by game updates are appended to `stackConfig.lua` with their category's stack size. Your entries are never touched.

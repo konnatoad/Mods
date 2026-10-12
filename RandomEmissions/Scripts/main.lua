@@ -15,6 +15,11 @@ local sirenMax = 300
 local sirenVolume = 3.0
 ----------------------------------
 
+-- Co-op: the host's game runs the emissions, so only the host's copy picks
+-- the random times. When the host's siren starts, players who joined are told
+-- (a line in their console) and their copy plays the siren too. In someone
+-- else's world this mod never changes the timer or plays the siren by itself.
+
 local UEHelpers = require("UEHelpers")
 
 local sirenThreshold = math.random(sirenMin, sirenMax)
@@ -33,6 +38,37 @@ local function GetSirenCue()
     sirenCue = StaticFindObject(path) or LoadObject(nil, path)
 
     return sirenCue
+end
+
+local function Valid(obj)
+    if obj == nil then return false end
+    local ok, valid = pcall(function() return obj:IsValid() end)
+    return ok and valid == true
+end
+
+-- In someone else's world (the host's game has authority over our controller)
+local function Joined()
+    local joined = false
+    pcall(function()
+        for _, ctrl in ipairs(FindAllOf("BP_SGKController_C") or {}) do
+            if Valid(ctrl) and ctrl:IsLocalController() then
+                joined = ctrl:HasAuthority() == false
+                return
+            end
+        end
+    end)
+    return joined
+end
+
+-- Hosting: the siren starts for everyone who joined
+local function TellPlayers()
+    pcall(function()
+        for _, ctrl in ipairs(FindAllOf("BP_SGKController_C") or {}) do
+            if Valid(ctrl) and not ctrl:IsLocalController() then
+                pcall(function() ctrl:ClientMessage("[RandomEmissions] Emission coming #RE:siren", FName("None"), 0.0) end)
+            end
+        end
+    end)
 end
 
 local function PlaySiren()
@@ -54,8 +90,10 @@ local function OnTick(selfParam, deltaParam)
 	updateCount = updateCount + 1
     if updateCount % updateInterval == 0 then
 		local gm = FindFirstOf("BP_GlobalManager_C")
-		if gm.TimeUntilEmmision > 1.0 and gm.TimeUntilEmmision < sirenThreshold then
+		if gm.TimeUntilEmmision > 1.0 and gm.TimeUntilEmmision < sirenThreshold and not isSirenPlaying
+		   and not Joined() then
 			PlaySiren()
+			TellPlayers()
 		end
 		
 		updateCount = 0
@@ -63,15 +101,30 @@ local function OnTick(selfParam, deltaParam)
 end
 
 local function OnUnloadPreviousLevels()
+	if siren ~= nil and sirenCue ~= nil and sirenCue:IsValid() then
+		siren:SetActive(false, true)
+	end
+	isSirenPlaying = false
+	sirenThreshold = math.random(sirenMin, sirenMax)
+	if Joined() then return end   -- the host's game picks the time
 	local gm = FindFirstOf("BP_GlobalManager_C")
 	if gm == nil or not gm:IsValid() then return end
 	gm.TimeUntilEmmision = math.random(randomMin, randomMax)
-	if siren ~= nil and sirenCue ~= nil and sirenCue:IsValid() then
-		isSirenPlaying = false
-		siren:SetActive(false, true)
-	end
-	sirenThreshold = math.random(sirenMin, sirenMax)
 end
+
+-- The host's siren, on a player who joined
+local function OnClientMessage(selfParam, textParam)
+	local text = textParam
+	pcall(function() text = textParam:get() end)
+	if type(text) ~= "string" then
+		local ok, s = pcall(function() return text:ToString() end)
+		text = ok and s or ""
+	end
+	if not text:find("#RE:siren", 1, true) or not Joined() then return end
+	isSirenPlaying = false   -- each warning from the host plays once
+	PlaySiren()
+end
+pcall(RegisterHook, "/Script/Engine.PlayerController:ClientMessage", OnClientMessage)
 
 -- ClientRestart fires several times per load and again on every respawn, so
 -- the hook and the tick loop are set up only once (they used to pile up).

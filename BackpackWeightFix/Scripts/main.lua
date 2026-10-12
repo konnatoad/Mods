@@ -8,6 +8,10 @@
 --
 -- Runs every few seconds by itself; .fixweight runs it right now.
 -- Close and reopen the inventory afterwards to see the new number.
+--
+-- Co-op: the host's game keeps every container, the joined players' backpacks
+-- too, so the host's copy of this mod fixes them for everyone. In someone
+-- else's world it changes nothing (a change there would only be undone).
 ------------------------------------------------------------
 -- Config
 ------------------------------------------------------------
@@ -62,6 +66,20 @@ local function Valid(obj)
     return ok and valid == true
 end
 
+-- In someone else's world (the host's game has authority over our controller)
+local function Joined()
+    local joined = false
+    pcall(function()
+        for _, ctrl in ipairs(FindAllOf("BP_SGKController_C") or {}) do
+            if Valid(ctrl) and ctrl:IsLocalController() then
+                joined = ctrl:HasAuthority() == false
+                return
+            end
+        end
+    end)
+    return joined
+end
+
 local function OwnerName(inv)
     local name = "container"
     pcall(function()
@@ -91,6 +109,10 @@ end
 
 -- Empty (ItemCount 0) but weight above 0 is always the bug: reset it.
 local function FixStuckWeights(verbose)
+    if Joined() then
+        if verbose then log("In someone else's world the host's game keeps the containers - the host's Backpack Weight Fix fixes them") end
+        return 0
+    end
     local fixed, empty = 0, 0
     local containers = Containers()
     for _, inv in ipairs(containers) do
