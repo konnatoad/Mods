@@ -2,6 +2,13 @@
 
 ---
 
+## 1.2.0 (2026-10-13)
+
+### No More Flicker
+- Sprinting (spamming Shift) and aiming flickered for a few frames with a wide field of view: the game's zooms read the camera's current field of view, which the mod had already changed, and the mod then changed the result again, so the two fought each other
+- The game's camera is now left alone. The mod adds a camera modifier, the part of Unreal's camera that adjusts the final view every frame after the game is done, and scales the field of view only there. The game's sprint and aim zooms run exactly as before, just from your field of view
+- The game's normal field of view is the camera's value seen most often, so a moment of sprinting or aiming can't be mistaken for it; it isn't kept in `settings.txt` any more
+
 ## 1.1.0 (2026-10-13)
 
 ### Smooth Aiming
