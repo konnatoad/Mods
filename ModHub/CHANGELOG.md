@@ -2,6 +2,14 @@
 
 ---
 
+## 1.3.2 (2026-10-12)
+
+- Knows the new Reticle Size mod: its description and `.reticle` commands
+
+## 1.3.1 (2026-10-12)
+
+- Knows the new Head Bob mod: its description and `.headbob` commands
+
 ## 1.3.0 (2026-10-12)
 
 ### Changelog Pages

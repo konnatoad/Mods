@@ -34,6 +34,8 @@ Each of these mods is switched on by the `enabled.txt` in its folder:
 | **RadiationShield** *(new)* | HOME toggles less radiation (for bunker hot spots), with an on-screen badge. `.radmenu` opens a settings menu with a live radiation readout. In co-op each player has their own shield, if the host allows it. |
 | **BackpackWeightFix** *(new)* | Resets empty containers stuck with weight (e.g. 73/75 kg) to 0 every 30 s. In co-op the host's copy fixes everyone's. |
 | **ModHub** *(new)* | `.mods` opens a menu of the loaded mods: each one's hotkeys and console commands, its changelog, a button for mods with their own menu, and restarting mods you've changed (no game restart). |
+| **HeadBob** *(new)* | `.headbob 50` sets how much the view bobs while walking and running (0-200% of the game's own; `walk` / `run` separately). Only your own view. |
+| **ReticleSize** *(new)* | `.reticle 50` (or `.dot 50`) sets the crosshair dot's size, 10-400% of the game's own. Only your own screen. |
 | **RandomEmissions** | Random emission times and a warning siren. Fixed so it no longer piles up. In co-op the host's game picks the times and everyone hears the siren. |
 | **MISERY_StructuralFreedom** | Relaxed building support rules (unchanged). In co-op everyone needs it. |
 | **NotSoShaky** | Softer camera shake when hit (unchanged). |
@@ -66,7 +68,7 @@ The host's answers show as lines in the joined player's console.
 | BackpackWeightFix | The host's copy fixes every container, yours too |
 | RandomEmissions | The host's game picks the emission times; your siren plays when the host's does |
 | StackThemAll, MISERY_StructuralFreedom | Everyone needs them, with the same settings |
-| NotSoShaky, ModHub | Only affect your own game |
+| NotSoShaky, HeadBob, ReticleSize, ModHub | Only affect your own game |
 
 If the host doesn't have a mod, the joined player's copy says so after 3 seconds (e.g. "No answer from the host")
 and changes nothing in the host's world.
@@ -98,6 +100,10 @@ Press `~` in game to open the console.
 | `.radmeter` | Measures a radiation hot spot; run it again to get the suggested reduction |
 | `.mods` | Mod Hub: the loaded mods, their keys and commands, opening their menus, restarting them |
 | `.reloadmods` | Restarts the mods whose `main.lua` changed since they loaded (`.reloadmods all`, or `.reloadmods <Name>` for one) |
+| `.headbob 50` | Head bob at 50% while walking and running (`.headbob walk 40`, `.headbob run 0`, `off`, `reset`; `.headbob` shows it) |
+| `.headbob scan` | If the bob doesn't change: lists the camera shakes the game starts while you move (walk, then run, for 20 s) |
+| `.reticle 50` / `.dot 50` | Crosshair dot at 50% of its size (`.reticle reset`; `.reticle` shows it) |
+| `.reticle scan` | If the dot doesn't change: lists the widgets it could be |
 | `.fixweight` | Fix stuck container weight right now |
 | `.weightreport` | Use if the weight fix can't find the weight value: empty the backpack, then run it |
 | `.worldinfo` | Shows the day/night settings |
@@ -195,6 +201,6 @@ Every mod we've changed or made has a `CHANGELOG.md` in its folder; the Mod Hub 
   [RE-UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) team, MIT licence.
 - **StackThemAll, MISERYModMenu, Mi8CargoHold (originally Mi 8 Cargo Hold / ChopperStorage), RandomEmissions,
   MISERY_StructuralFreedom, NotSoShaky**: their original authors. This repo contains modified versions, as described above.
-- **WorldTweaks, RadiationShield, BackpackWeightFix, ModHub**: new in this repo.
+- **WorldTweaks, RadiationShield, BackpackWeightFix, ModHub, HeadBob, ReticleSize**: new in this repo.
 
 MISERY is a game by its developers. This project isn't affiliated with them.
