@@ -11,6 +11,7 @@
 --   .reloadmods all        restart all of them
 --   .reloadmods <Name>     restart one, e.g. .reloadmods RadiationShield
 --
+-- Each mod's page also shows its CHANGELOG.md.
 -- New mods still need a game restart. A restarted mod starts fresh: a shield
 -- that was on is off again, the PageUp menu is closed, and so on. The hub
 -- restarts itself last when it has changed too.
@@ -138,6 +139,87 @@ local function Loaded()
 end
 
 local function Builtin(name) return INFO_BY_NAME[name] ~= nil and INFO_BY_NAME[name].builtin == true end
+
+------------------------------------------------------------
+-- Changelogs
+------------------------------------------------------------
+-- A mod's CHANGELOG.md (or .txt) as lines to show: { kind, text }, kind =
+-- "version" (## 1.2.0 ...), "topic" (### ...), "item" (- ...) or "text".
+-- Only version sections are kept (not Installation and the like).
+local CHANGELOG_FILES = { "CHANGELOG.md", "CHANGELOG.txt", "changelog.md", "changelog.txt" }
+
+local function Plain(line)
+    return (line:gsub("%*%*", ""):gsub("`", ""):gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+local function IsVersion(heading)
+    return heading:find("%d") ~= nil or heading:lower():find("original") ~= nil
+end
+
+local function Changelog(name)
+    local text = nil
+    for _, file in ipairs(CHANGELOG_FILES) do
+        text = ReadFile(MODS_DIR .. name .. "/" .. file)
+        if text then break end
+    end
+    if not text then return nil end
+    local raw = {}
+    for line in (text:gsub("\r", "") .. "\n"):gmatch("([^\n]*)\n") do table.insert(raw, line) end
+    local lines, keep = {}, false
+    for i, line in ipairs(raw) do
+        local nextLine = raw[i + 1] or ""
+        local heading = nil
+        if line:match("^##%s") and not line:match("^###") then
+            heading = Plain(line:gsub("^##%s*", ""))
+        elseif line:match("%S") and nextLine:match("^%-%-%-+%s*$") then
+            heading = Plain(line)   -- "1.0.0" underlined with dashes (.txt)
+        end
+        if heading then
+            keep = IsVersion(heading)
+            if keep then table.insert(lines, { kind = "version", text = heading:gsub("^[Vv]ersion%s+", "") }) end
+        elseif keep and not line:match("^%-%-%-+%s*$") and not line:match("^===+%s*$") then
+            local topic = line:match("^###%s*(.+)")
+            local item = line:match("^%s*[%-%*]%s+(.+)")
+            if topic then
+                table.insert(lines, { kind = "topic", text = Plain(topic) })
+            elseif item then
+                table.insert(lines, { kind = "item", text = Plain(item) })
+            elseif line:match("%S") and not line:match("^#") then
+                table.insert(lines, { kind = "text", text = Plain(line) })
+            end
+        end
+    end
+    if #lines == 0 then return nil end
+    return lines
+end
+
+-- "1.2.0 (2026-10-12)" -> "1.2.0"
+local function LatestVersion(lines)
+    for _, l in ipairs(lines or {}) do
+        if l.kind == "version" then return (l.text:match("^(%S+)")) end
+    end
+    return nil
+end
+
+-- Pages that fit the menu: about PAGE_LINES lines of text each, never
+-- splitting a line; a version heading doesn't end a page.
+local PAGE_LINES, CHARS_PER_LINE = 22, 66
+local function Pages(lines)
+    local pages, page, used = {}, {}, 0
+    local cost = { version = 2, topic = 1.6 }
+    for i, l in ipairs(lines) do
+        local h = cost[l.kind] or math.max(1, math.ceil(#l.text / CHARS_PER_LINE))
+        local last = (l.kind == "version" or l.kind == "topic") and lines[i + 1] ~= nil
+        if #page > 0 and (used + h > PAGE_LINES or (last and used + h + 1 > PAGE_LINES)) then
+            table.insert(pages, page)
+            page, used = {}, 0
+        end
+        table.insert(page, l)
+        used = used + h
+    end
+    if #page > 0 then table.insert(pages, page) end
+    return pages
+end
 
 ------------------------------------------------------------
 -- Restarting mods
@@ -578,7 +660,8 @@ local function ModView(tree, body)
         for _, c in ipairs(info.commands) do InfoRow(tree, card, c[1], c[2]) end
     end
     local hasMenu, canRestart = info.menu ~= nil, not info.builtin
-    if hasMenu or canRestart then
+    local changes = Changelog(name)
+    if hasMenu or canRestart or changes then
         local actions = Section(tree, body, "ACTIONS")
         if hasMenu then
             ActionRow(tree, actions, info.menu[1], info.menu[2], MUTED, function()
@@ -591,11 +674,59 @@ local function ModView(tree, body)
                 end)
             end)
         end
+        if changes then
+            local latest = LatestVersion(changes)
+            ActionRow(tree, actions, "Changelog", latest and ("v" .. latest:gsub("^[vV]", "")) or nil, MUTED,
+                function() hub.view, hub.page, hub.sel = "changelog", 1, 1; Render() end)
+        end
         if canRestart then
             ActionRow(tree, actions, "Restart this mod", nil, nil, function() RunReload(name) end)
         end
     end
     ActionRow(tree, body, "Back", nil, nil, function() hub.view, hub.sel = "list", 1; Render() end, true)
+end
+
+-- A mod's changelog, a page at a time
+local function ChangelogView(tree, body)
+    local name = hub.mod
+    local info = INFO_BY_NAME[name] or { title = name }
+    local pages = Pages(Changelog(name) or { { kind = "text", text = "This mod has no changelog." } })
+    hub.page = math.max(1, math.min(hub.page or 1, #pages))
+    SetText(ui.p.title, info.title:upper())
+    SetText(ui.p.sub, "CHANGELOG" .. (#pages > 1 and ("  -  PAGE " .. hub.page .. " OF " .. #pages) or ""))
+    local column = Construct("VerticalBox", tree)
+    Pad(body:AddChildToVerticalBox(column), 4, 4, 4, 0)
+    for i, l in ipairs(pages[hub.page]) do
+        if l.kind == "version" then
+            local line = Construct("HorizontalBox", tree)
+            Pad(column:AddChildToVerticalBox(line), 0, i == 1 and 6 or 16, 0, 2)
+            Middle(line:AddChildToHorizontalBox(Box(tree, 3, 18, Fill(tree, ACCENT))))
+            Middle(Pad(line:AddChildToHorizontalBox(Text(tree, l.text, 14, BRIGHT, true)), 10, 0, 0, 0))
+        elseif l.kind == "topic" then
+            Pad(column:AddChildToVerticalBox(Text(tree, l.text:upper(), 9, HEADING, true, 200)), 13, 8, 0, 3)
+        else
+            local line = Construct("HorizontalBox", tree)
+            Pad(column:AddChildToVerticalBox(line), 13, 2, 0, 2)
+            if l.kind == "item" then
+                Pad(line:AddChildToHorizontalBox(Text(tree, "\u{2022}", 11, ACCENT)), 0, 0, 8, 0)
+            end
+            local t = Text(tree, l.text, 11, LABEL)
+            pcall(function() t:SetAutoWrapText(true) end)
+            Grow(line:AddChildToHorizontalBox(t))
+        end
+    end
+    if #pages > 1 then
+        local nav = Section(tree, body, "PAGES")
+        if hub.page < #pages then
+            ActionRow(tree, nav, "Older changes", hub.page + 1 .. " / " .. #pages, MUTED,
+                function() hub.page, hub.sel = hub.page + 1, 1; Render() end)
+        end
+        if hub.page > 1 then
+            ActionRow(tree, nav, "Newer changes", hub.page - 1 .. " / " .. #pages, MUTED,
+                function() hub.page, hub.sel = hub.page - 1, 1; Render() end)
+        end
+    end
+    ActionRow(tree, body, "Back", nil, nil, function() hub.view, hub.sel = "mod", 1; Render() end, true)
 end
 
 local function Recolor()
@@ -630,7 +761,13 @@ Render = function()
     pcall(function() ui.p.body:ClearChildren() end)
     ui.rows = {}
     local ok, err = pcall(function()
-        if hub.view == "mod" then ModView(tree, ui.p.body) else ListView(tree, ui.p.body) end
+        if hub.view == "changelog" then
+            ChangelogView(tree, ui.p.body)
+        elseif hub.view == "mod" then
+            ModView(tree, ui.p.body)
+        else
+            ListView(tree, ui.p.body)
+        end
     end)
     if not ok then log("Menu problem: " .. tostring(err)) end
     hub.sel = math.max(1, math.min(hub.sel, #ui.rows))
@@ -671,7 +808,10 @@ local function MenuKey(action)
             hub.sel = hub.sel % n + 1
             Recolor()
         elseif action == "back" then
-            if hub.view == "mod" then
+            if hub.view == "changelog" then
+                hub.view, hub.sel = "mod", 1
+                Render()
+            elseif hub.view == "mod" then
                 hub.view, hub.sel = "list", 1
                 Render()
             end
