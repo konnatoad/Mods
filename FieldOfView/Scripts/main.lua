@@ -4,17 +4,18 @@
 -- `.fov 95` sets the field of view in degrees (60-120). Saved to
 -- settings.txt; `.fov reset` goes back to the game's own.
 --
--- The view comes from the camera on your character. Its normal field of view
--- is remembered the first time it's seen and replaced with yours; while it is
--- something else (aiming zooms in) it's left alone, so aiming still works.
--- Character settings that hold the normal field of view (a "DefaultFOV" and
--- the like) are changed too, so the view comes back from aiming at yours.
+-- The view comes from the camera on your character. The game's normal field
+-- of view is remembered the first time it's seen. Every field of view the
+-- game then gives that camera is scaled by yours / the game's: the normal
+-- view becomes yours, and aiming zooms in smoothly from yours (by the same
+-- proportion as before) instead of jumping back to the game's view first.
+-- A 1 s check puts the view back if the game sets it some other way.
 -- If it doesn't change, `.fov scan` lists the cameras and field-of-view
 -- settings it found, for the log.
 --
 -- Only your own view changes, so it works the same in co-op.
 ------------------------------------------------------------
-local VERSION = "1.0.0"
+local VERSION = "1.1.0"
 local SETTINGS_PATH = "./ue4ss/Mods/FieldOfView/settings.txt"
 local MIN_FOV, MAX_FOV = 60, 120
 local CHECK_EVERY_MS = 1000
@@ -25,6 +26,8 @@ local controller = nil    -- kept while valid: finding it walks every object
 local camera, cameraOf = nil, nil
 local loopRunning = false
 local reported = false
+local ownCall = false     -- this mod setting the view: not scaled again
+local scaledCalls = 0     -- the game's field-of-view changes scaled so far
 
 local function log(msg)
     print("[FieldOfView] " .. tostring(msg) .. "\n")
@@ -113,9 +116,16 @@ local function ReadFov(cam)
 end
 
 local function SetFov(cam, value)
+    ownCall = true
     if not pcall(function() cam:SetFieldOfView(value) end) then
         pcall(function() cam.FieldOfView = value end)
     end
+    ownCall = false
+end
+
+local function AddressOf(obj)
+    local ok, address = pcall(function() return obj:GetAddress() end)
+    return ok and address or nil
 end
 
 -- The character's own number settings with "fov" or "fieldofview" in the
@@ -140,19 +150,6 @@ end
 
 local function Near(a, b) return type(a) == "number" and type(b) == "number" and math.abs(a - b) < 0.05 end
 
--- Character settings holding the normal field of view follow ours, so the
--- game itself returns to it (after aiming, for example)
-local patched = setmetatable({}, { __mode = "k" })
-local function PatchSettings(character, from, to)
-    for _, s in ipairs(FovSettings(character)) do
-        if Near(s.value, from) then
-            pcall(function() character[s.name] = to end)
-            if not patched[character] then log("  " .. s.name .. ": " .. string.format("%.0f", to)) end
-        end
-    end
-    patched[character] = true
-end
-
 -- Game thread. Puts the view at our field of view when it's at the normal one.
 local function Apply()
     local cam, character = Camera()
@@ -169,7 +166,6 @@ local function Apply()
     -- (or the like) and left alone.
     if Near(now, base) then
         SetFov(cam, fov)
-        if not patched[character] then PatchSettings(character, base, fov) end
         if not reported then
             reported = true
             log(string.format("Field of view %d", fov))
@@ -186,6 +182,22 @@ local function StartLoop()
         return false
     end)
 end
+
+-- Every field of view the game gives our camera (the normal one, each step
+-- of the aiming zoom), scaled by ours / the game's before it's applied
+local hooked = pcall(RegisterHook, "/Script/Engine.CameraComponent:SetFieldOfView", function(selfParam, fovParam)
+    if ownCall or not fov or not base then return end
+    pcall(function()
+        local cam = selfParam:get()
+        local mine = Camera()
+        if not mine or AddressOf(mine) ~= AddressOf(cam) then return end   -- another camera
+        local value = fovParam:get()
+        if type(value) ~= "number" then return end
+        fovParam:set(value * fov / base)
+        scaledCalls = scaledCalls + 1
+        if scaledCalls == 1 then log("The game changed the view: scaled to yours, aiming follows it") end
+    end)
+end)
 
 RegisterHook("/Script/Engine.PlayerController:ClientRestart", function(selfParam)
     camera, cameraOf, reported = nil, nil, false   -- a new character (respawn, level)
@@ -210,6 +222,8 @@ local function Scan()
         end)
     end)
     if not cam then log("  no camera found on the character") end
+    log(string.format("Scan: the game changed the view %d time(s) since loading, all scaled%s", scaledCalls,
+        hooked and "" or " (couldn't watch it: aiming may jump)"))
     local settings = FovSettings(character)
     log("Scan: " .. #settings .. " character setting(s) named like a field of view:")
     for _, s in ipairs(settings) do log("  " .. s.name .. " = " .. tostring(s.value)) end
@@ -240,11 +254,11 @@ RegisterConsoleCommandHandler(".fov", function(FullCommand, Parameters)
             local old = fov or base
             fov = a ~= "reset" and math.max(MIN_FOV, math.min(MAX_FOV, math.floor(tonumber(a) + 0.5))) or nil
             Save()
-            local cam, character = Camera()
-            if cam and base then
-                -- straight away, even mid-aim, and the character's settings with it
-                SetFov(cam, fov or base)
-                if old then PatchSettings(character, old, fov or base) end
+            local cam = Camera()
+            local now = cam and ReadFov(cam)
+            if now and base then
+                -- straight away, in proportion (mid-aim stays zoomed)
+                SetFov(cam, now * (fov or base) / old)
                 log(fov and string.format("Field of view %d", fov) or string.format("The game's field of view (%.0f)", base))
             else
                 log((fov and string.format("Field of view %d", fov) or "The game's field of view")
