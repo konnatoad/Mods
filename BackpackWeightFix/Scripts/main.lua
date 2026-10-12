@@ -82,17 +82,19 @@ local function Valid(obj)
 end
 
 -- In someone else's world (the host's game has authority over our controller)
+local localController = nil   -- kept while valid (finding it walks every object)
 local function Joined()
-    local joined = false
-    pcall(function()
-        for _, ctrl in ipairs(FindAllOf("BP_SGKController_C") or {}) do
-            if Valid(ctrl) and ctrl:IsLocalController() then
-                joined = ctrl:HasAuthority() == false
-                return
+    if not Valid(localController) then
+        localController = nil
+        pcall(function()
+            for _, ctrl in ipairs(FindAllOf("BP_SGKController_C") or {}) do
+                if Valid(ctrl) and ctrl:IsLocalController() then localController = ctrl return end
             end
-        end
-    end)
-    return joined
+        end)
+    end
+    if not localController then return false end
+    local ok, authority = pcall(function() return localController:HasAuthority() end)
+    return ok and authority == false
 end
 
 local function OwnerName(inv)
@@ -112,15 +114,34 @@ local function IsSkipped(inv)
     return false
 end
 
-local function Containers()
+-- Finding the containers walks every object in the game, a short hitch, so
+-- the list is kept: looked for again every RESCAN_EVERY checks (5 minutes at
+-- 30 s), after a level load, or on .fixweight. Containers that went away are
+-- dropped from it on every check.
+local RESCAN_EVERY = 10
+local known, checksSinceScan = nil, 0
+
+local function Containers(fresh)
+    checksSinceScan = checksSinceScan + 1
+    if fresh or not known or #known == 0 or checksSinceScan >= RESCAN_EVERY then
+        known, checksSinceScan = {}, 0
+        pcall(function()
+            for _, inv in ipairs(FindAllOf(INVENTORY_CLASS) or {}) do
+                if inv:IsValid() then known[#known + 1] = inv end
+            end
+        end)
+    end
     local list = {}
-    pcall(function()
-        for _, inv in ipairs(FindAllOf(INVENTORY_CLASS) or {}) do
-            if inv:IsValid() then list[#list + 1] = inv end
-        end
-    end)
+    for _, inv in ipairs(known) do
+        if Valid(inv) then list[#list + 1] = inv end
+    end
+    known = list
     return list
 end
+
+RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
+    known = nil   -- a new level: other containers
+end)
 
 -- Empty (ItemCount 0) but weight above 0 is always the bug: reset it.
 local function FixStuckWeights(verbose)
@@ -129,7 +150,7 @@ local function FixStuckWeights(verbose)
         return 0
     end
     local fixed, empty = 0, 0
-    local containers = Containers()
+    local containers = Containers(verbose)
     for _, inv in ipairs(containers) do
         local field = FindWeightField(inv)
         if field and ReadNumber(inv, "ItemCount") == 0 then

@@ -2,6 +2,11 @@
 
 ---
 
+## 1.0.2 (2026-10-12)
+
+### Performance
+- After a load it looks for the crosshair 5 times (1, 3, 6, 10 and 20 s), not every second for 20 s; each look walks through every object in the game
+
 ## 1.0.1 (2026-10-12)
 
 ### Fix

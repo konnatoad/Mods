@@ -190,14 +190,18 @@ function Coop.Key(obj)
 end
 
 -- This game's own player controller
+-- Kept once found: FindAllOf walks every object in the game, which the 10-a-
+-- second stamina loop did on every tick. A new level makes it invalid, and
+-- the next call looks again.
 function Coop.Controller()
-    local found = nil
+    if Coop.Valid(Coop.ctrl) then return Coop.ctrl end
+    Coop.ctrl = nil
     pcall(function()
         for _, ctrl in ipairs(FindAllOf("BP_SGKController_C") or {}) do
-            if Coop.Valid(ctrl) and ctrl:IsLocalController() then found = ctrl return end
+            if Coop.Valid(ctrl) and ctrl:IsLocalController() then Coop.ctrl = ctrl return end
         end
     end)
-    return found
+    return Coop.ctrl
 end
 
 -- In someone else's world (the host's game has authority over our controller)
@@ -436,6 +440,8 @@ local function SafeExecuteInGameThread(callback)
 end
 
 local function GetPlayerController()
+    local mine = Coop.Controller()   -- kept once found (no object walk per call)
+    if mine then return mine end
     local ok, result = pcall(function()
         local ctrls = FindAllOf("BP_SGKController_C")
         if ctrls and #ctrls > 0 then
@@ -1515,6 +1521,8 @@ end)
 -- MULTIPLAYER: always resolve the LOCAL player. On a host, FindAllOf returns
 -- every connected player's controller/character — [1] can be a friend.
 local function GetPlayerController()
+    local mine = Coop.Controller()   -- kept once found (no object walk per call)
+    if mine then return mine end
     local ok, result = pcall(function()
         local ctrls = FindAllOf("BP_SGKController_C")
         if ctrls and #ctrls > 0 then

@@ -2,6 +2,12 @@
 
 ---
 
+## 1.2.1 (2026-10-12)
+
+### Performance
+- Finding the containers walks through every object in the game, a short hitch, and it happened every 30 s. The containers found are now kept and only looked for again every 5 minutes, after a level load, or on `.fixweight`
+- Your player's controller is found once and kept
+
 ## 1.2.0 (2026-10-12)
 
 ### Updating with git pull

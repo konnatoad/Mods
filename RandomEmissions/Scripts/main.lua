@@ -51,8 +51,9 @@ local sirenThreshold = math.random(sirenMin, sirenMax)
 local sirenCue = nil
 local siren = nil
 local isSirenPlaying = false
-local updateCount = 0
-local updateInterval = 1000
+local CHECK_EVERY_MS = 2000   -- how often the time until the emission is checked
+local globalManager = nil     -- kept while valid: finding it walks every object
+local localController = nil
 
 local function GetSirenCue()
     if sirenCue ~= nil and sirenCue:IsValid() then
@@ -73,16 +74,25 @@ end
 
 -- In someone else's world (the host's game has authority over our controller)
 local function Joined()
-    local joined = false
-    pcall(function()
-        for _, ctrl in ipairs(FindAllOf("BP_SGKController_C") or {}) do
-            if Valid(ctrl) and ctrl:IsLocalController() then
-                joined = ctrl:HasAuthority() == false
-                return
+    if not Valid(localController) then
+        localController = nil
+        pcall(function()
+            for _, ctrl in ipairs(FindAllOf("BP_SGKController_C") or {}) do
+                if Valid(ctrl) and ctrl:IsLocalController() then localController = ctrl return end
             end
-        end
-    end)
-    return joined
+        end)
+    end
+    if not localController then return false end
+    local ok, authority = pcall(function() return localController:HasAuthority() end)
+    return ok and authority == false
+end
+
+local function GlobalManager()
+    if Valid(globalManager) then return globalManager end
+    globalManager = nil
+    local gm = FindFirstOf("BP_GlobalManager_C")
+    if Valid(gm) then globalManager = gm end
+    return globalManager
 end
 
 -- Hosting: the siren starts for everyone who joined
@@ -111,17 +121,14 @@ local function PlaySiren()
     end)
 end
 
-local function OnTick(selfParam, deltaParam)
-	updateCount = updateCount + 1
-    if updateCount % updateInterval == 0 then
-		local gm = FindFirstOf("BP_GlobalManager_C")
-		if gm.TimeUntilEmmision > 1.0 and gm.TimeUntilEmmision < sirenThreshold and not isSirenPlaying
-		   and not Joined() then
-			PlaySiren()
-			TellPlayers()
-		end
-		
-		updateCount = 0
+-- Every CHECK_EVERY_MS (it used to run Lua on every frame)
+local function OnTick()
+	local gm = GlobalManager()
+	if not gm then return end
+	if gm.TimeUntilEmmision > 1.0 and gm.TimeUntilEmmision < sirenThreshold and not isSirenPlaying
+	   and not Joined() then
+		PlaySiren()
+		TellPlayers()
 	end
 end
 
@@ -132,8 +139,8 @@ local function OnUnloadPreviousLevels()
 	isSirenPlaying = false
 	sirenThreshold = math.random(sirenMin, sirenMax)
 	if Joined() then return end   -- the host's game picks the time
-	local gm = FindFirstOf("BP_GlobalManager_C")
-	if gm == nil or not gm:IsValid() then return end
+	local gm = GlobalManager()
+	if not gm then return end
 	gm.TimeUntilEmmision = math.random(randomMin, randomMax)
 end
 
@@ -163,8 +170,9 @@ RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
 
 	if not isTickLoopStarted then
 		isTickLoopStarted = true
-		LoopInGameThreadAfterFrames(1, function()
-	        pcall(OnTick, nil, 1/60)
-	    end)
+		LoopAsync(CHECK_EVERY_MS, function()
+			ExecuteInGameThread(function() pcall(OnTick) end)
+			return false
+		end)
 	end
 end)

@@ -2,6 +2,12 @@
 
 ---
 
+## 1.2.1 (2026-10-12)
+
+### Performance
+- No more Lua on every frame: the time until the emission is checked every 2 s
+- The game's emission manager and your controller are found once and kept, instead of walking through every object in the game each check
+
 ## 1.2.0 (2026-10-12)
 
 ### Updating with git pull
