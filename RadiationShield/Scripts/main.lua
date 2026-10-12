@@ -1430,6 +1430,11 @@ RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
             -- joined a world (or respawned) with the shield on: check with this host
             RefreshMyInventory()
             if isOn and Joined() then AskHost(true) end
+            -- back in your own world: your own strength again, not the last host's
+            if not Joined() and reduction ~= myReduction then
+                reduction = myReduction
+                if isOn then log("In your own world: " .. Percent(reduction) .. "% less radiation") end
+            end
             if isOn or Measuring() then RefreshMyInventory() end
             if isOn then ShowIndicator(true) end
             UpdateReadout()

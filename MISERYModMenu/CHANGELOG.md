@@ -2,6 +2,14 @@
 
 ---
 
+## Version 4.5.1
+
+### Co-op
+- Hosting: a player who turns instaheal, infinite stamina and god mode all off is forgotten, so the health hook no longer checks them on every hit
+
+---
+
+
 ## Version 4.5
 
 ### Co-op

@@ -2,6 +2,11 @@
 
 ---
 
+## 1.0.1 (2026-10-12)
+
+### Co-op Fix
+- Hosting, the game also starts shakes for players who joined; those were changed by the host's setting too. Now only your own view's shakes change, and each player's own Head Bob decides theirs
+
 ## 1.0.0 (2026-10-12)
 
 ### First Release

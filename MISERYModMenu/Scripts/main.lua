@@ -365,7 +365,8 @@ function Coop.OnHostMessage(selfParam, msgParam)
         local key = Coop.Key(pc)
         local guest = Coop.guests[key] or {}
         guest.pc, guest[cmd] = pc, on
-        Coop.guests[key] = guest
+        -- nothing on any more: forgotten, so the health hook has nobody to check
+        Coop.guests[key] = (guest.INSTAHEAL or guest.INFSTAM or guest.GOD) and guest or nil
         if cmd == "GOD" and on and Coop.InstallGodHooks then Coop.InstallGodHooks() end
         if on then Coop.StartGuestLoop() end
         Coop.Tell(pc, Coop.MODES[cmd]:upper() .. (on and ": ON" or ": OFF") .. " for you", "ok")

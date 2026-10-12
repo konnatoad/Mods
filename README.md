@@ -38,7 +38,7 @@ Each of these mods is switched on by the `enabled.txt` in its folder:
 | **ReticleSize** *(new)* | `.reticle 50` (or `.dot 50`) sets the crosshair dot's size, 10-400% of the game's own. Only your own screen. |
 | **RandomEmissions** | Random emission times and a warning siren. Fixed so it no longer piles up. In co-op the host's game picks the times and everyone hears the siren. |
 | **MISERY_StructuralFreedom** | Relaxed building support rules (unchanged). In co-op everyone needs it. |
-| **NotSoShaky** | Softer camera shake when hit (unchanged). |
+| **NotSoShaky** | Softer camera shake when hit. Fixed so it waits for the game instead of stopping with an error. |
 
 UE4SS's own mods are switched on or off in `mods.txt`; leave them as they are:
 
