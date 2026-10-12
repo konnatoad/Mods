@@ -53,7 +53,7 @@ Every mod has a `CHANGELOG.md`; in game, `.mods` → pick a mod → **Changelog*
 
 | Mod | What it does | In co-op |
 |---|---|---|
-| **ModHub** *(new)* | `.mods` opens a menu of the loaded mods: their hotkeys, console commands and changelogs, a button for mods with their own menu, and restarting mods you've changed | Only your game |
+| **ModHub** *(new)* | `.mods` opens a menu of the loaded mods: their hotkeys, console commands, settings and changelogs, a button for mods with their own menu, and restarting mods you've changed | Only your game |
 | **MISERYModMenu** | The PageUp menu, restyled (dark navy, in sections), with in-game item names, a search box, single spawn and many console cheats | The host's menu gives joined players their items and stats; time, weather and enemies are the host's |
 | **RadiationShield** *(new)* | HOME switches on less radiation (for bunker hot spots), with an on-screen badge; `.radmenu` for settings and a live radiation readout | Each player's own shield, if the host allows it, at the host's strength |
 | **Mi8CargoHold** | The Mi-8 wreck becomes a 1,000-slot storage container | Everyone uses the host's hold; the host's save keeps it |
@@ -63,6 +63,9 @@ Every mod has a `CHANGELOG.md`; in game, `.mods` → pick a mod → **Changelog*
 | **RandomEmissions** | Emissions at random times, with a siren before each one | The host picks the times; everyone hears the siren |
 | **HeadBob** *(new)* | `.headbob 50`: how much the view bobs while walking and running | Only your view |
 | **ReticleSize** *(new)* | `.reticle 50` (or `.dot 50`): the crosshair dot's size | Only your screen |
+| **FieldOfView** *(new)* | `.fov 95`: the field of view in degrees (60-120); aiming still zooms in | Only your view |
+| **SurvivalStats** *(new)* | `.stats`: a small panel with your exact health, stamina, hunger, thirst, radiation, insanity... Off until you switch it on | Only reads your own numbers |
+| **WhistleRange** *(new)* | Joined players get whistles (and see the other players) from as far away as the host does | Only the host needs it |
 | **NotSoShaky** | Softer camera shake when you're hit | Only your view |
 | **MISERY_StructuralFreedom** | Relaxed building support rules; normal placement rules still apply | Everyone needs it |
 
@@ -96,7 +99,8 @@ changes nothing in the host's world.
 | BackpackWeightFix | The host's copy fixes every container, yours too |
 | RandomEmissions | The host's game picks the emission times; your siren plays when the host's does |
 | StackThemAll, MISERY_StructuralFreedom | Everyone needs them, with the same settings |
-| ModHub, HeadBob, ReticleSize, NotSoShaky | Only change your own game |
+| WhistleRange | The host's copy widens how far players' characters (and their whistles) are sent; yours does nothing in someone else's world |
+| ModHub, HeadBob, ReticleSize, FieldOfView, SurvivalStats, NotSoShaky | Only change your own game |
 
 ## Settings
 
@@ -107,10 +111,16 @@ Most settings are changed in game and saved by the mod:
 | RadiationShield | `.radmenu` (saved to `RadiationShield\settings.txt`) |
 | HeadBob | `.headbob ...` (saved to `HeadBob\settings.txt`) |
 | ReticleSize | `.reticle ...` (saved to `ReticleSize\settings.txt`) |
+| FieldOfView | `.fov ...` (saved to `FieldOfView\settings.txt`) |
+| SurvivalStats | `.stats`, `.stats move` (saved to `SurvivalStats\settings.txt`) |
 | MISERYModMenu key bindings | `.bind <key> <command>` (saved to `MISERYModMenu\bindings.txt`) |
 
-The rest go in a `config.lua` in the mod's folder. Copy the mod's `config.example.lua` to `config.lua` and change it;
-a line you leave out keeps its default. `config.lua` is yours, and `git pull` never touches it.
+The rest go in a `config.lua` in the mod's folder. The easy way: `.mods` → pick the mod → **Settings**. Left/Right
+change a value, Enter switches it or puts the default back, and it's saved to `config.lua` straight away; restart the
+mod (the row below the settings) to use the new values.
+
+By hand: copy the mod's `config.example.lua` to `config.lua` and change it; a line you leave out keeps its default.
+`config.lua` is yours, and `git pull` never touches it.
 
 | Mod | `config.lua` settings |
 |---|---|
@@ -118,6 +128,7 @@ a line you leave out keeps its default. `config.lua` is yours, and `git pull` ne
 | BackpackWeightFix | `checkEverySeconds = 30` (`.fixweight` runs it right now) |
 | RandomEmissions | `randomMin = 1800`, `randomMax = 3600` (seconds), `isSirenEnabled = true`, `sirenMin = 120`, `sirenMax = 300`, `sirenVolume = 3.0` |
 | MISERYModMenu | `allowJoined = true` (hosting: give items and stats to players who ask), `newLook = true` (false: the game's colours), `newLayout = true` (false: the game's layout) |
+| WhistleRange | `rangeMeters = 0` (how far players' characters reach joined players; 0 = no limit, Unreal's own is 150) |
 | StackThemAll | stack size per category, e.g. `Food_StackSize = 100`, and `onlyStacksChanges = false` (the defaults are in `scripts\stackThemAllConfig.lua`) |
 
 StackThemAll's per-item values (e.g. `Resource_Rubles = 250`) are in `StackThemAll\scripts\stackConfig.lua`.
@@ -140,6 +151,9 @@ Press `~` in game to open the console. `.mods` shows every mod's commands too.
 | `.headbob scan` | If the bob doesn't change: lists the camera shakes the game starts while you move |
 | `.reticle 50` / `.dot 50` | Crosshair dot at 50% of its size, 10-400 (`.reticle reset`; `.reticle` shows it) |
 | `.reticle scan` | If the dot doesn't change: lists the widgets it could be |
+| `.fov 95` | Field of view 95, 60-120 (`.fov reset`; `.fov` shows it; `.fov scan` if the view doesn't change) |
+| `.stats` | Survival numbers panel on / off (`.stats move` puts it elsewhere; `.stats scan` if a stat is missing) |
+| `.whistle` | Hosting: the range players' characters are sent to joined players (`.whistle scan` lists whistle things) |
 | `.fixweight` | Fix stuck container weight right now |
 | `.weightreport` | If the weight fix can't find the weight value: empty the backpack, then run it |
 | `.worldinfo` | Shows the day/night settings |
@@ -199,8 +213,10 @@ git stash; git pull
 - **[RadiationShield]** "Working: radiation hit X reduced to Y": the shield is cutting radiation. "ignored the
   smaller radiation amount": it switched to its backup method, that's fine. "Indicator unavailable": no badge, the
   shield still works.
-- **[HeadBob]** / **[ReticleSize]**: if nothing changes, run `.headbob scan` (walk, then run) or `.reticle scan` and
-  send the lines.
+- **[HeadBob]** / **[ReticleSize]** / **[FieldOfView]** / **[SurvivalStats]**: if nothing changes, run
+  `.headbob scan` (walk, then run), `.reticle scan`, `.fov scan` or `.stats scan` and send the lines.
+- **[WhistleRange]**: hosting, "sent to players up to no limit away" lines appear as players join. If joined players
+  still don't hear far whistles, whistle once, then run `.whistle scan` and send the lines.
 - **[WorldTweaks] / [ModMenu] ... config.lua ignored**: your `config.lua` has a mistake; the log says what.
 
 If something is broken, please open an issue and include those lines.
@@ -218,6 +234,7 @@ mod adds an entry to its `CHANGELOG.md` with a new version.
 - **StackThemAll, MISERYModMenu, Mi8CargoHold (originally Mi 8 Cargo Hold / ChopperStorage), RandomEmissions,
   MISERY_StructuralFreedom, NotSoShaky**: their original authors. This repository has modified versions; each
   mod's `CHANGELOG.md` says what changed.
-- **ModHub, RadiationShield, WorldTweaks, BackpackWeightFix, HeadBob, ReticleSize**: made for this repository.
+- **ModHub, RadiationShield, WorldTweaks, BackpackWeightFix, HeadBob, ReticleSize, FieldOfView, SurvivalStats,
+  WhistleRange**: made for this repository.
 
 MISERY is a game by its developers. This project isn't affiliated with them.

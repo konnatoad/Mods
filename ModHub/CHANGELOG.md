@@ -2,6 +2,17 @@
 
 ---
 
+## 1.4.0 (2026-10-12)
+
+### Settings Page
+- Mods with a `config.example.lua` get a **Settings** button on their page: every setting with its description, the value you have now, and the defaults left plain while changed values are highlighted
+- Left / Right change the chosen setting (on / off, numbers in steps that fit them, text from its listed choices); Enter switches it or puts the default back
+- Saved straight away to the mod's `config.lua`, your own file that `git pull` never touches. A new `config.lua` starts as a copy of the example; an existing one keeps everything else you wrote in it
+- A row restarts the mod so the new values take effect; a `config.lua` with a mistake in it is pointed out
+
+### New Mods
+- Knows Field Of View, Survival Stats and Whistle Range: their descriptions and commands
+
 ## 1.3.3 (2026-10-12)
 
 - Stack Them All's page points to its new `config.lua`

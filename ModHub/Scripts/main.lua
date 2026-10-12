@@ -11,7 +11,9 @@
 --   .reloadmods all        restart all of them
 --   .reloadmods <Name>     restart one, e.g. .reloadmods RadiationShield
 --
--- Each mod's page also shows its CHANGELOG.md.
+-- Each mod's page also shows its CHANGELOG.md, and Settings for the values
+-- in its config.example.lua: changed there, they are saved to the mod's
+-- config.lua (the player's own file, which git pull never touches).
 -- New mods still need a game restart. A restarted mod starts fresh: a shield
 -- that was on is off again, the PageUp menu is closed, and so on. The hub
 -- restarts itself last when it has changed too.
@@ -67,10 +69,22 @@ local INFO = {
       commands = { { ".reticle 50", "Crosshair at 50% (10-400)" }, { ".dot 50", "The same" },
                    { ".reticle reset", "The game's size" }, { ".reticle", "Show the setting" },
                    { ".reticle scan", "If it doesn't work: list what the dot could be" } } },
+    { name = "FieldOfView", title = "Field Of View",
+      about = "Your field of view in degrees; aiming still zooms in. Only your own view, so co-op is unaffected.",
+      commands = { { ".fov 95", "Field of view 95 (60-120)" }, { ".fov reset", "The game's own" },
+                   { ".fov", "Show the setting" }, { ".fov scan", "If it doesn't work: list the cameras" } } },
+    { name = "SurvivalStats", title = "Survival Stats",
+      about = "A small panel with your exact survival numbers (health, stamina, hunger, thirst, radiation, ...), off until you switch it on. Only reads your own numbers, so it's safe in co-op.",
+      commands = { { ".stats", "Panel on / off" }, { ".stats move", "Next position on the screen" },
+                   { ".stats scan", "If a stat is missing: list the numbers" } } },
+    { name = "WhistleRange", title = "Whistle Range",
+      about = "Co-op: players who joined get whistles (and see players) from as far away as the host does. Only the host needs it.",
+      commands = { { ".whistle", "The range and the players it's applied to" },
+                   { ".whistle scan", "List everything named like a whistle" } } },
     { name = "NotSoShaky", title = "Not So Shaky",
       about = "Softer camera shake when you're hit." },
     { name = "ModHub", title = "Mod Hub",
-      about = "This menu: the loaded mods, their keys and commands, and restarting mods you've changed.",
+      about = "This menu: the loaded mods, their keys, commands, settings and changelogs, and restarting mods you've changed.",
       commands = { { ".mods", "Open / close this menu" }, { ".reloadmods", "Restart the mods you've changed" },
                    { ".reloadmods all", "Restart every mod" }, { ".reloadmods <Name>", "Restart one mod" } } },
     -- UE4SS's own: shown, never restarted from here
@@ -263,6 +277,155 @@ end
 local function LatestVersion(versions)
     local first = versions and versions[1]
     return first and (first.title:match("^(%S+)")) or nil
+end
+
+------------------------------------------------------------
+-- Settings (a mod's config.example.lua and the player's config.lua)
+------------------------------------------------------------
+-- Every `key = value,` line of the example's table is a setting; the comment
+-- lines just above it describe it. Values can be true / false, numbers or
+-- "text". Choices for text are the "quoted" words in its description, and a
+-- number whose description mentions false can also be switched off.
+local function Literal(s)
+    if s == "true" then return true end
+    if s == "false" then return false end
+    if tonumber(s) then return tonumber(s) end
+    local str = s:match('^"(.*)"$') or s:match("^'(.*)'$")
+    return str
+end
+
+local function Settings(name)
+    local text = ReadFile(MODS_DIR .. name .. "/config.example.lua")
+    if not text then return nil end
+    local list, about, inTable = {}, {}, false
+    for line in (text:gsub("\r", "") .. "\n"):gmatch("([^\n]*)\n") do
+        if not inTable then
+            if line:match("^%s*return%s*{") then inTable = true end
+        elseif line:match("^%s*%-%-") then
+            table.insert(about, (line:gsub("^%s*%-%-%s?", "")))
+        elseif line:match("^%s*$") then
+            about = {}
+        else
+            local key, raw = line:match("^%s*([%a_][%w_]*)%s*=%s*([^,]-)%s*,?%s*$")
+            if not key then key, raw = line:match("^%s*([%a_][%w_]*)%s*=%s*([^,]-)%s*,?%s*%-%-") end
+            local value = raw and Literal(raw)
+            if key and value ~= nil then
+                local s = { key = key, default = value, about = #about > 0 and table.concat(about, " ") or nil }
+                if type(value) == "boolean" then
+                    s.kind = "bool"
+                elseif type(value) == "number" then
+                    s.kind = "number"
+                    s.decimals = #(raw:match("%.(%d+)") or "")
+                    s.allowFalse = s.about ~= nil and s.about:find("false", 1, true) ~= nil
+                else
+                    s.kind = "text"
+                    s.choices, s.seen = {}, {}
+                    for choice in ((s.about or "") .. ' "' .. value .. '"'):gmatch('"([^"]*)"') do
+                        if not s.seen[choice] then s.seen[choice] = true table.insert(s.choices, choice) end
+                    end
+                end
+                table.insert(list, s)
+                about = {}
+            end
+        end
+    end
+    return #list > 0 and list or nil
+end
+
+local function ConfigPath(name) return MODS_DIR .. name .. "/config.lua" end
+
+-- The player's own values (config.lua), or nil and the problem
+local function UserValues(name)
+    local path = ConfigPath(name)
+    local file = io.open(path, "r")
+    if not file then return {} end
+    file:close()
+    local ok, result = pcall(dofile, path)
+    if ok and type(result) == "table" then return result end
+    return nil, ok and "it doesn't return a table" or tostring(result)
+end
+
+local function LuaValue(s, value)
+    if type(value) == "boolean" then return tostring(value) end
+    if type(value) == "number" then
+        if (s.decimals or 0) > 0 then return string.format("%." .. s.decimals .. "f", value) end
+        return string.format("%d", math.floor(value + 0.5))
+    end
+    return string.format("%q", tostring(value))
+end
+
+-- Writes one value into config.lua: the line with that key gets the new
+-- value (everything else in the file stays as it is); a missing line is
+-- added. No config.lua yet: it starts as a copy of the example.
+local function SaveSetting(name, s, value)
+    local text = ReadFile(ConfigPath(name)) or ReadFile(MODS_DIR .. name .. "/config.example.lua")
+    if not text then return false end
+    local lit = LuaValue(s, value)
+    local out, done = {}, false
+    for line in (text:gsub("\r", "") .. "\n"):gmatch("([^\n]*)\n") do
+        if not done and not line:match("^%s*%-%-") then
+            local before, after = line:match("^(%s*" .. s.key .. "%s*=%s*)[^,%-]-(%s*,.*)$")
+            if not before then before, after = line:match("^(%s*" .. s.key .. "%s*=%s*)[^,%-]-(%s*)$") end
+            if before then
+                line, done = before .. lit .. after, true
+            end
+        end
+        table.insert(out, line)
+    end
+    if out[#out] == "" then table.remove(out) end
+    if not done then
+        for i = #out, 1, -1 do
+            if out[i]:match("^%s*}") then
+                table.insert(out, i, "    " .. s.key .. " = " .. lit .. ",")
+                done = true
+                break
+            end
+        end
+    end
+    if not done then return false end
+    local file = io.open(ConfigPath(name), "w")
+    if not file then return false end
+    file:write(table.concat(out, "\n") .. "\n")
+    file:close()
+    return true
+end
+
+-- checkEverySeconds -> "Check every seconds", Food_StackSize -> "Food stack size"
+local function Humanize(key)
+    local s = key:gsub("^is(%u)", "%1"):gsub("_", " "):gsub("(%l)(%u)", "%1 %2")
+    s = s:lower()
+    return s:sub(1, 1):upper() .. s:sub(2)
+end
+
+local function Shown(s, value)
+    if type(value) == "boolean" then return value and "ON" or "OFF" end
+    if type(value) == "number" then return LuaValue(s, value) end
+    if value == "" then return "NONE" end
+    return tostring(value):upper()
+end
+
+-- One step left (-1) or right (+1)
+local function Step(s, value, dir)
+    if s.kind == "bool" then return not value end
+    if s.kind == "text" then
+        local i = 1
+        for n, c in ipairs(s.choices) do if c == value then i = n end end
+        return s.choices[(i - 1 + dir) % #s.choices + 1]
+    end
+    if type(value) ~= "number" then return s.default end   -- switched off: back on
+    local step
+    if s.decimals > 0 then
+        step = 0.5
+    else
+        local digits = #tostring(math.floor(math.abs(s.default)))
+        step = digits <= 1 and 1 or (digits == 2 and 5 or 10 ^ (digits - 2))
+    end
+    local new = value + dir * step
+    if s.default >= 0 and new < 0 then
+        if s.allowFalse then return false end
+        new = 0
+    end
+    return new
 end
 
 ------------------------------------------------------------
@@ -563,6 +726,7 @@ end
 local HINTS = {
     list = { { "UP / DOWN", "select" }, { "RIGHT / ENTER", "open" }, { "LEFT", "back" }, { ".mods", "close" } },
     changelog = { { "UP / DOWN", "scroll" }, { "LEFT / RIGHT", "version" }, { "ENTER", "back" }, { ".mods", "close" } },
+    settings = { { "UP / DOWN", "select" }, { "LEFT / RIGHT", "change" }, { "ENTER", "switch / default" }, { ".mods", "close" } },
 }
 
 local function SetHints(tree, p, which)
@@ -766,7 +930,8 @@ local function ModView(tree, body)
     end
     local hasMenu, canRestart = info.menu ~= nil, not info.builtin
     local changes = Changelog(name)
-    if hasMenu or canRestart or changes then
+    local settings = not info.builtin and Settings(name) or nil
+    if hasMenu or canRestart or changes or settings then
         local actions = Section(tree, body, "ACTIONS")
         if hasMenu then
             ActionRow(tree, actions, info.menu[1], info.menu[2], MUTED, function()
@@ -778,6 +943,10 @@ local function ModView(tree, body)
                     return true
                 end)
             end)
+        end
+        if settings then
+            ActionRow(tree, actions, "Settings", #settings .. (#settings == 1 and " SETTING" or " SETTINGS"), MUTED,
+                function() hub.modSel, hub.view, hub.sel, hub.status = hub.sel, "settings", 1, nil; Render() end)
         end
         if changes then
             local latest = LatestVersion(changes)
@@ -846,6 +1015,56 @@ local function ChangelogView(tree, body)
     return #parts > 0 and table.concat(parts, "   ") or "This is the only version"
 end
 
+-- A mod's config.lua settings: Left/Right change the chosen one (saved
+-- straight away), Enter switches it or puts the default back
+local function SettingsView(tree, body)
+    local name = hub.mod
+    local info = INFO_BY_NAME[name] or { title = name }
+    local list = Settings(name) or {}
+    local values, problem = UserValues(name)
+    SetText(ui.p.title, info.title:upper())
+    SetText(ui.p.sub, "SETTINGS")
+    local inner = WIDTH - 8 - SCROLLBAR
+    local card = Section(tree, body, "CONFIG.LUA")
+    for _, s in ipairs(list) do
+        if s.about then
+            Pad(card:AddChildToVerticalBox(WrappedText(tree, s.about, 11, MUTED, inner - 30)), 15, 10, 4, 2)
+        end
+        local value = values and values[s.key]
+        if value == nil then value = s.default end
+        local isDefault = value == s.default
+        local r = ActionRow(tree, card, Humanize(s.key), Shown(s, value), isDefault and LABEL or ACCENT, function()
+            local new
+            if s.kind == "bool" then
+                new = not value
+            elseif s.allowFalse and value ~= false then
+                new = false
+            else
+                new = s.default
+            end
+            hub.change(s, new)
+        end)
+        r.setting, r.value = s, value
+    end
+    ActionRow(tree, body, "Restart " .. info.title .. " to use them", nil, nil, function() RunReload(name) end)
+    ActionRow(tree, body, "Back", nil, nil, function() hub.view, hub.sel = "mod", hub.modSel or 1; Render() end, true)
+    if problem then
+        -- more important than what was just changed
+        hub.status = "Your config.lua has a mistake (" .. problem .. "); the mod uses its defaults"
+    end
+    return "Saved to config.lua as you change them. Highlighted values differ from the default"
+end
+
+-- Saves one setting and shows the page again
+hub.change = function(s, value)
+    if SaveSetting(hub.mod, s, value) then
+        hub.status = Humanize(s.key) .. ": " .. Shown(s, value) .. " - restart the mod to use it"
+    else
+        hub.status = "Couldn't write " .. ConfigPath(hub.mod)
+    end
+    Render()
+end
+
 local function Recolor()
     local chosen = ui.rows and ui.rows[hub.sel]
     if chosen and ui.p and ui.p.scroll then
@@ -881,12 +1100,14 @@ Render = function()
     local tree = hud.WidgetTree
     pcall(function() ui.p.body:ClearChildren() end)
     ui.rows = {}
-    local hints = hub.view == "changelog" and "changelog" or "list"
+    local hints = HINTS[hub.view] and hub.view or "list"
     if ui.p.hintsFor ~= hints then SetHints(tree, ui.p, hints) end
     local viewStatus = nil
     local ok, err = pcall(function()
         if hub.view == "changelog" then
             viewStatus = ChangelogView(tree, ui.p.body)
+        elseif hub.view == "settings" then
+            viewStatus = SettingsView(tree, ui.p.body)
         elseif hub.view == "mod" then
             ModView(tree, ui.p.body)
         else
@@ -956,6 +1177,18 @@ local function MenuKey(action)
         end
         local n = #ui.rows
         if n == 0 then return end
+        local row = ui.rows[hub.sel]
+        if hub.view == "settings" and row and row.setting and (action == "back" or action == "right") then
+            -- from what config.lua says now (it may have been edited meanwhile)
+            local s, value = row.setting, row.value
+            local values = UserValues(hub.mod)
+            if values then
+                value = values[s.key]
+                if value == nil then value = s.default end
+            end
+            hub.change(s, Step(s, value, action == "right" and 1 or -1))
+            return
+        end
         if action == "up" then
             hub.sel = (hub.sel - 2) % n + 1
             Recolor()
@@ -966,7 +1199,12 @@ local function MenuKey(action)
             if hub.view == "mod" then
                 hub.view, hub.sel = "list", 1
                 Render()
+            elseif hub.view == "settings" then
+                hub.view, hub.sel, hub.status = "mod", hub.modSel or 1, nil
+                Render()
             end
+        elseif action == "right" and hub.view == "settings" then
+            return   -- Right on Restart / Back: nothing to change
         else
             local row = ui.rows[hub.sel]
             if row and row.action then row.action() end
