@@ -10,7 +10,7 @@
 --
 -- Only your own screen changes, so it works the same in co-op.
 ------------------------------------------------------------
-local VERSION = "1.0.1"
+local VERSION = "1.0.2"
 local DEFAULT_PERCENT = 100   -- used when there is no settings.txt
 local SETTINGS_PATH = "./ue4ss/Mods/ReticleSize/settings.txt"
 local MIN_PERCENT, MAX_PERCENT = 10, 400
@@ -117,16 +117,20 @@ local function Apply(verbose)
 end
 
 -- After loading or respawning the HUD may not exist yet: try for up to 20 s
+-- Each try walks every object in the game a few times (a short hitch), so
+-- only at these seconds after the load, not every second.
+local TRY_AT = { [1] = true, [3] = true, [6] = true, [10] = true, [20] = true }
 local function ApplySoon()
     if applyRunning then return end
     applyRunning = true
-    local tries, done = 0, false
+    local seconds, done = 0, false
     LoopAsync(1000, function()
-        if done or tries >= 20 then
+        if done or seconds >= 20 then
             applyRunning = false
             return true
         end
-        tries = tries + 1
+        seconds = seconds + 1
+        if not TRY_AT[seconds] then return false end
         ExecuteInGameThread(function()
             if not done and Apply(false) > 0 then
                 done = true

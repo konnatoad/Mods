@@ -2,6 +2,13 @@
 
 ---
 
+## Version 4.6.1
+
+### Performance
+- Infinite stamina and instaheal looked for your player by walking through every object in the game on every tick: about 20 times a second with infinite stamina on, which can cost frames. The player is now found once and kept until the next level
+
+---
+
 ## Version 4.6
 
 ### Updating with git pull
