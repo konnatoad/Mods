@@ -3,6 +3,12 @@
 ------------------------------------------------------------
 -- Day/night length, season and darker nights in one place.
 -- Replaces DayLengthTweaks and the Darker Nights pak (777_DarkerNights_P).
+--
+-- Co-op: day/night length and season belong to the host's world. In someone
+-- else's world this mod asks the host's World Tweaks for its numbers and uses
+-- those, so both games' clocks run at the same speed (a host without World
+-- Tweaks: nothing is changed). Darker nights is only how your own sky looks,
+-- so it always uses your own setting.
 ------------------------------------------------------------
 -- Config
 ------------------------------------------------------------
@@ -30,6 +36,8 @@ local DUMP_PATH = "./ue4ss/Mods/WorldTweaks/weather_dump.txt"
 local SEASONS = { spring = 0, summer = 1, autumn = 2, fall = 2, winter = 3 }
 
 local applyRunning = false
+local askedFor = nil          -- joined: the weather manager we asked the host about
+local hostAnswered = false
 local seasonAppliedTo = nil   -- address of the weather manager the season was set on
 
 local function log(msg)
@@ -48,6 +56,31 @@ end
 local function AddressOf(obj)
     local ok, address = pcall(function() return obj:GetAddress() end)
     return ok and address or nil
+end
+
+local function Valid(obj)
+    if obj == nil then return false end
+    local ok, valid = pcall(function() return obj:IsValid() end)
+    return ok and valid == true
+end
+
+-- The player controller of this game's own player
+local function LocalController()
+    local found = nil
+    pcall(function()
+        for _, ctrl in ipairs(FindAllOf("BP_SGKController_C") or {}) do
+            if Valid(ctrl) and ctrl:IsLocalController() then found = ctrl return end
+        end
+    end)
+    return found
+end
+
+-- In someone else's world (the host's game has authority over our controller)
+local function Joined(ctrl)
+    ctrl = ctrl or LocalController()
+    if not ctrl then return false end
+    local ok, authority = pcall(function() return ctrl:HasAuthority() end)
+    return ok and authority == false
 end
 
 ------------------------------------------------------------
@@ -140,10 +173,19 @@ local function ApplyNightSky()
 end
 
 -- Returns true once the settings are on the weather manager.
+local AskHost   -- co-op, below
+
 local function Apply()
     ApplyNightSky()
     local wm = FindWeatherManager()
     if not wm then return false end
+
+    local ctrl = LocalController()
+    if Joined(ctrl) then
+        AskHost(ctrl, wm)
+        if Config.nightSkyLight ~= nil then pcall(function() wm["Set Elements"](wm) end) end
+        return true
+    end
 
     local okLength = pcall(function()
         wm["Day Length"] = Config.dayLength
@@ -194,6 +236,82 @@ end
 RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
     ApplySoon()
 end)
+
+------------------------------------------------------------
+-- Co-op
+------------------------------------------------------------
+-- Same two messages Unreal always has as the Radiation Shield uses:
+-- player -> host: ServerNotifyLoadedWorld(FName "WTWEAKS_ASK") (the game
+--   ignores the name; the host's mod reads it)
+-- host -> player: ClientMessage("... #WT:<day>:<night>:<season>"), season -1
+--   when the host doesn't force one. Shows as a line in the player's console.
+local SERVER_TAG = "WTWEAKS_ASK"
+
+local function ParamString(param)
+    local value = param
+    pcall(function() value = param:get() end)
+    if type(value) == "string" then return value end
+    local ok, s = pcall(function() return value:ToString() end)
+    return ok and s or ""
+end
+
+AskHost = function(ctrl, wm)
+    local address = AddressOf(wm)
+    if address == askedFor then return end
+    askedFor, hostAnswered = address, false
+    local sent = pcall(function() ctrl:ServerNotifyLoadedWorld(FName(SERVER_TAG)) end)
+    log("In someone else's world: asking the host for their day length and season")
+    LoopAsync(3000, function()
+        if askedFor == address and not hostAnswered then
+            log("No answer from the host" .. (sent and "" or " (couldn't send)")
+                .. " - their game keeps its own day length (the host doesn't have World Tweaks)")
+        end
+        return true
+    end)
+end
+
+-- The host's numbers, on a player who joined
+local function OnClientMessage(selfParam, textParam)
+    local text = ParamString(textParam)
+    local day, night, season = text:match("#WT:([%d%.]+):([%d%.]+):(%-?%d+)%s*$")
+    if not day or not Joined() then return end
+    day, night, season = tonumber(day), tonumber(night), tonumber(season)
+    if not day or not night or day <= 0 or night <= 0 then return end
+    hostAnswered = true
+    local wm = FindWeatherManager()
+    if not wm then return end
+    pcall(function()
+        wm["Day Length"] = day
+        wm["Night Length"] = night
+    end)
+    local address = AddressOf(wm)
+    if season and season >= 0 and address ~= seasonAppliedTo then
+        if pcall(function() wm["Toggle Season"](wm, season, 1.0, 0) end) then seasonAppliedTo = address end
+    end
+    log(string.format("Using the host's day length %.1f, night length %.1f", day, night))
+end
+
+-- A joined player asking, on the host
+local function OnHostMessage(selfParam, msgParam)
+    if ParamString(msgParam) ~= SERVER_TAG then return end
+    local pc = nil
+    pcall(function() pc = selfParam:get() end)
+    if not Valid(pc) or Joined() then return end
+    local isLocal = true
+    pcall(function() isLocal = pc:IsLocalController() end)
+    if isLocal then return end
+    local season = SEASONS[string.lower(Config.season or "")] or -1
+    local text = string.format("[WorldTweaks] Host's day length %.1f, night length %.1f #WT:%.1f:%.1f:%d",
+        Config.dayLength, Config.nightLength, Config.dayLength, Config.nightLength, season)
+    pcall(function() pc:ClientMessage(text, FName("None"), 0.0) end)
+end
+
+for path, fn in pairs({
+    ["/Script/Engine.PlayerController:ServerNotifyLoadedWorld"] = OnHostMessage,
+    ["/Script/Engine.PlayerController:ClientMessage"] = OnClientMessage,
+}) do
+    if not pcall(RegisterHook, path, fn) then log("Co-op messages unavailable (" .. path .. ")") end
+end
 
 ------------------------------------------------------------
 -- Diagnostics

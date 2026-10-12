@@ -116,11 +116,283 @@ local function SafeRegisterCommand(cmdName, callback)
     return true
 end
 
+-- ============================================================
+-- CO-OP
+-- ============================================================
+-- In someone else's world the host's game owns the world and every player's
+-- inventory and stats: a change made only in a joined player's game is undone
+-- or never reaches anyone. So in someone else's world:
+--   * world commands (time, weather, season, enemies, slow motion, ...) and
+--     movement cheats are the host's: they're refused with a message
+--   * items and stats (Spawn, .heal, .instaheal, .infstam, .god, ...) are asked
+--     of the host's Mod Menu, which gives them to you (the host needs it too)
+-- The same two messages Unreal always has as the Radiation Shield uses:
+-- ServerNotifyLoadedWorld(FName "MMENU_...") to the host, ClientMessage
+-- ("... #MM:ok") back, shown as a line in the player's console.
+-- One table: the main chunk is close to Lua's 200-local limit.
+local Coop = {
+    allowJoined = true,   -- hosting: give items and stats to players who ask for them
+    TAG = "MMENU",
+    HOST_ONLY = {},       -- command -> why it's refused in someone else's world
+    -- the inventory functions players may ask for, and how many numbers each takes
+    STATS = { IncreaseHealth = 1, DecreaseHealth = 2, IncreaseStamina = 1, IncreaseHunger = 1,
+              IncreaseThirst = 1, DecreaseRadiation = 1, DecreaseInsanity = 1 },
+    MODES = { INSTAHEAL = "instaheal", INFSTAM = "infinite stamina", GOD = "god mode" },
+    HEAL_ALL = { "IncreaseHealth", "IncreaseStamina", "IncreaseHunger", "IncreaseThirst",
+                 "DecreaseRadiation", "DecreaseInsanity" },
+    guests = {},          -- hosting: [controller] = { pc, INSTAHEAL, INFSTAM, GOD }
+    told = {},            -- joined: [mode] = the controller the host was told it's on for
+    askId = 0,
+    answered = true,
+    looping = false,
+}
+do
+    local WORLD = "it changes the host's world, ask the host"
+    local MOVE = "the host's game moves your character"
+    local ITEMS = "use the PageUp menu's Spawn (the host's Mod Menu adds the item)"
+    for _, c in ipairs({ ".time", ".ctset", ".weather", ".season", ".slomo", ".freeze", ".enemy", ".summon",
+                         ".forcespawn", ".destroyall", ".destroypawns", ".damage_target", ".restartlevel" }) do
+        Coop.HOST_ONLY[c] = WORLD
+    end
+    for _, c in ipairs({ ".ghost", ".noclip", ".tp", ".loadpos", ".size" }) do Coop.HOST_ONLY[c] = MOVE end
+    for _, c in ipairs({ ".spawn", ".give", ".give2", ".giveme", ".givealt", ".addraw", ".inject",
+                         ".fetchitem", ".pickup", ".dropitem", ".testcreate" }) do
+        Coop.HOST_ONLY[c] = ITEMS
+    end
+end
+
+function Coop.Valid(obj)
+    if obj == nil then return false end
+    local ok, valid = pcall(function() return obj:IsValid() end)
+    return ok and valid == true
+end
+
+function Coop.Key(obj)
+    local ok, address = pcall(function() return obj:GetAddress() end)
+    if ok and address then return address end
+    return tostring(obj)
+end
+
+-- This game's own player controller
+function Coop.Controller()
+    local found = nil
+    pcall(function()
+        for _, ctrl in ipairs(FindAllOf("BP_SGKController_C") or {}) do
+            if Coop.Valid(ctrl) and ctrl:IsLocalController() then found = ctrl return end
+        end
+    end)
+    return found
+end
+
+-- In someone else's world (the host's game has authority over our controller)
+function Coop.Joined()
+    local ctrl = Coop.Controller()
+    if not ctrl then return false end
+    local ok, authority = pcall(function() return ctrl:HasAuthority() end)
+    return ok and authority == false
+end
+
+-- Commands (and key bindings) that only the host may use. True = refused.
+function Coop.Refuse(cmd)
+    local why = Coop.HOST_ONLY[string.lower(tostring(cmd))]
+    if not why or not Coop.Joined() then return false end
+    Log(tostring(cmd) .. " doesn't work in someone else's world: " .. why)
+    return true
+end
+
+function Coop.Text(param)
+    local value = param
+    pcall(function() value = param:get() end)
+    if type(value) == "string" then return value end
+    local ok, s = pcall(function() return value:ToString() end)
+    return ok and s or ""
+end
+
+-- Joined: ask the host's Mod Menu
+function Coop.Send(command, what)
+    local ctrl = Coop.Controller()
+    local sent = ctrl ~= nil and pcall(function() ctrl:ServerNotifyLoadedWorld(FName(Coop.TAG .. "_" .. command)) end)
+    Coop.askId = Coop.askId + 1
+    local id = Coop.askId
+    Coop.answered = false
+    Log("Asking the host for " .. what)
+    LoopAsync(3000, function()
+        if Coop.askId == id and not Coop.answered then
+            Log("No answer from the host" .. (sent and "" or " (couldn't send)")
+                .. " - the host needs MISERYModMenu for items and stats in their world")
+        end
+        return true
+    end)
+    return sent
+end
+
+-- Joined: a mode (instaheal, ...) is on or off. Tells the host once per world.
+function Coop.Mode(mode, on)
+    local ctrl = Coop.Controller()
+    local key = ctrl and Coop.Key(ctrl)
+    if on then
+        if Coop.told[mode] == key then return end
+        Coop.told[mode] = key
+    else
+        if Coop.told[mode] == nil then return end
+        Coop.told[mode] = nil
+        if not Coop.Joined() then return end
+    end
+    Coop.Send(mode .. (on and "_ON" or "_OFF"), Coop.MODES[mode] .. (on and " on" or " off"))
+end
+
+-- ---------- hosting ----------
+
+function Coop.Tell(pc, text, tag)
+    pcall(function() pc:ClientMessage("[ModMenu] " .. text .. " #MM:" .. tag, FName("None"), 0.0) end)
+end
+
+function Coop.Name(pc)
+    local name = "a player"
+    pcall(function()
+        local state = pc.PlayerState
+        if Coop.Valid(state) then name = state:GetPlayerName():ToString() end
+    end)
+    return name
+end
+
+function Coop.Inventory(pc)
+    local inv = nil
+    pcall(function()
+        local character = pc.Character
+        if Coop.Valid(character) and Coop.Valid(character.PlayerInventory) then inv = character.PlayerInventory end
+    end)
+    return inv
+end
+
+function Coop.FullName(obj)
+    local name = nil
+    pcall(function() name = obj:GetFullName() end)
+    return name
+end
+
+-- Instaheal and infinite stamina for players who asked, every 0.5 s while any is on
+function Coop.StartGuestLoop()
+    if Coop.looping then return end
+    Coop.looping = true
+    LoopAsync(500, function()
+        local any = false
+        for _, guest in pairs(Coop.guests) do
+            if guest.INSTAHEAL or guest.INFSTAM then any = true end
+        end
+        if not any then
+            Coop.looping = false
+            return true
+        end
+        ExecuteInGameThread(function()
+            for key, guest in pairs(Coop.guests) do
+                if not Coop.Valid(guest.pc) then
+                    Coop.guests[key] = nil   -- left the game
+                else
+                    local inv = Coop.Inventory(guest.pc)
+                    if inv and guest.INSTAHEAL then
+                        for _, fn in ipairs(Coop.HEAL_ALL) do pcall(function() inv[fn](inv, 9999) end) end
+                    elseif inv and guest.INFSTAM then
+                        pcall(function() inv["IncreaseStamina"](inv, 9999) end)
+                    end
+                end
+            end
+        end)
+        return false
+    end)
+end
+
+-- God mode for players who asked: called from the health hook for every
+-- inventory that takes damage. True when it was such a player's.
+function Coop.HealGuest(inv)
+    local name = nil
+    for key, guest in pairs(Coop.guests) do
+        if guest.GOD then
+            if not Coop.Valid(guest.pc) then
+                Coop.guests[key] = nil   -- left the game
+            else
+                name = name or Coop.FullName(inv)
+                local mine = Coop.Inventory(guest.pc)
+                if name and mine and Coop.FullName(mine) == name then
+                    pcall(function() inv["IncreaseHealth"](inv, 9999) end)
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- A joined player's request, on the host
+function Coop.OnHostMessage(selfParam, msgParam)
+    local cmd, rest = Coop.Text(msgParam):match("^" .. Coop.TAG .. "_(%u+)_?(.*)$")
+    if not cmd then return end
+    local pc = nil
+    pcall(function() pc = selfParam:get() end)
+    if not Coop.Valid(pc) or Coop.Joined() then return end
+    local isLocal = true
+    pcall(function() isLocal = pc:IsLocalController() end)
+    if isLocal then return end
+    local who = Coop.Name(pc)
+    if not Coop.allowJoined then
+        Coop.Tell(pc, "The host doesn't give items or stats to other players", "denied")
+        Log("[Co-op] " .. who .. " asked for " .. cmd:lower() .. " - turned off (Coop.allowJoined)")
+        return
+    end
+    local inv = Coop.Inventory(pc)
+    if cmd == "GIVE" then
+        local amount, row = rest:match("^(%d+)_([%w_]+)$")
+        amount = math.min(tonumber(amount) or 0, 9999)
+        local ok = row ~= nil and amount >= 1 and inv ~= nil and Coop.AddItem ~= nil and Coop.AddItem(row, amount, inv)
+        if ok then
+            Coop.Tell(pc, "Added " .. row .. " x" .. amount, "ok")
+            Log("[Co-op] " .. who .. ": " .. row .. " x" .. amount)
+        else
+            Coop.Tell(pc, "Couldn't add " .. tostring(row), "failed")
+            Log("[Co-op] " .. who .. ": couldn't add " .. tostring(row))
+        end
+    elseif cmd == "STAT" then
+        local fn, amount = rest:match("^(%a+)_(%d+)$")
+        local params = fn and Coop.STATS[fn]
+        amount = tonumber(amount)
+        local ok = params ~= nil and amount ~= nil and inv ~= nil and pcall(function()
+            if params == 2 then inv[fn](inv, amount, 0) else inv[fn](inv, amount) end
+        end)
+        Coop.Tell(pc, ok and (fn .. " " .. amount) or "Couldn't change that", ok and "ok" or "failed")
+        if ok then Log("[Co-op] " .. who .. ": " .. fn .. " " .. amount) end
+    elseif Coop.MODES[cmd] then
+        local on = rest == "ON"
+        local key = Coop.Key(pc)
+        local guest = Coop.guests[key] or {}
+        guest.pc, guest[cmd] = pc, on
+        Coop.guests[key] = guest
+        if cmd == "GOD" and on and Coop.InstallGodHooks then Coop.InstallGodHooks() end
+        if on then Coop.StartGuestLoop() end
+        Coop.Tell(pc, Coop.MODES[cmd]:upper() .. (on and ": ON" or ": OFF") .. " for you", "ok")
+        Log("[Co-op] " .. who .. ": " .. Coop.MODES[cmd] .. (on and " on" or " off"))
+    end
+end
+
+-- The host's answer, on a player who joined (the game shows the line itself)
+function Coop.OnClientMessage(selfParam, textParam)
+    if not Coop.Text(textParam):find("#MM:%a+%s*$") or not Coop.Joined() then return end
+    Coop.answered = true
+end
+
+for path, fn in pairs({
+    ["/Script/Engine.PlayerController:ServerNotifyLoadedWorld"] = function(...) Coop.OnHostMessage(...) end,
+    ["/Script/Engine.PlayerController:ClientMessage"] = function(...) Coop.OnClientMessage(...) end,
+}) do
+    if not pcall(RegisterHook, path, fn) then Log("Co-op messages unavailable (" .. path .. ")") end
+end
+
 -- Wrap all RegisterConsoleCommandHandler callbacks to always return true
+-- (and refuse the host's commands in someone else's world)
 if RegisterConsoleCommandHandler then
     local _realRCCH = RegisterConsoleCommandHandler
     RegisterConsoleCommandHandler = function(cmd, callback)
         return _realRCCH(cmd, function(FullCommand, Parameters)
+            if Coop.Refuse(cmd) then return true end
             local ok, err = pcall(callback, FullCommand, Parameters)
             if not ok then Log("CMD ERR [" .. tostring(cmd) .. "]: " .. tostring(err)) end
             return true
@@ -199,6 +471,9 @@ end
 
 local function ModifyStat(name, func, amount, paramCount)
     Log("--- " .. name .. " ---")
+    if Coop.Joined() then
+        return Coop.Send("STAT_" .. func .. "_" .. math.max(0, math.floor(tonumber(amount) or 0)), name)
+    end
     local Inv = GetInventory()
     if not Inv then
         Log("No inventory!")
@@ -507,7 +782,7 @@ local function LoadBindings()
                     local success = SafeRegisterKeyBind(keyEnum, {}, function()
                         SafeExecuteInGameThread(function()
                             local binding = customBindings[keyName]
-                            if binding and CommandHandlers[binding.command] then
+                            if binding and CommandHandlers[binding.command] and not Coop.Refuse("." .. binding.command) then
                                 CommandHandlers[binding.command](binding.arg)
                             end
                         end)
@@ -1094,7 +1369,7 @@ RegisterConsoleCommandHandler(".bind", function(FullCommand, Parameters)
     RegisterKeyBindAsync(keyEnum, {}, function()
         ExecuteInGameThread(function()
             local binding = customBindings[keyName]
-            if binding and CommandHandlers[binding.command] then
+            if binding and CommandHandlers[binding.command] and not Coop.Refuse("." .. binding.command) then
                 CommandHandlers[binding.command](binding.arg)
             end
         end)
@@ -2632,9 +2907,13 @@ end
 --   1. Factory path (CreateNewItem) — fills MasterInventory so wearables/weapons/mags work
 --   2. World-actor Pickup — preserves runtime state of an existing world item
 --   3. Bare AttemptToAddItem — last resort, item will spawn glitched until save/reload
-local function AddItemByRowName(rowName, amount)
+local function AddItemByRowName(rowName, amount, inv)
     amount = amount or 1
-    local inv = GetInventory()
+    if inv == nil and Coop.Joined() then
+        -- someone else's world: the host's game adds it to our inventory
+        return Coop.Send("GIVE_" .. math.floor(amount) .. "_" .. rowName, rowName .. " x" .. amount)
+    end
+    inv = inv or GetInventory()
     if not inv then Log("[AddItem] No inventory") return false end
 
     -- Path 1: factory (preferred — produces fully-initialised items)
@@ -2689,6 +2968,8 @@ local function AddItemByRowName(rowName, amount)
     Log("[AddItem] FAILED: " .. tostring(err))
     return false
 end
+
+Coop.AddItem = AddItemByRowName
 
 -- ---------- item names ----------
 
@@ -4037,7 +4318,8 @@ function ItemMenu.OnSpawnClicked()
     local label = ItemMenu.LabelFor(rowName)
 
     local restore
-    if _G.__SpawnMode == "mod" then
+    -- in someone else's world the host's Mod Menu adds it, unless .spawnmode game was chosen
+    if _G.__SpawnMode == "mod" or (_G.__SpawnMode == nil and Coop.Joined()) then
         restore = ItemMenu.TempSelect(combo, nil, selected)
         Log("[Spawn] " .. label .. " x" .. amount .. " (mod spawn)")
         AddItemByRowName(rowName, amount)
@@ -4095,6 +4377,7 @@ RegisterConsoleCommandHandler(".spawnmode", function(FullCommand, Parameters)
         Log("[spawnmode] Current: " .. (_G.__SpawnMode or "game"))
         Log("[spawnmode] .spawnmode game - the game's own spawn adds the item (default)")
         Log("[spawnmode] .spawnmode mod  - the mod adds the item instead")
+        Log("[spawnmode] Not chosen: in someone else's world the host's Mod Menu adds it")
     end
     return true
 end)
@@ -4225,6 +4508,7 @@ end
 -- (Day/Night Length only pace how fast CT ticks; they do NOT scale the clock.)
 local function ApplyTimeHour(hour)
     ExecuteInGameThread(function()
+        if Coop.Joined() then Log("[TimeSpin] In someone else's world the host sets the time") return end
         local wm = ResolveWeatherManager()
         if not wm then Log("[TimeSpin] WeatherManager not found") return end
         pcall(function()
@@ -4370,6 +4654,7 @@ local function InstallCheatMenuHooks()
 
             -- Per-AI spawn fixes. Read the combo selection once, then branch.
             pcall(function()
+                if Coop.Joined() then return end   -- the host's game spawns them
                 local sel = nil
                 for _, cb in ipairs(FindAllOf("ComboBoxString") or {}) do
                     local fname = ""
@@ -6410,10 +6695,12 @@ local infStaminaEnabled = false
 local function StartStaminaLoop()
     LoopAsync(100, function()
         if not infStaminaEnabled then
+            ExecuteInGameThread(function() Coop.Mode("INFSTAM", false) end)
             return true  -- Stop
         end
 
         ExecuteInGameThread(function()
+            if Coop.Joined() then Coop.Mode("INFSTAM", true) return end
             local Inv = GetInventory()
             if Inv then
                 pcall(function() Inv["IncreaseStamina"](Inv, 9999) end)
@@ -6864,10 +7151,11 @@ _G.__GodNoDamage = _G.__GodNoDamage or false
 _G.__GodHooksInstalled = _G.__GodHooksInstalled or false
 
 local function GodHealLocal(self)
-    if not _G.__GodNoDamage then return end
     local inv = nil
     pcall(function() inv = self:get() end)
     if not inv then return end
+    if next(Coop.guests) ~= nil and Coop.HealGuest(inv) then return end   -- hosting: a player who asked
+    if not _G.__GodNoDamage then return end
     -- MULTIPLAYER: heal ONLY the local player's inventory. If the local
     -- inventory can't be resolved, do nothing — never fall through to healing
     -- whoever happened to take damage (could be a friend or an NPC).
@@ -6893,10 +7181,13 @@ local function InstallGodHooks()
     return ok
 end
 
+Coop.InstallGodHooks = InstallGodHooks
+
 RegisterConsoleCommandHandler(".god", function(FullCommand, Parameters)
     isGodMode = not isGodMode
     _G.__GodNoDamage = isGodMode
     ExecuteInGameThread(function()
+        if Coop.Joined() or not isGodMode then Coop.Mode("GOD", isGodMode) end
         pcall(function() ExecuteCheat("God") end)
         local hooked = InstallGodHooks()
         if hooked then
@@ -6916,10 +7207,12 @@ local instaHealEnabled = false
 local function StartHealingLoop()
     LoopAsync(500, function()
         if not instaHealEnabled then
+            ExecuteInGameThread(function() Coop.Mode("INSTAHEAL", false) end)
             return true  -- Stop the loop
         end
 
         ExecuteInGameThread(function()
+            if Coop.Joined() then Coop.Mode("INSTAHEAL", true) return end
             local Inv = GetInventory()
             if Inv then
                 pcall(function() Inv["IncreaseHealth"](Inv, 9999) end)
@@ -6963,6 +7256,7 @@ end)
 -- Global toggle so the menu FLY button hook (installed lexically earlier in
 -- the file) can reach it.
 _G.ToggleGhostMode = function()
+    if Coop.Refuse(".ghost") then return end
     isFlying = not isFlying
     ExecuteInGameThread(function()
         if SetGhostMode(isFlying) then
@@ -7977,6 +8271,7 @@ CommandHandlers["god"] = function()
     isGodMode = not isGodMode
     _G.__GodNoDamage = isGodMode
     ExecuteInGameThread(function()
+        if Coop.Joined() or not isGodMode then Coop.Mode("GOD", isGodMode) end
         InstallGodHooks()
         Log("GOD MODE: " .. (isGodMode and "ON" or "OFF"))
     end)
