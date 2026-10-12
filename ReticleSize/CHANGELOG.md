@@ -2,6 +2,15 @@
 
 ---
 
+## 1.1.0 (2026-10-13)
+
+### Colour and Alpha
+- `.reticle color red` colours the crosshair: white, red, green, blue, yellow, cyan, magenta, pink, orange, black, or any hex colour like `ff8800`
+- With alpha: `.reticle color ff880080`, or `.reticle alpha 50` for 50% see-through (keeps the colour, also the game's own)
+- `.reticle color reset` gives back the game's own colour and alpha
+- Saved to `settings.txt` and applied when a world loads, like the size
+- The colour goes on the images that draw the crosshair; `.reticle scan` also lists their colours
+
 ## 1.0.2 (2026-10-12)
 
 ### Performance
