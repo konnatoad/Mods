@@ -2,6 +2,50 @@
 
 ---
 
+## 1.5.0 (2026-10-13)
+
+### Applies by Itself
+- No more opening Settings and going back: right after changing the setting, the mod calls the game's own `SetDefaultCameraFOV` on your character, which is what leaving the Settings menu does. Sprinting ends at your field of view straight away
+- It's called the way the game expects (its parameters are checked first); if they're ever different, it isn't called and the log says to open Settings and go back once
+- The character component's own field-of-view values that still hold an old value follow too
+- `.fov scan` crashed the game: it watched 71 of the game's functions at once, some of them run every frame. The watching is gone; the scan now only lists what it finds
+
+## 1.4.3 (2026-10-13)
+
+- `.fov scan` stopped at "can't list functions": this UE4SS wants the object search to be told to keep going. If it still fails, the log now says why
+
+## 1.4.2 (2026-10-13)
+
+- The game only uses a new field of view everywhere (sprinting too) once its settings are applied, which happens when you leave its Settings menu; that also saves it, so the game keeps it on the next start. After `.fov`, the log now says to open Settings and go back once
+- `.fov scan` watches the game's settings functions for 30 s while you open Settings and go back, to find the one that applies them (so a later version can do it for you)
+
+## 1.4.1 (2026-10-13)
+
+- Sprinting ended back at the slider's field of view: your character keeps its own copy of the setting from when it spawned. The character's field-of-view variables that still hold an old normal value now follow yours too (values mid-sprint or mid-aim, and sprint and aim settings, are left alone)
+- Going from one `.fov` value to another inside the slider's range (like 90 to 110) took the mod's own earlier value for the slider's
+
+## 1.4.0 (2026-10-13)
+
+### Uses the Game's Own Setting
+- MISERY keeps its field of view in its settings (the options slider, 80-110), and works out the normal view, sprinting and aiming from it. The mod now sets that value itself, so the game does all of it from yours: no flicker, no jump when aiming, nothing fighting the camera
+- `.fov` goes up to 130 (and down to 60)
+- The slider's own value is remembered and `.fov reset` puts it back; while the mod is on it keeps the setting at yours, also if the options menu moves it
+- The camera tricks of 1.1.0-1.3.1 are gone
+
+## 1.3.1 (2026-10-13)
+
+- 1.3.0 changed nothing in game: MISERY's camera doesn't let mods call its offset functions. Now the camera's offset variables are tried too, and if neither is there it says so once instead of every second
+- `.fov scan` now records for 15 s every field of view the game gives the camera (and the value just before), while you sprint and aim, and lists the character's and camera manager's zoom, aim and sprint settings: what's needed to make a version that works
+
+## 1.3.0 (2026-10-13)
+
+### Works Again, Without Flicker
+- 1.2.0 changed nothing: this UE4SS can't watch the engine's own camera-modifier code, so the view was never scaled
+- Now uses the camera's additive offset, which Unreal adds on top of the field of view without changing it: the offset is your field of view minus the game's normal one. The game's sprint and aim zooms change only the game's own value and never see the offset, so nothing fights it and nothing jumps
+- Set once per camera, not every frame; put back if the game ever clears it
+- Aiming zooms in by the same number of degrees as before (game 110 aiming at 70, with your 120: 80)
+- The game's normal field of view only changes once another value has been seen for 10 s longer, so aiming for a while just after spawning doesn't count
+
 ## 1.2.0 (2026-10-13)
 
 ### No More Flicker

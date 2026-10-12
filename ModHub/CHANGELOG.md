@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.2 (2026-10-13)
+
+- Field Of View's page: its new range (60-130) and how it works
+
 ## 1.4.1 (2026-10-13)
 
 - Mods with settings say SETTINGS next to their name in the list, so it's clear which pages have a Settings button (CHANGED still shows instead when a mod has changed)

@@ -63,7 +63,7 @@ Every mod has a `CHANGELOG.md`; in game, `.mods` → pick a mod → **Changelog*
 | **RandomEmissions** | Emissions at random times, with a siren before each one | The host picks the times; everyone hears the siren |
 | **HeadBob** *(new)* | `.headbob 50`: how much the view bobs while walking and running | Only your view |
 | **ReticleSize** *(new)* | `.reticle 50` (or `.dot 50`): the crosshair dot's size | Only your screen |
-| **FieldOfView** *(new)* | `.fov 95`: the field of view in degrees (60-120); aiming still zooms in | Only your view |
+| **FieldOfView** *(new)* | `.fov 120`: the field of view past the game's 80-110 slider (60-130); sprinting and aiming work as usual | Only your view |
 | **SurvivalStats** *(new)* | `.stats`: a small panel with your exact health, stamina, hunger, thirst, radiation, insanity... Off until you switch it on | Only reads your own numbers |
 | **WhistleRange** *(new)* | Joined players get whistles (and see the other players) from as far away as the host does | Only the host needs it |
 | **NotSoShaky** | Softer camera shake when you're hit | Only your view |
@@ -151,7 +151,7 @@ Press `~` in game to open the console. `.mods` shows every mod's commands too.
 | `.headbob scan` | If the bob doesn't change: lists the camera shakes the game starts while you move |
 | `.reticle 50` / `.dot 50` | Crosshair dot at 50% of its size, 10-400 (`.reticle reset`; `.reticle` shows it) |
 | `.reticle scan` | If the dot doesn't change: lists the widgets it could be |
-| `.fov 95` | Field of view 95, 60-120 (`.fov reset`; `.fov` shows it; `.fov scan` if the view doesn't change) |
+| `.fov 120` | Field of view 120, 60-130 (`.fov reset` gives the game's slider back; `.fov` shows it; `.fov scan` if the view doesn't change) |
 | `.stats` | Survival numbers panel on / off (`.stats move` puts it elsewhere; `.stats scan` if a stat is missing) |
 | `.whistle` | Hosting: the range players' characters are sent to joined players (`.whistle scan` lists whistle things) |
 | `.fixweight` | Fix stuck container weight right now |
