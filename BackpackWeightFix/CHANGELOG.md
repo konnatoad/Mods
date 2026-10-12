@@ -2,6 +2,12 @@
 
 ---
 
+## 1.2.0 (2026-10-12)
+
+### Updating with git pull
+- Your own settings go in `config.lua` (copy `config.example.lua`), not in `main.lua`, so `git pull` can always update the mod
+- `checkEverySeconds` is at least 5
+
 ## 1.1.0 (2026-10-12)
 
 ### Co-op

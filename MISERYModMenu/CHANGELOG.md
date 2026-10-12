@@ -2,6 +2,14 @@
 
 ---
 
+## Version 4.6
+
+### Updating with git pull
+- Your own settings go in `config.lua` (copy `config.example.lua`), not in `main.lua`, so `git pull` can always update the mod
+- `config.lua` settings: `allowJoined` (co-op), `newLook = false` for the game's colours, `newLayout = false` for the game's layout
+
+---
+
 ## Version 4.5.1
 
 ### Co-op

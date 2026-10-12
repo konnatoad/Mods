@@ -17,6 +17,21 @@
 ------------------------------------------------------------
 -- each check scans every object in the game on this UE4SS build, so not too often
 local checkEverySeconds = 30
+-- Your own settings go in BackpackWeightFix\config.lua (start from config.example.lua),
+-- not in this file, so `git pull` can always update the mod. config.lua
+-- returns a table; anything it sets replaces the value here.
+local function UserConfig()
+    local path = "./ue4ss/Mods/BackpackWeightFix/config.lua"
+    local file = io.open(path, "r")
+    if not file then return {} end
+    file:close()
+    local ok, result = pcall(dofile, path)
+    if ok and type(result) == "table" then return result end
+    print("[BackpackWeightFix] config.lua ignored: " .. (ok and "it doesn't return a table" or tostring(result)) .. "\n")
+    return {}
+end
+
+checkEverySeconds = math.max(5, tonumber(UserConfig().checkEverySeconds) or checkEverySeconds)
 ----------------------------------
 
 local INVENTORY_CLASS = "BP_MasterInventory_C"

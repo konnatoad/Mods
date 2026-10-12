@@ -21,3 +21,8 @@ desktop.ini
 
 # Personal settings saved by in-game menus
 RadiationShield/settings.txt
+
+# Your own settings: never in git, so `git pull` always works
+*/config.lua
+*/settings.txt
+StackThemAll/scripts/stackConfig.lua
