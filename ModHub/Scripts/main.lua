@@ -143,17 +143,29 @@ local function Builtin(name) return INFO_BY_NAME[name] ~= nil and INFO_BY_NAME[n
 ------------------------------------------------------------
 -- Changelogs
 ------------------------------------------------------------
--- A mod's CHANGELOG.md (or .txt) as lines to show: { kind, text }, kind =
--- "version" (## 1.2.0 ...), "topic" (### ...), "item" (- ...) or "text".
+-- A mod's CHANGELOG.md (or .txt), one entry per version, newest first:
+-- { title = "1.2.0 (2026-10-12)", lines = { { kind = ..., text = ... } } }.
+-- kind: "topic" (### or a **bold** line), "item" (- / * / 1. ...; level and
+-- mark), "head" and "row" (table rows; cells), "code" or "text".
 -- Only version sections are kept (not Installation and the like).
 local CHANGELOG_FILES = { "CHANGELOG.md", "CHANGELOG.txt", "changelog.md", "changelog.txt" }
 
+-- Markdown marks the menu can't show: bold, code, links
 local function Plain(line)
-    return (line:gsub("%*%*", ""):gsub("`", ""):gsub("^%s+", ""):gsub("%s+$", ""))
+    line = line:gsub("%[([^%]]+)%]%([^%)]*%)", "%1")
+    line = line:gsub("%*%*", ""):gsub("__", ""):gsub("`", "")
+    return (line:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
 local function IsVersion(heading)
     return heading:find("%d") ~= nil or heading:lower():find("original") ~= nil
+end
+
+local function Cells(line)
+    local cells = {}
+    local inner = line:gsub("^%s*|", ""):gsub("|%s*$", "")
+    for cell in (inner .. "|"):gmatch("([^|]*)|") do table.insert(cells, Plain(cell)) end
+    return cells
 end
 
 local function Changelog(name)
@@ -165,60 +177,82 @@ local function Changelog(name)
     if not text then return nil end
     local raw = {}
     for line in (text:gsub("\r", "") .. "\n"):gmatch("([^\n]*)\n") do table.insert(raw, line) end
-    local lines, keep = {}, false
+    local versions, current, code, lastBlank = {}, nil, false, true
+    local function add(entry)
+        if current then table.insert(current.lines, entry) end
+        return entry
+    end
+    local last = nil   -- the entry a wrapped line continues
     for i, line in ipairs(raw) do
         local nextLine = raw[i + 1] or ""
         local heading = nil
-        if line:match("^##%s") and not line:match("^###") then
-            heading = Plain(line:gsub("^##%s*", ""))
-        elseif line:match("%S") and nextLine:match("^%-%-%-+%s*$") then
-            heading = Plain(line)   -- "1.0.0" underlined with dashes (.txt)
-        end
-        if heading then
-            keep = IsVersion(heading)
-            if keep then table.insert(lines, { kind = "version", text = heading:gsub("^[Vv]ersion%s+", "") }) end
-        elseif keep and not line:match("^%-%-%-+%s*$") and not line:match("^===+%s*$") then
-            local topic = line:match("^###%s*(.+)")
-            local item = line:match("^%s*[%-%*]%s+(.+)")
-            if topic then
-                table.insert(lines, { kind = "topic", text = Plain(topic) })
-            elseif item then
-                table.insert(lines, { kind = "item", text = Plain(item) })
-            elseif line:match("%S") and not line:match("^#") then
-                table.insert(lines, { kind = "text", text = Plain(line) })
+        if not code then
+            if line:match("^##%s") then
+                heading = Plain(line:gsub("^##%s*", ""))
+            elseif line:match("%S") and not line:match("^%s*[%-|#>]") and nextLine:match("^%-%-%-+%s*$") then
+                heading = Plain(line)   -- "1.0.0" underlined with dashes (.txt)
             end
         end
+        if heading then
+            current = nil
+            if IsVersion(heading) then
+                current = { title = (heading:gsub("^[Vv]ersion%s+", "")), lines = {} }
+                table.insert(versions, current)
+            end
+            last = nil
+        elseif current then
+            if line:match("^%s*```") then
+                code = not code
+                last = nil
+            elseif code then
+                add({ kind = "code", text = line })
+            elseif line:match("^%s*$") or line:match("^%-%-%-+%s*$") or line:match("^===+%s*$") then
+                last = nil
+            elseif line:match("^#+%s") then
+                last = nil
+                add({ kind = "topic", text = Plain(line:gsub("^#+%s*", "")) })
+            elseif line:match("^%s*%*%*[^*]+%*%*:?%s*$") then
+                last = nil
+                add({ kind = "topic", text = Plain(line) })
+            elseif line:match("^%s*|") then
+                last = nil
+                local cells = Cells(line)
+                local separator = true
+                for _, c in ipairs(cells) do
+                    if not c:match("^:?%-+:?$") then separator = false end
+                end
+                local prev = current.lines[#current.lines]
+                if separator then
+                    if prev and prev.kind == "row" then prev.kind = "head" end
+                else
+                    add({ kind = "row", cells = cells })
+                end
+            else
+                local indent, mark, rest = line:match("^(%s*)([%-%*%+])%s+(.+)$")
+                if not mark then indent, mark, rest = line:match("^(%s*)(%d+[%.%)])%s+(.+)$") end
+                if mark then
+                    last = add({ kind = "item", text = Plain(rest), level = #indent >= 2 and 2 or 1,
+                                 mark = mark:match("%d") and mark or nil })
+                elseif last and not lastBlank then
+                    last.text = last.text .. " " .. Plain(line)   -- the same paragraph, wrapped
+                else
+                    last = add({ kind = "text", text = Plain(line:gsub("^%s*>%s?", "")) })
+                end
+            end
+        end
+        lastBlank = not line:match("%S")
     end
-    if #lines == 0 then return nil end
-    return lines
+    for i = #versions, 1, -1 do
+        if #versions[i].lines == 0 and not versions[i].title:lower():find("original") then table.remove(versions, i) end
+    end
+    if #versions == 0 then return nil end
+    return versions
 end
 
 -- "1.2.0 (2026-10-12)" -> "1.2.0"
-local function LatestVersion(lines)
-    for _, l in ipairs(lines or {}) do
-        if l.kind == "version" then return (l.text:match("^(%S+)")) end
-    end
-    return nil
-end
-
--- Pages that fit the menu: about PAGE_LINES lines of text each, never
--- splitting a line; a version heading doesn't end a page.
-local PAGE_LINES, CHARS_PER_LINE = 22, 66
-local function Pages(lines)
-    local pages, page, used = {}, {}, 0
-    local cost = { version = 2, topic = 1.6 }
-    for i, l in ipairs(lines) do
-        local h = cost[l.kind] or math.max(1, math.ceil(#l.text / CHARS_PER_LINE))
-        local last = (l.kind == "version" or l.kind == "topic") and lines[i + 1] ~= nil
-        if #page > 0 and (used + h > PAGE_LINES or (last and used + h + 1 > PAGE_LINES)) then
-            table.insert(pages, page)
-            page, used = {}, 0
-        end
-        table.insert(page, l)
-        used = used + h
-    end
-    if #page > 0 then table.insert(pages, page) end
-    return pages
+local function LatestVersion(versions)
+    local first = versions and versions[1]
+    return first and (first.title:match("^(%S+)")) or nil
 end
 
 ------------------------------------------------------------
@@ -357,6 +391,9 @@ local BUTTON = { R = 1, G = 1, B = 1, A = 0.05 }
 local LINE = { R = 0.6, G = 0.7, B = 0.85, A = 0.10 }   -- faint outline
 local CLEAR = { R = 0, G = 0, B = 0, A = 0 }
 local WIDTH = 480
+local BODY_MAX = 470      -- taller than this, the menu's body scrolls
+local SCROLLBAR = 12      -- room kept for the scroll bar
+local SCROLL_STEP = 80
 
 local hub = { open = false, view = "list", sel = 1, mod = nil, status = nil, openedAt = -1 }
 local ui = {}
@@ -396,6 +433,42 @@ local function Text(tree, s, size, color, bold, spacing)
     Color(t, color)
     pcall(function() t:SetShadowColorAndOpacity(CLEAR) end)
     SetText(t, s)
+    return t
+end
+
+-- Line breaks for long text. Unreal's wrapping never breaks before a word
+-- starting with "." (".summon"), so lines of commands ran off the panel; the
+-- lines are broken here instead, from an estimate of the text's width, and
+-- Unreal's own wrapping stays on as a backup.
+local function Wrap(s, widthPx, size, bold, spacing)
+    local charWidth = size * (bold and 0.7 or 0.66) + size * (spacing or 0) / 1000
+    local perLine = math.max(8, math.floor(widthPx / charWidth))
+    local function len(x) return utf8.len(x) or #x end
+    local out = {}
+    for paragraph in (tostring(s) .. "\n"):gmatch("([^\n]*)\n") do
+        if len(paragraph) <= perLine then
+            table.insert(out, paragraph)   -- fits: left as written
+        else
+            local line = ""
+            for word in paragraph:gmatch("%S+") do
+                if line == "" then
+                    line = word
+                elseif len(line) + 1 + len(word) <= perLine then
+                    line = line .. " " .. word
+                else
+                    table.insert(out, line)
+                    line = word
+                end
+            end
+            table.insert(out, line)
+        end
+    end
+    return table.concat(out, "\n")
+end
+
+local function WrappedText(tree, s, size, color, widthPx, bold, spacing)
+    local t = Text(tree, Wrap(s, widthPx, size, bold, spacing), size, color, bold, spacing)
+    pcall(function() t:SetAutoWrapText(true) end)
     return t
 end
 
@@ -477,6 +550,23 @@ local function RemoveLeftovers()
     end)
 end
 
+local HINTS = {
+    list = { { "UP / DOWN", "select" }, { "RIGHT / ENTER", "open" }, { "LEFT", "back" }, { ".mods", "close" } },
+    changelog = { { "UP / DOWN", "scroll" }, { "LEFT / RIGHT", "version" }, { "ENTER", "back" }, { ".mods", "close" } },
+}
+
+local function SetHints(tree, p, which)
+    pcall(function() p.hints:ClearChildren() end)
+    for _, hint in ipairs(HINTS[which]) do
+        local cap = Round(Fill(tree, CAP), 4, LINE)
+        pcall(function() cap:SetPadding({ Left = 6, Top = 2, Right = 6, Bottom = 2 }) end)
+        cap:SetContent(Text(tree, hint[1], 9, LABEL, true, 60))
+        Middle(p.hints:AddChildToHorizontalBox(cap))
+        Middle(Pad(p.hints:AddChildToHorizontalBox(Text(tree, hint[2], 10, MUTED)), 6, 0, 12, 0))
+    end
+    p.hintsFor = which
+end
+
 local function BuildPanel(hud)
     local tree = hud.WidgetTree
     panelCount = panelCount + 1
@@ -503,25 +593,33 @@ local function BuildPanel(hud)
     p.sub = Text(tree, "", 9, HEADING, true, 200)
     titles:AddChildToVerticalBox(p.sub)
 
+    -- the body scrolls when it's taller than BODY_MAX
     p.body = Construct("VerticalBox", tree)
-    column:AddChildToVerticalBox(p.body)
+    local scrolls = pcall(function()
+        local limit = Construct("SizeBox", tree)
+        limit:SetMaxDesiredHeight(BODY_MAX)
+        local scroll = Construct("ScrollBox", tree)
+        pcall(function() scroll:SetScrollbarThickness({ X = 4, Y = 4 }) end)
+        limit:SetContent(scroll)
+        Pad(scroll:AddChild(p.body), 0, 0, SCROLLBAR, 0)
+        column:AddChildToVerticalBox(limit)
+        p.scroll = scroll
+    end)
+    if not scrolls then
+        log("Scrolling unavailable - long pages may not fit the screen")
+        pcall(function() p.body:RemoveFromParent() end)
+        column:AddChildToVerticalBox(p.body)
+    end
 
     local statusRow = Construct("HorizontalBox", tree)
     Pad(column:AddChildToVerticalBox(statusRow), 4, 14, 4, 0)
     p.dot = Round(Fill(tree, ACCENT))
     Middle(statusRow:AddChildToHorizontalBox(Box(tree, 8, 8, p.dot)))
-    p.status = Text(tree, "", 12, LABEL)
-    pcall(function() p.status:SetAutoWrapText(true) end)
+    p.status = WrappedText(tree, "", 12, LABEL, WIDTH)
     Middle(Grow(Pad(statusRow:AddChildToHorizontalBox(p.status), 8, 0, 0, 0)))
-    local hints = Construct("HorizontalBox", tree)
-    Pad(column:AddChildToVerticalBox(hints), 4, 10, 4, 0)
-    for _, hint in ipairs({ { "UP / DOWN", "select" }, { "RIGHT / ENTER", "open" }, { "LEFT", "back" }, { ".mods", "close" } }) do
-        local cap = Round(Fill(tree, CAP), 4, LINE)
-        pcall(function() cap:SetPadding({ Left = 6, Top = 2, Right = 6, Bottom = 2 }) end)
-        cap:SetContent(Text(tree, hint[1], 9, LABEL, true, 60))
-        Middle(hints:AddChildToHorizontalBox(cap))
-        Middle(Pad(hints:AddChildToHorizontalBox(Text(tree, hint[2], 10, MUTED)), 6, 0, 12, 0))
-    end
+    p.hints = Construct("HorizontalBox", tree)
+    Pad(column:AddChildToVerticalBox(p.hints), 4, 10, 4, 0)
+    SetHints(tree, p, "list")
 
     local root = hud.WidgetTree.RootWidget
     local cls = ""
@@ -582,7 +680,7 @@ local function ActionRow(tree, card, label, note, noteColor, action, button)
 end
 
 -- A line of information: key cap (or command) and what it does
-local function InfoRow(tree, card, key, what)
+local function InfoRow(tree, card, key, what, width)
     local line = Construct("HorizontalBox", tree)
     Pad(card:AddChildToVerticalBox(line), 10, 5, 10, 5)
     local cap = Round(Fill(tree, CAP), 4, LINE)
@@ -591,8 +689,7 @@ local function InfoRow(tree, card, key, what)
     local capColumn = Construct("HorizontalBox", tree)
     Middle(capColumn:AddChildToHorizontalBox(cap))   -- the cap only as wide as its text
     Middle(line:AddChildToHorizontalBox(Box(tree, 170, nil, capColumn)))
-    local t = Text(tree, what, 12, LABEL)
-    pcall(function() t:SetAutoWrapText(true) end)
+    local t = WrappedText(tree, what, 12, LABEL, (width or (WIDTH - 8 - SCROLLBAR)) - 200)
     Middle(Grow(Pad(line:AddChildToHorizontalBox(t), 10, 0, 0, 0)))
 end
 
@@ -643,12 +740,10 @@ local function ModView(tree, body)
     local info = INFO_BY_NAME[name] or { title = name, about = "No details for this mod." }
     SetText(ui.p.title, info.title:upper())
     SetText(ui.p.sub, name:upper() .. (Changed(name) and "  -  CHANGED SINCE IT LOADED" or ""))
-    local about = Text(tree, info.about or "", 12, LABEL)
-    pcall(function() about:SetAutoWrapText(true) end)
+    local about = WrappedText(tree, info.about or "", 12, LABEL, WIDTH - 8 - SCROLLBAR)
     Pad(body:AddChildToVerticalBox(about), 4, 10, 4, 0)
     if info.notes then
-        local notes = Text(tree, info.notes, 11, MUTED)
-        pcall(function() notes:SetAutoWrapText(true) end)
+        local notes = WrappedText(tree, info.notes, 11, MUTED, WIDTH - 8 - SCROLLBAR)
         Pad(body:AddChildToVerticalBox(notes), 4, 4, 4, 0)
     end
     if info.keys then
@@ -677,7 +772,7 @@ local function ModView(tree, body)
         if changes then
             local latest = LatestVersion(changes)
             ActionRow(tree, actions, "Changelog", latest and ("v" .. latest:gsub("^[vV]", "")) or nil, MUTED,
-                function() hub.view, hub.page, hub.sel = "changelog", 1, 1; Render() end)
+                function() hub.modSel, hub.view, hub.page, hub.sel = hub.sel, "changelog", 1, 1; Render() end)
         end
         if canRestart then
             ActionRow(tree, actions, "Restart this mod", nil, nil, function() RunReload(name) end)
@@ -686,50 +781,66 @@ local function ModView(tree, body)
     ActionRow(tree, body, "Back", nil, nil, function() hub.view, hub.sel = "list", 1; Render() end, true)
 end
 
--- A mod's changelog, a page at a time
+-- A mod's changelog: one version per page, scrolled with Up/Down
 local function ChangelogView(tree, body)
     local name = hub.mod
     local info = INFO_BY_NAME[name] or { title = name }
-    local pages = Pages(Changelog(name) or { { kind = "text", text = "This mod has no changelog." } })
-    hub.page = math.max(1, math.min(hub.page or 1, #pages))
+    local versions = Changelog(name) or { { title = "", lines = { { kind = "text", text = "This mod has no changelog." } } } }
+    hub.page = math.max(1, math.min(hub.page or 1, #versions))
+    local v = versions[hub.page]
     SetText(ui.p.title, info.title:upper())
-    SetText(ui.p.sub, "CHANGELOG" .. (#pages > 1 and ("  -  PAGE " .. hub.page .. " OF " .. #pages) or ""))
+    SetText(ui.p.sub, "CHANGELOG" .. (#versions > 1 and ("  -  " .. hub.page .. " OF " .. #versions) or ""))
     local column = Construct("VerticalBox", tree)
     Pad(body:AddChildToVerticalBox(column), 4, 4, 4, 0)
-    for i, l in ipairs(pages[hub.page]) do
-        if l.kind == "version" then
-            local line = Construct("HorizontalBox", tree)
-            Pad(column:AddChildToVerticalBox(line), 0, i == 1 and 6 or 16, 0, 2)
-            Middle(line:AddChildToHorizontalBox(Box(tree, 3, 18, Fill(tree, ACCENT))))
-            Middle(Pad(line:AddChildToHorizontalBox(Text(tree, l.text, 14, BRIGHT, true)), 10, 0, 0, 0))
-        elseif l.kind == "topic" then
-            Pad(column:AddChildToVerticalBox(Text(tree, l.text:upper(), 9, HEADING, true, 200)), 13, 8, 0, 3)
-        else
-            local line = Construct("HorizontalBox", tree)
-            Pad(column:AddChildToVerticalBox(line), 13, 2, 0, 2)
-            if l.kind == "item" then
-                Pad(line:AddChildToHorizontalBox(Text(tree, "\u{2022}", 11, ACCENT)), 0, 0, 8, 0)
+    local inner = WIDTH - 8 - SCROLLBAR
+
+    if v.title ~= "" then
+        local line = Construct("HorizontalBox", tree)
+        Pad(column:AddChildToVerticalBox(line), 0, 6, 0, 2)
+        Middle(line:AddChildToHorizontalBox(Box(tree, 3, 20, Fill(tree, ACCENT))))
+        Middle(Pad(line:AddChildToHorizontalBox(Text(tree, v.title, 15, BRIGHT, true)), 10, 0, 0, 0))
+    end
+    for _, l in ipairs(v.lines) do
+        if l.kind == "topic" then
+            Pad(column:AddChildToVerticalBox(WrappedText(tree, l.text:upper(), 9, HEADING, inner - 13, true, 200)), 13, 12, 0, 4)
+        elseif l.kind == "head" then
+            Pad(column:AddChildToVerticalBox(WrappedText(tree, table.concat(l.cells, "  /  "):upper(), 9, MUTED, inner - 13, true, 120)),
+                13, 6, 0, 2)
+        elseif l.kind == "row" then
+            if #l.cells >= 2 then
+                local rest = {}
+                for i = 2, #l.cells do if l.cells[i] ~= "" then table.insert(rest, l.cells[i]) end end
+                InfoRow(tree, column, l.cells[1], table.concat(rest, "  -  "), inner)
+            else
+                Pad(column:AddChildToVerticalBox(WrappedText(tree, l.cells[1] or "", 11, LABEL, inner - 13)), 13, 2, 0, 2)
             end
-            local t = Text(tree, l.text, 11, LABEL)
-            pcall(function() t:SetAutoWrapText(true) end)
-            Grow(line:AddChildToHorizontalBox(t))
+        elseif l.kind == "code" then
+            Pad(column:AddChildToVerticalBox(WrappedText(tree, l.text, 10, MUTED, inner - 26)), 26, 0, 0, 0)
+        else
+            local indent = l.kind == "item" and (l.level == 2 and 32 or 13) or 13
+            local line = Construct("HorizontalBox", tree)
+            Pad(column:AddChildToVerticalBox(line), indent, 2, 0, 2)
+            local markWidth = 0
+            if l.kind == "item" then
+                markWidth = l.mark and 22 or 14
+                local mark = Text(tree, l.mark or (l.level == 2 and "\u{2013}" or "\u{2022}"), 11, l.mark and HEADING or ACCENT, l.mark ~= nil)
+                line:AddChildToHorizontalBox(Box(tree, markWidth, nil, mark))
+            end
+            Grow(line:AddChildToHorizontalBox(WrappedText(tree, l.text, 11, LABEL, inner - indent - markWidth)))
         end
     end
-    if #pages > 1 then
-        local nav = Section(tree, body, "PAGES")
-        if hub.page < #pages then
-            ActionRow(tree, nav, "Older changes", hub.page + 1 .. " / " .. #pages, MUTED,
-                function() hub.page, hub.sel = hub.page + 1, 1; Render() end)
-        end
-        if hub.page > 1 then
-            ActionRow(tree, nav, "Newer changes", hub.page - 1 .. " / " .. #pages, MUTED,
-                function() hub.page, hub.sel = hub.page - 1, 1; Render() end)
-        end
-    end
-    ActionRow(tree, body, "Back", nil, nil, function() hub.view, hub.sel = "mod", 1; Render() end, true)
+    local older, newer = versions[hub.page + 1], versions[hub.page - 1]
+    local parts = {}
+    if older then table.insert(parts, "RIGHT: " .. (older.title:match("^(%S+)") or "older")) end
+    if newer then table.insert(parts, "LEFT: " .. (newer.title:match("^(%S+)") or "newer")) end
+    return #parts > 0 and table.concat(parts, "   ") or "This is the only version"
 end
 
 local function Recolor()
+    local chosen = ui.rows and ui.rows[hub.sel]
+    if chosen and ui.p and ui.p.scroll then
+        pcall(function() ui.p.scroll:ScrollWidgetIntoView(chosen.bg, false, 0, 0) end)
+    end
     for i, r in ipairs(ui.rows or {}) do
         local lit = i == hub.sel
         if r.button then
@@ -760,9 +871,12 @@ Render = function()
     local tree = hud.WidgetTree
     pcall(function() ui.p.body:ClearChildren() end)
     ui.rows = {}
+    local hints = hub.view == "changelog" and "changelog" or "list"
+    if ui.p.hintsFor ~= hints then SetHints(tree, ui.p, hints) end
+    local viewStatus = nil
     local ok, err = pcall(function()
         if hub.view == "changelog" then
-            ChangelogView(tree, ui.p.body)
+            viewStatus = ChangelogView(tree, ui.p.body)
         elseif hub.view == "mod" then
             ModView(tree, ui.p.body)
         else
@@ -771,8 +885,9 @@ Render = function()
     end)
     if not ok then log("Menu problem: " .. tostring(err)) end
     hub.sel = math.max(1, math.min(hub.sel, #ui.rows))
-    SetText(ui.p.status, hub.status or "Mods with their own menu can be opened from their page")
+    SetText(ui.p.status, Wrap(hub.status or viewStatus or "Mods with their own menu can be opened from their page", WIDTH - 24, 12))
     pcall(function() ui.p.dot:SetBrushColor(hub.status and ACCENT or MUTED) end)
+    if ui.p.scroll then pcall(function() ui.p.scroll:SetScrollOffset(0) end) end
     Recolor()
     pcall(function() ui.p.panel:SetVisibility(VISIBLE) end)
     return true
@@ -793,12 +908,42 @@ local function Open()
     end
 end
 
+-- Changelog pages: Up/Down move the text
+local function Scroll(dir)
+    local scroll = ui.p and ui.p.scroll
+    if not scroll then return end
+    local offset, finish = 0, nil
+    pcall(function() offset = scroll:GetScrollOffset() end)
+    pcall(function() finish = scroll:GetScrollOffsetOfEnd() end)
+    offset = math.max(0, (tonumber(offset) or 0) + dir * SCROLL_STEP)
+    if type(finish) == "number" then offset = math.min(offset, finish) end
+    pcall(function() scroll:SetScrollOffset(offset) end)
+end
+
 local function MenuKey(action)
     if not hub.open then return end
     -- the Enter that ran .mods in the console isn't a choice in the menu
     if os.clock() - hub.openedAt < 0.35 then return end
     ExecuteInGameThread(function()
         if not hub.open or not ui.rows then return end
+        if hub.view == "changelog" then
+            -- Up/Down scroll, Right older version, Left newer (or back), Enter back
+            if action == "up" then
+                Scroll(-1)
+            elseif action == "down" then
+                Scroll(1)
+            elseif action == "right" then
+                hub.page = (hub.page or 1) + 1   -- Render stops at the oldest
+                Render()
+            elseif action == "back" and (hub.page or 1) > 1 then
+                hub.page = hub.page - 1
+                Render()
+            else
+                hub.view, hub.sel = "mod", hub.modSel or 1
+                Render()
+            end
+            return
+        end
         local n = #ui.rows
         if n == 0 then return end
         if action == "up" then
@@ -808,10 +953,7 @@ local function MenuKey(action)
             hub.sel = hub.sel % n + 1
             Recolor()
         elseif action == "back" then
-            if hub.view == "changelog" then
-                hub.view, hub.sel = "mod", 1
-                Render()
-            elseif hub.view == "mod" then
+            if hub.view == "mod" then
                 hub.view, hub.sel = "list", 1
                 Render()
             end
@@ -822,8 +964,8 @@ local function MenuKey(action)
     end)
 end
 
-for keyName, action in pairs({ UP_ARROW = "up", DOWN_ARROW = "down", RIGHT_ARROW = "open",
-                               RETURN = "open", LEFT_ARROW = "back" }) do
+for keyName, action in pairs({ UP_ARROW = "up", DOWN_ARROW = "down", RIGHT_ARROW = "right",
+                               RETURN = "enter", LEFT_ARROW = "back" }) do
     pcall(function() RegisterKeyBind(Key[keyName], function() MenuKey(action) end) end)
 end
 
