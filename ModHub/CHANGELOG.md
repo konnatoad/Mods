@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.3 (2026-10-13)
+
+- Reticle Size's page: its new colour and alpha commands
+
 ## 1.4.2 (2026-10-13)
 
 - Field Of View's page: its new range (60-130) and how it works
