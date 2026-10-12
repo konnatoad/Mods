@@ -2,6 +2,11 @@
 
 ---
 
+## 1.0.1 (2026-10-12)
+
+### Fix
+- "dot" only counts as a word of its own (Dot, CenterDot, Aim_Dot), so widgets like an "AntidoteIcon" are never scaled
+
 ## 1.0.0 (2026-10-12)
 
 ### First Release

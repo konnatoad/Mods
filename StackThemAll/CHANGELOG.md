@@ -2,6 +2,12 @@
 
 ---
 
+## 1.3.0 (2026-10-12)
+
+### Updating with git pull
+- Your own category stack sizes go in `config.lua` (copy `config.example.lua`) instead of `scripts\stackThemAllConfig.lua`, so `git pull` can always update the mod
+- `scripts\stackConfig.lua` is yours and no longer comes with the mod: the first launch makes it from `scripts\stackConfig.default.lua` (the old file, renamed), and later launches add items from game updates to it
+
 ## 1.2.0 (2026-10-11)
 
 ### New Items Are Added Automatically

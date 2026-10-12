@@ -10,7 +10,7 @@
 --
 -- Only your own screen changes, so it works the same in co-op.
 ------------------------------------------------------------
-local VERSION = "1.0.0"
+local VERSION = "1.0.1"
 local DEFAULT_PERCENT = 100   -- used when there is no settings.txt
 local SETTINGS_PATH = "./ue4ss/Mods/ReticleSize/settings.txt"
 local MIN_PERCENT, MAX_PERCENT = 10, 400
@@ -65,12 +65,15 @@ local function PathOf(obj)
     return full:match("^%S+%s+(.+)$") or full
 end
 
+-- "dot" only as a word of its own (Dot, CenterDot, Aim_Dot), so that names
+-- like "Antidote" don't count
 local function Matches(name)
     local lower = name:lower()
     for _, w in ipairs(WORDS) do
-        if lower:find(w, 1, true) then return true end
+        if w ~= "dot" and lower:find(w, 1, true) then return true end
     end
-    return false
+    return name:find("^[Dd][Oo][Tt]") ~= nil or name:find("[_%s%-][Dd][Oo][Tt]") ~= nil
+        or name:find("[%l%d]Dot") ~= nil or name:find("DOT") ~= nil
 end
 
 -- Live widgets (not the game's templates) whose own name matches, outermost

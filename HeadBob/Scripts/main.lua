@@ -13,7 +13,7 @@
 --
 -- Only your own view changes, so it works the same in co-op.
 ------------------------------------------------------------
-local VERSION = "1.0.0"
+local VERSION = "1.0.1"
 local DEFAULTS = { walk = 100, run = 100 }   -- used when there is no settings.txt
 local SETTINGS_PATH = "./ue4ss/Mods/HeadBob/settings.txt"
 local MAX_PERCENT = 200
@@ -91,7 +91,23 @@ local function Note(name, kind, scale)
 end
 
 -- Pre-hook for the functions that start a camera shake: (self, ShakeClass, Scale, ...)
+-- Whether a shake is for this game's own player. Hosting, the game also
+-- starts shakes for players who joined (sent to their games); those keep
+-- their strength, so each player's own Head Bob decides theirs.
+local function ForMe(selfParam)
+    local mine = true
+    pcall(function()
+        local obj = selfParam:get()
+        local pc = obj
+        if obj.PCOwner ~= nil then pc = obj.PCOwner end   -- a camera manager's player
+        local isLocal = pc:IsLocalController()
+        if isLocal == false then mine = false end
+    end)
+    return mine
+end
+
 local function OnShake(selfParam, classParam, scaleParam)
+    if not ForMe(selfParam) then return end
     local name = ClassName(classParam)
     if not name then return end
     local kind = Kind(name)

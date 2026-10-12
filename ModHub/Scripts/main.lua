@@ -42,7 +42,7 @@ local INFO = {
                    { ".radshield 75", "75% less radiation (host)" }, { ".radmeter", "Measure a hot spot (run twice)" } } },
     { name = "StackThemAll", title = "Stack Them All",
       about = "Bigger stacks. Items added by game updates get a stack size automatically. Money stacks to 250.",
-      notes = "Stack sizes: scripts\\stackThemAllConfig.lua and stackConfig.lua" },
+      notes = "Your stack sizes: config.lua (see config.example.lua); per item: scripts\\stackConfig.lua" },
     { name = "Mi8CargoHold", title = "Mi-8 Cargo Hold",
       about = "The Mi-8 wreck becomes a 1,000-slot storage container. In co-op everyone uses the host's hold.",
       keys = { { "ENTER", "At the wreck: open the hold" } } },

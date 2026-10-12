@@ -10,7 +10,7 @@
 -- Tweaks: nothing is changed). Darker nights is only how your own sky looks,
 -- so it always uses your own setting.
 ------------------------------------------------------------
--- Config
+-- Config (defaults; put your own in config.lua, see below)
 ------------------------------------------------------------
 local Config = {
     -- Speed of time passing (same numbers as DayLengthTweaks; game default 11 / 4)
@@ -28,6 +28,23 @@ local Config = {
     nightSkyLight = 7.5,
 }
 ----------------------------------
+
+-- Your own settings go in WorldTweaks\config.lua (start from config.example.lua),
+-- not in this file, so `git pull` can always update the mod. config.lua
+-- returns a table; anything it sets replaces the value here.
+local function UserConfig()
+    local path = "./ue4ss/Mods/WorldTweaks/config.lua"
+    local file = io.open(path, "r")
+    if not file then return {} end
+    file:close()
+    local ok, result = pcall(dofile, path)
+    if ok and type(result) == "table" then return result end
+    print("[WorldTweaks] config.lua ignored: " .. (ok and "it doesn't return a table" or tostring(result)) .. "\n")
+    return {}
+end
+
+for key, value in pairs(UserConfig()) do Config[key] = value end
+if Config.nightSkyLight == false then Config.nightSkyLight = nil end   -- false = keep the game's value
 
 local WEATHER_MANAGER = "BP_MultiplayerDynamicWeatherManager_C"
 local WEATHER_TABLE = "/Game/MultiplayerDynamicWeatherSystem/Blueprints/DT_Weather.DT_Weather"

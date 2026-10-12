@@ -1,10 +1,29 @@
-ModName, ModVersion = "Stack Them All", "1.2.0"
+ModName, ModVersion = "Stack Them All", "1.3.0"
 local stackThemAllConfig = require("stackThemAllConfig")
+-- Your own settings go in StackThemAll\config.lua (start from config.example.lua),
+-- not in this file, so `git pull` can always update the mod. config.lua
+-- returns a table; anything it sets replaces the value here.
+local function UserConfig()
+    local path = "./ue4ss/Mods/StackThemAll/config.lua"
+    local file = io.open(path, "r")
+    if not file then return {} end
+    file:close()
+    local ok, result = pcall(dofile, path)
+    if ok and type(result) == "table" then return result end
+    print("[StackThemAll] config.lua ignored: " .. (ok and "it doesn't return a table" or tostring(result)) .. "\n")
+    return {}
+end
+
+for key, value in pairs(UserConfig()) do stackThemAllConfig[key] = value end
 local UEHelpers = require("UEHelpers")
 local io = require("io")
 local enablesLogs = true
 
+-- stackConfig.lua is yours (per-item values, items from game updates are
+-- added to it); the first launch makes it from stackConfig.default.lua, which
+-- comes with the mod. Neither is touched by `git pull` once it exists.
 local configPath = "./ue4ss/Mods/StackThemAll/scripts/stackConfig.lua"
+local defaultConfigPath = "./ue4ss/Mods/StackThemAll/scripts/stackConfig.default.lua"
 local masterItemListPath = "/Game/SurvivalGameKitV2/Blueprints/Items/MasterLists/MasterItemList.MasterItemList"
 local loadedStackConfig = nil
 
@@ -290,8 +309,23 @@ local function try_init()
             log("Stack config file already exists, checking for new items.")
             tryReadFile:close()
         else
-            log("Stack config file does not exist, generating new one.")
-            create_config_file(masterItemList)
+            local default = io.open(defaultConfigPath, "rb")
+            local copied = false
+            if default then
+                local content = default:read("a")
+                default:close()
+                local out = io.open(configPath, "wb")
+                if out then
+                    out:write(content)
+                    out:close()
+                    copied = true
+                    log("Stack config file created from stackConfig.default.lua.")
+                end
+            end
+            if not copied then
+                log("Stack config file does not exist, generating new one.")
+                create_config_file(masterItemList)
+            end
         end
 
         stackConfig = load_stack_config()

@@ -2,6 +2,11 @@
 
 ---
 
+## 1.6.1 (2026-10-12)
+
+### Fix
+- Back in your own world after playing in someone else's, the shield kept the last host's strength until you switched it off and on; now it goes back to your own straight away
+
 ## 1.6.0 (2026-10-12)
 
 ### New Look

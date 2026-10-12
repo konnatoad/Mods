@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.5 (patched for current game version)
+    MISERY Mod Menu v4.6 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -146,6 +146,22 @@ local Coop = {
     answered = true,
     looping = false,
 }
+-- Your own settings go in MISERYModMenu\config.lua (start from
+-- config.example.lua), not in this file, so `git pull` can always update it.
+do
+    local path = "./ue4ss/Mods/MISERYModMenu/config.lua"
+    local file = io.open(path, "r")
+    if file then
+        file:close()
+        local ok, user = pcall(dofile, path)
+        if ok and type(user) == "table" then
+            if type(user.allowJoined) == "boolean" then Coop.allowJoined = user.allowJoined end
+            Coop.user = user   -- newLook / newLayout are read where the menu look is set up
+        else
+            Log("config.lua ignored: " .. (ok and "it doesn't return a table" or tostring(user)))
+        end
+    end
+end
 do
     local WORLD = "it changes the host's world, ask the host"
     local MOVE = "the host's game moves your character"
@@ -365,7 +381,8 @@ function Coop.OnHostMessage(selfParam, msgParam)
         local key = Coop.Key(pc)
         local guest = Coop.guests[key] or {}
         guest.pc, guest[cmd] = pc, on
-        Coop.guests[key] = guest
+        -- nothing on any more: forgotten, so the health hook has nobody to check
+        Coop.guests[key] = (guest.INSTAHEAL or guest.INFSTAM or guest.GOD) and guest or nil
         if cmd == "GOD" and on and Coop.InstallGodHooks then Coop.InstallGodHooks() end
         if on then Coop.StartGuestLoop() end
         Coop.Tell(pc, Coop.MODES[cmd]:upper() .. (on and ": ON" or ": OFF") .. " for you", "ok")
@@ -1245,7 +1262,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.5 ===")
+    Log("=== MISERY Mod Menu v4.6 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -3460,7 +3477,7 @@ end
 -- keeps working; anything the game refuses simply keeps its old look.
 -- Set MenuStyle.enabled = false to keep the game's look.
 local MenuStyle = {
-    enabled = true,
+    enabled = not (Coop.user and Coop.user.newLook == false),   -- config.lua: newLook = false for the game's colours
     donePath = nil,     -- cheat menu instance already styled
     searchDone = nil,   -- search box already styled
 }
@@ -3751,7 +3768,8 @@ end)
 --
 -- Widgets it doesn't recognise go in an "Other" card, so nothing is lost.
 -- If anything fails before the move, the game's layout is left as it was.
-local MenuLayout = { enabled = true, donePath = nil }
+-- config.lua: newLayout = false keeps the game's layout
+local MenuLayout = { enabled = not (Coop.user and Coop.user.newLayout == false), donePath = nil }
 local ML_WIDTH = 500
 local ML_CARD = { R = 1, G = 1, B = 1, A = 0 }   -- no box behind sections
 local ML_PANEL = { R = 0.006, G = 0.009, B = 0.015, A = 0.86 }   -- dark navy #121821, see-through
@@ -8124,7 +8142,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.5 Loaded!")
+Log("  MISERY Mod Menu v4.6 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")
