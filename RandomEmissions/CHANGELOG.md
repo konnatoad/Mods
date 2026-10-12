@@ -2,6 +2,10 @@
 
 ---
 
+## 1.2.2 (2026-10-13)
+
+- Restarting the mod in a world (`.reloadmods`, or the Mod Hub after a settings change) left emissions and the siren off until the next load; it starts straight away now, with the new settings
+
 ## 1.2.1 (2026-10-12)
 
 ### Performance

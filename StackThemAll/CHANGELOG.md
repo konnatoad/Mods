@@ -2,6 +2,10 @@
 
 ---
 
+## 1.3.1 (2026-10-13)
+
+- Restarting the mod in a world (`.reloadmods`, or the Mod Hub after a settings change) applies the stack sizes straight away; before, only the next load did
+
 ## 1.3.0 (2026-10-12)
 
 ### Updating with git pull

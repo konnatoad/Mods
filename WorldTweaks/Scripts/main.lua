@@ -443,6 +443,13 @@ RegisterConsoleCommandHandler(".weatherdump", function()
     return true
 end)
 
+-- Restarted in a world (.reloadmods, or the Mod Hub after a settings
+-- change): apply now, not only at the next load. At the game's start there
+-- is no weather manager yet and nothing happens.
+ExecuteInGameThread(function()
+    if FindWeatherManager() then pcall(Apply) end
+end)
+
 log("Loaded: day " .. Config.dayLength .. ", night " .. Config.nightLength
     .. (Config.season ~= "" and (", season " .. Config.season) or "")
     .. (Config.nightSkyLight ~= nil and (", night sky " .. Config.nightSkyLight) or ""))
