@@ -2,6 +2,13 @@
 
 ---
 
+## 1.3.3 (2026-10-13)
+
+### Category Sizes Now Apply to Every Item
+- A category's stack size in `config.lua` (or the Mod Hub's Settings) only reached items added by later game updates: every item already in `scripts\stackConfig.lua` kept the size written there. Now it applies to every item of the category
+- Items whose own size was set on purpose keep it: money (`Resource_Rubles = 250`), and anything you changed in `stackConfig.lua` to something other than its category's built-in size
+- `stackConfig.lua` is still written with the built-in sizes, so changing a category again later keeps working
+
 ## 1.3.2 (2026-10-13)
 
 - `config.example.lua` lists every category's stack size (Ammo, Food, Drink, Consumable, Resource, Plant, Object, BuildPart, Artifact) and the sorting option, not just two examples, so the Mod Hub's Settings page shows all of them

@@ -1,4 +1,4 @@
-ModName, ModVersion = "Stack Them All", "1.3.2"
+ModName, ModVersion = "Stack Them All", "1.3.3"
 local stackThemAllConfig = require("stackThemAllConfig")
 -- Your own settings go in StackThemAll\config.lua (start from config.example.lua),
 -- not in this file, so `git pull` can always update the mod. config.lua
@@ -14,7 +14,13 @@ local function UserConfig()
     return {}
 end
 
-for key, value in pairs(UserConfig()) do stackThemAllConfig[key] = value end
+-- The built-in category sizes, before config.lua changes them: stackConfig.lua
+-- entries are written with these, so an entry still holding its category's
+-- built-in size is one nobody set by hand, and follows config.lua's size.
+local builtinConfig = {}
+for key, value in pairs(stackThemAllConfig) do builtinConfig[key] = value end
+local userConfig = UserConfig()
+for key, value in pairs(userConfig) do stackThemAllConfig[key] = value end
 local UEHelpers = require("UEHelpers")
 local io = require("io")
 local enablesLogs = true
@@ -44,10 +50,26 @@ end
 -- The category is the row name prefix before the first "_" (Food_Apple -> Food), and its stack size
 -- comes from <Category>_StackSize in stackThemAllConfig.lua. Categories without one (Weapon, Equipment,
 -- Magazine, Holdable, ...) return nil and keep the game's own stack values.
-local function category_stack_size(rowName)
+-- builtin: the built-in size (written into stackConfig.lua for new items;
+-- a category only config.lua has, like Tool_StackSize, is written with that),
+-- else the size in use (config.lua's when it sets one)
+local function category_stack_size(rowName, builtin)
     local category = string.match(rowName, "^([^_]+)_")
     if not category then return nil end
-    return stackThemAllConfig[category .. "_StackSize"]
+    local key = category .. "_StackSize"
+    if builtin and builtinConfig[key] ~= nil then return builtinConfig[key] end
+    return stackThemAllConfig[key]
+end
+
+-- The stack size an item gets: config.lua's category size, unless the item's
+-- own entry was set to something else on purpose (Resource_Rubles = 250, or
+-- your own edit in stackConfig.lua), which wins.
+local function stack_size_for(rowName, itemConfig)
+    local category = string.match(rowName, "^([^_]+)_")
+    local key = category and (category .. "_StackSize")
+    local userSize = key and tonumber(userConfig[key])
+    if userSize and itemConfig.stackSize == builtinConfig[key] then return userSize end
+    return itemConfig.stackSize
 end
 
 local function read_item_rows(masterItemList)
@@ -68,7 +90,7 @@ local function format_config_entry(rowName, rowData)
 
     write("stackConfig[\"" .. rowName .. "\"] = {\n")
 
-    local stackSize = category_stack_size(rowName)
+    local stackSize = category_stack_size(rowName, true)
     if stackSize then
         write("    stackSize = " .. stackSize .. ",\n")
         write("    allowStack = true,\n")
@@ -211,7 +233,7 @@ local function startup_lists_modification(masterItemList, stackConfig)
         local itemConfig = stackConfig[tostring(rowName)]
         if not itemConfig then return false end
 
-        set_field(rowData, "MaxStack_18_C57243124FFDE0AB28797AA6F2C1E5F5", itemConfig.stackSize)
+        set_field(rowData, "MaxStack_18_C57243124FFDE0AB28797AA6F2C1E5F5", stack_size_for(tostring(rowName), itemConfig))
         set_field(rowData, "AllowStacking_48_02CFD0D74B05709E8E432E824709C714", itemConfig.allowStack)
         if stackThemAllConfig.onlyStacksChanges then return false end
 
