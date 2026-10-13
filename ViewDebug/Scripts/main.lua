@@ -22,7 +22,7 @@
 -- Settings: config.lua (see config.example.lua).
 -- Only reads while recording or watching; it stops itself after a while.
 ------------------------------------------------------------
-local VERSION = "0.4.1"
+local VERSION = "0.4.2"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
@@ -225,27 +225,33 @@ local function Build(pc)
     if not Valid(pawn) then return nil, "you have no character right now" end
 
     local cols, names = {}, {}
-    local function add(name, get)
+    local objects, seenObj = {}, {}
+    -- obj: what the value is read from; checked to still exist before every read
+    local function add(name, get, obj)
         if names[name] then name = name .. "#" .. (#cols + 1) end
         names[name] = true
-        table.insert(cols, { name = name, get = get })
+        table.insert(cols, { name = name, get = get, obj = obj })
+        if obj and not seenObj[obj] then
+            seenObj[obj] = true
+            table.insert(objects, obj)
+        end
     end
     local function addValue(prefix, obj, propName, kind)
         if kind == "number" then
-            add(prefix, function() return obj[propName] end)
+            add(prefix, function() return obj[propName] end, obj)
         elseif kind == "bool" then
-            add(prefix, function() return obj[propName] and 1 or 0 end)
+            add(prefix, function() return obj[propName] and 1 or 0 end, obj)
         elseif kind == "rot" then
-            add(prefix .. ".P", function() return obj[propName].Pitch end)
-            add(prefix .. ".Y", function() return obj[propName].Yaw end)
-            add(prefix .. ".R", function() return obj[propName].Roll end)
+            add(prefix .. ".P", function() return obj[propName].Pitch end, obj)
+            add(prefix .. ".Y", function() return obj[propName].Yaw end, obj)
+            add(prefix .. ".R", function() return obj[propName].Roll end, obj)
         elseif kind == "vec" then
-            add(prefix .. ".X", function() return obj[propName].X end)
-            add(prefix .. ".Y", function() return obj[propName].Y end)
-            add(prefix .. ".Z", function() return obj[propName].Z end)
+            add(prefix .. ".X", function() return obj[propName].X end, obj)
+            add(prefix .. ".Y", function() return obj[propName].Y end, obj)
+            add(prefix .. ".Z", function() return obj[propName].Z end, obj)
         elseif kind == "vec2" then
-            add(prefix .. ".X", function() return obj[propName].X end)
-            add(prefix .. ".Y", function() return obj[propName].Y end)
+            add(prefix .. ".X", function() return obj[propName].X end, obj)
+            add(prefix .. ".Y", function() return obj[propName].Y end, obj)
         end
     end
 
@@ -254,34 +260,37 @@ local function Build(pc)
     local pcm = nil
     pcall(function() pcm = pc.PlayerCameraManager end)
     if Valid(pcm) then
-        add("cam.P", function() return pcm.CameraCachePrivate.POV.Rotation.Pitch end)
-        add("cam.Y", function() return pcm.CameraCachePrivate.POV.Rotation.Yaw end)
-        add("cam.R", function() return pcm.CameraCachePrivate.POV.Rotation.Roll end)
-        add("cam.FOV", function() return pcm.CameraCachePrivate.POV.FOV end)
+        add("cam.P", function() return pcm.CameraCachePrivate.POV.Rotation.Pitch end, pcm)
+        add("cam.Y", function() return pcm.CameraCachePrivate.POV.Rotation.Yaw end, pcm)
+        add("cam.R", function() return pcm.CameraCachePrivate.POV.Rotation.Roll end, pcm)
+        add("cam.FOV", function() return pcm.CameraCachePrivate.POV.FOV end, pcm)
     end
 
-    -- Every part's angle and position relative to what it hangs on
+    -- Every part's angle and position relative to what it hangs on. Only
+    -- your character's own parts: things attached to it (weapon, magazine,
+    -- clothing) come and go, and reading one just after it's gone crashes
+    -- the game. .view scan still lists them.
     step("your character's parts")
     local parts = ComponentTree(pawn)
-    step(#parts .. " parts")
-    local others, animInstances = {}, {}
+    local animInstances = {}
+    local own = 0
     for _, p in ipairs(parts) do
         local comp = p.comp
         local owner = OwnerOf(comp)
         local label = NameOf(comp)
-        if Valid(owner) and owner ~= pawn and NameOf(owner) ~= NameOf(pawn) then
-            label = Short(NameOf(owner)) .. "/" .. label
-            others[NameOf(owner)] = owner
+        if Valid(owner) and NameOf(owner) == NameOf(pawn) then
+            own = own + 1
+            addValue(label .. ".rel", comp, "RelativeRotation", "rot")
+            addValue(label .. ".loc", comp, "RelativeLocation", "vec")
+            local anim = nil
+            pcall(function() anim = comp.AnimScriptInstance end)
+            if Valid(anim) then table.insert(animInstances, { label = label, obj = anim }) end
         end
-        addValue(label .. ".rel", comp, "RelativeRotation", "rot")
-        addValue(label .. ".loc", comp, "RelativeLocation", "vec")
-        local anim = nil
-        pcall(function() anim = comp.AnimScriptInstance end)
-        if Valid(anim) then table.insert(animInstances, { label = label, obj = anim }) end
     end
+    step(#parts .. " parts, " .. own .. " of them your character's own")
 
     -- Settings that sound like aim / sway / rotation on the character, its
-    -- animation (arms sway usually lives there), the held items, the camera
+    -- animation (arms sway usually lives there)
     local function addSettings(prefix, obj)
         step("settings of " .. NameOf(obj) .. " (" .. ClassName(obj) .. ")")
         local n = 0
@@ -295,16 +304,23 @@ local function Build(pc)
     addSettings("pawn", pawn)
     addSettings("ctrl", pc)
     for _, a in ipairs(animInstances) do addSettings("anim[" .. a.label .. "]", a.obj) end
-    for name, obj in pairs(others) do addSettings(Short(name), obj) end
 
     step("done, " .. #cols .. " values")
-    return { pc = pc, pawn = pawn, pcm = pcm, cols = cols, parts = parts, anims = animInstances }
+    return { pc = pc, pawn = pawn, pcm = pcm, cols = cols, parts = parts, anims = animInstances, objects = objects }
 end
 
 local function Read(col)
     local ok, v = pcall(col.get)
     if ok and type(v) == "number" then return v end
     return nil
+end
+
+-- Everything the values are read from still exists (checked before each read)
+local function AllValid(set)
+    for _, obj in ipairs(set.objects) do
+        if not Valid(obj) then return false end
+    end
+    return true
 end
 
 local function Wrap(d)
@@ -380,11 +396,15 @@ local function Csv(s)
     return s
 end
 
--- Names of the character's parts in attachment order: changes when you
--- swap weapons. Only reads properties, so it's cheap enough once a second.
+-- Names of the character's parts (and their animations) in attachment
+-- order: changes when you swap weapons or an animation is replaced. Only reads properties, so it's cheap enough once a second.
 local function PartsSignature(pawn)
     local names = {}
-    for _, p in ipairs(ComponentTree(pawn)) do table.insert(names, NameOf(p.comp)) end
+    for _, p in ipairs(ComponentTree(pawn)) do
+        local anim = nil
+        pcall(function() anim = p.comp.AnimScriptInstance end)
+        table.insert(names, NameOf(p.comp) .. (Valid(anim) and ("+" .. NameOf(anim)) or ""))
+    end
     return table.concat(names, "|")
 end
 
@@ -536,7 +556,7 @@ local function Sample()
     if r.mode == "rec" and now >= r.until_ then Finish("time's up") return end
 
     -- A new character (respawn, level) or weapon: look it up again
-    local stale = not Valid(r.set.pawn)
+    local stale = not Valid(r.set.pawn) or not AllValid(r.set)
     if not stale and now - (r.checked or 0) > 1 then
         r.checked = now
         stale = PartsSignature(r.set.pawn) ~= r.signature
@@ -680,7 +700,7 @@ local function Watch()
             busy = true
             ExecuteInGameThread(function()
                 pcall(function()
-                    if os.clock() >= mine.until_ or not Valid(set.pawn) then
+                    if os.clock() >= mine.until_ or not Valid(set.pawn) or not AllValid(set) then
                         mine.stop = true
                         if watching == mine then watching = nil end
                         log("Watch off")
@@ -887,7 +907,7 @@ end
 -- something changed (respawn, weapon swap, level load), at most every 2 s.
 local function HudTick(h)
     local now = os.clock()
-    local stale = not h.set or not Valid(h.set.pawn)
+    local stale = not h.set or not Valid(h.set.pawn) or not AllValid(h.set)
     if not stale and now - (h.checked or 0) > 1 then
         h.checked = now
         stale = PartsSignature(h.set.pawn) ~= h.signature

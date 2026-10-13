@@ -2,6 +2,12 @@
 
 ---
 
+## 0.4.2 (2026-10-13)
+
+- The buffer crashed the game after a while. Recordings, the buffer and the readout also read things attached to your character that come and go (the weapon, its magazine, clothing): reading one just after the game removes it (reloading, swapping) crashes, and the mod only noticed a removal once a second
+- Now they read only what lives as long as your character: where you aim, the camera, your character's own parts and their animations (where arms sway lives). Each of those is checked to still exist before every read, and a replaced animation is picked up again
+- The weapon's parts and settings are still listed by `.view scan`, which reads them once
+
 ## 0.4.1 (2026-10-13)
 
 - No hotkey by default: `.view dump` saves the buffer and `.view mark` marks a recording. To use a key as well, set `markKey = "F12"` (or another key) in `config.lua` or in the Mod Hub's settings page
