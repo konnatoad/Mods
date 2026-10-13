@@ -163,6 +163,26 @@ pcall(RegisterHook, "/Script/Engine.PlayerController:ClientMessage", OnClientMes
 local isUnloadHooked = false
 local isTickLoopStarted = false
 
+-- Repeats fn on the game thread every ms until it returns true: a game-thread
+-- timer, like the Mi-8 Cargo Hold's. A background timer that hands its work to
+-- the game thread could leave UE4SS waiting forever when the mod was
+-- restarted (the game froze). The background timer is only the fallback.
+local function GameLoop(ms, fn)
+	local stopped = false
+	local function tick()
+		if stopped then return true end
+		local ok, stop = pcall(fn)
+		if ok and stop == true then stopped = true end
+		return stopped
+	end
+	if type(LoopInGameThreadWithDelay) == "function" and pcall(LoopInGameThreadWithDelay, ms, tick) then return end
+	LoopAsync(ms, function()
+		if stopped then return true end
+		ExecuteInGameThread(tick)
+		return false
+	end)
+end
+
 local function Setup()
 	if not isUnloadHooked then
 		isUnloadHooked = pcall(RegisterHook, "/Game/Blueprints/BP_GlobalManager.BP_GlobalManager_C:UnloadPreviousLevels", OnUnloadPreviousLevels)
@@ -170,10 +190,7 @@ local function Setup()
 
 	if not isTickLoopStarted then
 		isTickLoopStarted = true
-		LoopAsync(CHECK_EVERY_MS, function()
-			ExecuteInGameThread(function() pcall(OnTick) end)
-			return false
-		end)
+		GameLoop(CHECK_EVERY_MS, function() pcall(OnTick) end)
 	end
 end
 

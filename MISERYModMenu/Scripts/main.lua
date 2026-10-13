@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.4 (patched for current game version)
+    MISERY Mod Menu v4.6.5 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -1271,7 +1271,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.4 ===")
+    Log("=== MISERY Mod Menu v4.6.5 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -7855,18 +7855,25 @@ end)
 -- player to find, so it only runs once a player has spawned.
 -- (A 1 s tick, checking every 5th: a mod can only be stopped once its timer
 -- wakes up, and a long timer froze the game that long on a restart.)
+-- A game-thread timer (like the Mi-8 Cargo Hold's), not a background one
+-- handing work to the game thread: that could leave UE4SS waiting forever when
+-- the Mod Menu was restarted (the game froze).
 Coop.fallbackTicks = 0
-LoopAsync(1000, function()
-    if autoEnableDone then
-        return true  -- Stop checking
-    end
+Coop.fallbackTick = function()
+    if autoEnableDone then return true end  -- Stop checking
     Coop.fallbackTicks = Coop.fallbackTicks + 1
     if Coop.fallbackTicks % 5 ~= 0 then return false end
-    ExecuteInGameThread(function()
-        if Coop.inWorld or Coop.Valid(Coop.ctrl) then pcall(TryAutoEnableCheats) end
-    end)
+    if Coop.inWorld or Coop.Valid(Coop.ctrl) then pcall(TryAutoEnableCheats) end
     return false  -- Keep checking
-end)
+end
+if not (type(LoopInGameThreadWithDelay) == "function"
+        and pcall(LoopInGameThreadWithDelay, 1000, function() return Coop.fallbackTick() == true end)) then
+    LoopAsync(1000, function()
+        if autoEnableDone then return true end
+        ExecuteInGameThread(Coop.fallbackTick)
+        return false
+    end)
+end
 
 -- ============================================================
 -- CATCH-ALL HANDLER - Better feedback for unrecognized commands
@@ -8160,7 +8167,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.4 Loaded!")
+Log("  MISERY Mod Menu v4.6.5 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")

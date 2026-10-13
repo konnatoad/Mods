@@ -174,15 +174,33 @@ local function FixStuckWeights(verbose)
     return fixed
 end
 
--- A 1 s tick that does the check every checkEverySeconds: a 30 s timer kept
--- UE4SS waiting up to 30 s (game frozen) when this mod was restarted, since a
--- mod can only be stopped once its timer wakes up.
+-- Repeats fn on the game thread every ms until it returns true: a game-thread
+-- timer, like the Mi-8 Cargo Hold's. A background timer that hands its work to
+-- the game thread could leave UE4SS waiting forever when the mod was
+-- restarted (the game froze). The background timer is only the fallback.
+local function GameLoop(ms, fn)
+    local stopped = false
+    local function tick()
+        if stopped then return true end
+        local ok, stop = pcall(fn)
+        if ok and stop == true then stopped = true end
+        return stopped
+    end
+    if type(LoopInGameThreadWithDelay) == "function" and pcall(LoopInGameThreadWithDelay, ms, tick) then return end
+    LoopAsync(ms, function()
+        if stopped then return true end
+        ExecuteInGameThread(tick)
+        return false
+    end)
+end
+
+-- A 1 s tick that does the check every checkEverySeconds
 local secondsSinceCheck = 0
-LoopAsync(1000, function()
+GameLoop(1000, function()
     secondsSinceCheck = secondsSinceCheck + 1
     if secondsSinceCheck < checkEverySeconds then return false end
     secondsSinceCheck = 0
-    ExecuteInGameThread(function() FixStuckWeights(false) end)
+    FixStuckWeights(false)
     return false
 end)
 

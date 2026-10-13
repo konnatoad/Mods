@@ -11,7 +11,7 @@
 --
 -- It only reads your own numbers, nothing is changed, so it's safe in co-op.
 ------------------------------------------------------------
-local VERSION = "1.0.0"
+local VERSION = "1.0.1"
 local SETTINGS_PATH = "./ue4ss/Mods/SurvivalStats/settings.txt"
 local UPDATE_MS = 1000
 
@@ -330,18 +330,34 @@ local function Update()
     pcall(function() ui.p.panel:SetVisibility(HIT_TEST_INVISIBLE) end)
 end
 
--- Every second while it's shown; stops when it's hidden
+-- Repeats fn on the game thread every ms until it returns true: a game-thread
+-- timer, like the Mi-8 Cargo Hold's. A background timer that hands its work to
+-- the game thread could leave UE4SS waiting forever when the mod was
+-- restarted (the game froze). The background timer is only the fallback.
+local function GameLoop(ms, fn)
+    local stopped = false
+    local function tick()
+        if stopped then return true end
+        local ok, stop = pcall(fn)
+        if ok and stop == true then stopped = true end
+        return stopped
+    end
+    if type(LoopInGameThreadWithDelay) == "function" and pcall(LoopInGameThreadWithDelay, ms, tick) then return end
+    LoopAsync(ms, function()
+        if stopped then return true end
+        ExecuteInGameThread(tick)
+        return false
+    end)
+end
+
+-- Every second once it has been shown (hidden, a tick does nothing)
+local wasShown = false
 local function StartLoop()
     if loopRunning then return end
     loopRunning = true
-    LoopAsync(UPDATE_MS, function()
-        if not show then
-            loopRunning = false
-            ExecuteInGameThread(function() pcall(Update) end)   -- hides it
-            return true
-        end
-        ExecuteInGameThread(function() pcall(Update) end)
-        return false
+    GameLoop(UPDATE_MS, function()
+        if show or wasShown then pcall(Update) end   -- the tick after hiding hides it
+        wasShown = show
     end)
 end
 

@@ -767,16 +767,40 @@ local function TellStrength()
     end
 end
 
+-- Repeats fn on the game thread every ms until it returns true: a game-thread
+-- timer, like the Mi-8 Cargo Hold's. A background timer that hands its work to
+-- the game thread could leave UE4SS waiting forever when the mod was
+-- restarted (the game froze). The background timer is only the fallback.
+local function GameLoop(ms, fn)
+    local stopped = false
+    local function tick()
+        if stopped then return true end
+        local ok, stop = pcall(fn)
+        if ok and stop == true then stopped = true end
+        return stopped
+    end
+    if type(LoopInGameThreadWithDelay) == "function" and pcall(LoopInGameThreadWithDelay, ms, tick) then return end
+    LoopAsync(ms, function()
+        if stopped then return true end
+        ExecuteInGameThread(tick)
+        return false
+    end)
+end
+
+local loopIdle = true
 local function StartLoop()
-    if isLoopRunning then return end
-    isLoopRunning = true
+    if not loopIdle then return end
+    loopIdle = false
     intake, lastSample = 0, nil
-    LoopAsync(1000, function()
+    if isLoopRunning then return end   -- the game-thread loop runs for good once started
+    isLoopRunning = true
+    GameLoop(1000, function()
+        if loopIdle then return end
         if not (isOn or Measuring() or next(others)) then
-            isLoopRunning = false
-            return true
+            loopIdle = true
+            return
         end
-        ExecuteInGameThread(function()
+        do
             local raw, hits = rawSecond, hitsSecond
             rawSecond, hitsSecond = 0, 0
             if next(others) then RebuildOthers() end   -- respawns give players new inventories
@@ -817,8 +841,7 @@ local function StartLoop()
             live.now, live.max = now, max
             UpdateReadout()
             if menuOpen then UpdateMenu() end
-        end)
-        return false
+        end
     end)
 end
 

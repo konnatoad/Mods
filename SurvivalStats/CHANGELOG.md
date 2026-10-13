@@ -2,6 +2,10 @@
 
 ---
 
+## 1.0.1 (2026-10-13)
+
+- Its timer now runs on the game thread (like the Mi-8 Cargo Hold's, which never froze). Background timers that hand their work to the game thread could leave UE4SS waiting forever when mods were restarted, freezing the game
+
 ## 1.0.0 (2026-10-12)
 
 ### First Release
