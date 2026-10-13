@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.4
+
+- Restarting the Mod Menu could freeze the game for a few seconds: UE4SS can only stop a mod once its timers wake up, and the check that switches cheats on slept 5 s. It now ticks every second (still checking every 5 s)
+
+---
+
 ## Version 4.6.3
 
 ### Restarting No Longer Hangs the Game

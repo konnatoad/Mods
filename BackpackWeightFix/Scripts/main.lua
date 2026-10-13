@@ -174,7 +174,14 @@ local function FixStuckWeights(verbose)
     return fixed
 end
 
-LoopAsync(checkEverySeconds * 1000, function()
+-- A 1 s tick that does the check every checkEverySeconds: a 30 s timer kept
+-- UE4SS waiting up to 30 s (game frozen) when this mod was restarted, since a
+-- mod can only be stopped once its timer wakes up.
+local secondsSinceCheck = 0
+LoopAsync(1000, function()
+    secondsSinceCheck = secondsSinceCheck + 1
+    if secondsSinceCheck < checkEverySeconds then return false end
+    secondsSinceCheck = 0
     ExecuteInGameThread(function() FixStuckWeights(false) end)
     return false
 end)

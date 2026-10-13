@@ -2,6 +2,10 @@
 
 ---
 
+## 1.2.3 (2026-10-13)
+
+- Restarting the mod (Mod Hub, `.reloadmods`) could freeze the game for up to 30 s: UE4SS can only stop a mod once its timer wakes up, and this one slept 30 s. It now ticks every second and checks every `checkEverySeconds` as before
+
 ## 1.2.1 (2026-10-12)
 
 ### Performance

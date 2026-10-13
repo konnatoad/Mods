@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.3 (patched for current game version)
+    MISERY Mod Menu v4.6.4 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -1271,7 +1271,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.3 ===")
+    Log("=== MISERY Mod Menu v4.6.4 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -7853,10 +7853,15 @@ end)
 -- Fallback: every 5 seconds until cheats are enabled. Each look for the
 -- player walks every object in the game, and at the main menu there is no
 -- player to find, so it only runs once a player has spawned.
-LoopAsync(5000, function()
+-- (A 1 s tick, checking every 5th: a mod can only be stopped once its timer
+-- wakes up, and a long timer froze the game that long on a restart.)
+Coop.fallbackTicks = 0
+LoopAsync(1000, function()
     if autoEnableDone then
         return true  -- Stop checking
     end
+    Coop.fallbackTicks = Coop.fallbackTicks + 1
+    if Coop.fallbackTicks % 5 ~= 0 then return false end
     ExecuteInGameThread(function()
         if Coop.inWorld or Coop.Valid(Coop.ctrl) then pcall(TryAutoEnableCheats) end
     end)
@@ -8155,7 +8160,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.3 Loaded!")
+Log("  MISERY Mod Menu v4.6.4 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")
