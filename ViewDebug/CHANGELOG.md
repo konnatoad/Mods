@@ -2,6 +2,10 @@
 
 ---
 
+## 0.6.3 (2026-10-13)
+
+- Backspace closes the dump on screen (the summary or the raw rows), only while one is shown; `.view close` does too
+
 ## 0.6.2 (2026-10-13)
 
 - The left / right arrow keys page through `.view raw`. They only do this while the raw rows are on screen; `.view next` / `.view prev` still work

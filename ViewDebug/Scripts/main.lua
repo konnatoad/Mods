@@ -19,6 +19,7 @@
 --   .view raw [seconds]   the dump's recorded rows on screen, a page at a
 --                         time (left / right arrow, or .view next / .view prev);
 --                         STUCK marks a wall
+--   .view close           close the dump on screen (or press Backspace)
 --   .view rec [seconds]   record the angles many times a second to
 --                         recording_<time>.csv (stops by itself)
 --   .view stop            stop recording / the buffer
@@ -29,7 +30,7 @@
 -- Only reads while recording, buffering, showing or watching, every frame
 -- on the game thread (never from a background timer).
 ------------------------------------------------------------
-local VERSION = "0.6.2"
+local VERSION = "0.6.3"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
@@ -1252,7 +1253,7 @@ local function RawPage()
     local rows, t0 = o.rows, o.rows[1].t or 0
     o.first = math.min(math.max(1, o.first), math.max(1, #rows - RAW_ROWS + 1))
     local first = o.first
-    local lines = { string.format("RAW  %s   rows %d-%d of %d   (left / right arrow: page, .view raw <s>: jump)",
+    local lines = { string.format("RAW  %s   rows %d-%d of %d   (left / right arrow: page, Backspace: close, .view raw <s>: jump)",
                         o.fileName:gsub("%.csv$", ""), first, math.min(#rows, first + RAW_ROWS - 1), #rows),
                     "       t   mouseY   mouseP     turnY    turnP      aimP      aimY      camP      camY" }
     for i = first, math.min(#rows, first + RAW_ROWS - 1) do
@@ -1322,7 +1323,7 @@ local function ReadDump(name)
     end
     for _, m in ipairs(marks) do table.insert(lines, string.format("mark at %.2f s: %s", m.t - (rows[1].t or 0), m.note)) end
     table.insert(lines, "")
-    table.insert(lines, ".view raw: the recorded rows   .view read again closes this")
+    table.insert(lines, ".view raw: the recorded rows   Backspace or .view close: close")
 
     log("Read " .. fileName .. string.format(": %.1f s, %d samples, %d mouse inputs, %d wall(s)", seconds, #rows, inputs, #walls))
     for _, w in ipairs(walls) do log("  wall: " .. WallText(w)) end
@@ -1369,6 +1370,8 @@ RegisterConsoleCommandHandler(".view", function(FullCommand, Parameters)
         elseif a == "dumps" or a == "list" then ListDumps()
         elseif a == "read" or a == "open" then ReadDump(args[2])
         elseif a == "raw" then Raw(args[2])
+        elseif a == "close" then
+            if reader then ReaderClose() log("Dump closed") else log("Nothing open") end
         elseif a == "next" then Page(1)
         elseif a == "prev" or a == "back" then Page(-1)
         elseif a == "stop" then
@@ -1376,11 +1379,20 @@ RegisterConsoleCommandHandler(".view", function(FullCommand, Parameters)
         elseif a == "watch" then Watch()
         elseif a == "hud" or a == "show" then HudToggle()
         else
-            log(".view | .view hud | .view buffer [seconds] | .view dump | .view dumps | .view read [n] | .view raw [s] | .view next / prev | .view rec [seconds] | .view stop | .view mark [note] | .view watch | .view scan")
+            log(".view | .view hud | .view buffer [seconds] | .view dump | .view dumps | .view read [n] | .view raw [s] | .view next / prev | .view close | .view rec [seconds] | .view stop | .view mark [note] | .view watch | .view scan")
         end
     end)
     return true
 end)
+
+-- Backspace closes a dump on screen (summary or raw rows), only while one is
+if Key.BACKSPACE then
+    pcall(function()
+        RegisterKeyBind(Key.BACKSPACE, function()
+            if reader then ExecuteInGameThread(function() ReaderClose() end) end
+        end)
+    end)
+end
 
 -- Left / right arrow page the raw view, only while it's on screen
 for keyName, delta in pairs({ LEFT_ARROW = -1, RIGHT_ARROW = 1 }) do
