@@ -19,7 +19,7 @@
 -- Settings: config.lua (see config.example.lua).
 -- Only reads while recording or watching; it stops itself after a while.
 ------------------------------------------------------------
-local VERSION = "0.2.2"
+local VERSION = "0.3.0"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
@@ -308,6 +308,50 @@ local function Wrap(d)
 end
 
 ------------------------------------------------------------
+-- Mouse input: what the game hands Unreal each frame to turn the view
+------------------------------------------------------------
+-- Listens to Unreal's "add yaw / pitch input" functions only while a
+-- recording or the readout needs it. Totals only grow; each user keeps the
+-- totals it saw last and takes the difference.
+local INPUT_FUNCTIONS = {
+    { "/Script/Engine.Pawn:AddControllerYawInput", "yaw" },
+    { "/Script/Engine.Pawn:AddControllerPitchInput", "pitch" },
+    { "/Script/Engine.PlayerController:AddYawInput", "yaw" },
+    { "/Script/Engine.PlayerController:AddPitchInput", "pitch" },
+}
+local mouse = { yaw = 0, pitch = 0, calls = 0, users = 0, hooks = {}, fired = {} }
+
+local function MouseAcquire()
+    mouse.users = mouse.users + 1
+    if mouse.users > 1 then return end
+    for _, f in ipairs(INPUT_FUNCTIONS) do
+        local path, axis = f[1], f[2]
+        local ok, pre, post = pcall(RegisterHook, path, function(self, Val)
+            local v = nil
+            pcall(function() v = Val:get() end)
+            if type(v) == "number" then
+                mouse[axis] = mouse[axis] + v
+                mouse.calls = mouse.calls + 1
+                mouse.fired[path] = (mouse.fired[path] or 0) + 1
+            end
+        end)
+        if ok and pre then
+            table.insert(mouse.hooks, { path, pre, post })
+        else
+            log("Can't listen to " .. path .. ": " .. tostring(pre))
+        end
+    end
+end
+
+local function MouseRelease()
+    if mouse.users == 0 then return end
+    mouse.users = mouse.users - 1
+    if mouse.users > 0 then return end
+    for _, h in ipairs(mouse.hooks) do pcall(UnregisterHook, h[1], h[2], h[3]) end
+    mouse.hooks = {}
+end
+
+------------------------------------------------------------
 -- Recording
 ------------------------------------------------------------
 local rec = nil       -- { set, rows, start, until_, marks, stop }
@@ -331,6 +375,7 @@ local function Finish(reason)
     if not r then return end
     rec = nil
     r.stop = true
+    MouseRelease()
     local rows, cols = r.rows, r.set.cols
     if #rows == 0 then log("Recording stopped (" .. reason .. "): nothing recorded") return end
 
@@ -354,11 +399,12 @@ local function Finish(reason)
     local path = MOD_DIR .. "recording_" .. r.stamp .. ".csv"
     local file = io.open(path, "w")
     if not file then log("Couldn't write " .. path) return end
-    local header = { "t", "dYaw", "dPitch", "mark" }
+    local header = { "t", "dYaw", "dPitch", "mouseYaw", "mousePitch", "mouseCalls", "mark" }
     for _, k in ipairs(keep) do table.insert(header, Csv(k.name)) end
     file:write(table.concat(header, ",") .. "\n")
     for _, row in ipairs(rows) do
-        local line = { Fmt(row.t), Fmt(row.dYaw), Fmt(row.dPitch), Csv(row.mark or "") }
+        local line = { Fmt(row.t), Fmt(row.dYaw), Fmt(row.dPitch), Fmt(row.mYaw), Fmt(row.mPitch),
+                       Fmt(row.mCalls), Csv(row.mark or "") }
         for _, k in ipairs(keep) do table.insert(line, Fmt(row.v[k.i])) end
         file:write(table.concat(line, ",") .. "\n")
     end
@@ -373,6 +419,37 @@ local function Finish(reason)
     log(string.format("Recording stopped (%s): %d samples over %.1f s (%.0f a second), %d of %d values saved (the ones that changed)",
         reason, #rows, seconds, #rows / math.max(seconds, 0.001), #keep, #cols))
     log("  Samples with a very slow turn (under 0.05 degrees): " .. slowTurns)
+
+    -- Mouse moved but the view didn't turn / view turned but the camera didn't
+    local camY = nil
+    for i, col in ipairs(cols) do if col.name == "cam.Y" then camY = i end end
+    local lost, smallestLost, smallestTurned, camStuck, prevCam = 0, nil, nil, 0, nil
+    local mouseCalls = 0
+    for _, row in ipairs(rows) do
+        mouseCalls = mouseCalls + (row.mCalls or 0)
+        local m = math.max(math.abs(row.mYaw or 0), math.abs(row.mPitch or 0))
+        local turned = (row.dYaw or 0) ~= 0 or (row.dPitch or 0) ~= 0
+        if m > 0 and not turned and row.dYaw ~= nil then
+            lost = lost + 1
+            if not smallestLost or m < smallestLost then smallestLost = m end
+        elseif m > 0 and turned then
+            if not smallestTurned or m < smallestTurned then smallestTurned = m end
+        end
+        local cam = camY and row.v[camY]
+        if turned and cam and prevCam and cam == prevCam then camStuck = camStuck + 1 end
+        prevCam = cam
+    end
+    if mouseCalls == 0 then
+        log("  Mouse: no input seen through Unreal's look functions (the game turns the view some other way)")
+    else
+        local fired = {}
+        for path, n in pairs(r.fired or {}) do table.insert(fired, path:match(":(.+)$") .. " x" .. n) end
+        log("  Mouse: " .. mouseCalls .. " inputs (" .. table.concat(fired, ", ") .. ")")
+        log("  Samples where the mouse moved but your aim didn't turn: " .. lost
+            .. (smallestLost and (" (smallest such input " .. Fmt(smallestLost) .. ")") or ""))
+        log("  Smallest mouse input that did turn your aim: " .. (smallestTurned and Fmt(smallestTurned) or "-"))
+    end
+    log("  Samples where your aim turned but the camera didn't: " .. camStuck)
     table.sort(keep, function(a, b) return a.range > b.range end)
     local shown = 0
     for _, k in ipairs(keep) do
@@ -400,6 +477,8 @@ local function Sample()
         row.dYaw = (v[2] and r.last[2]) and Wrap(v[2] - r.last[2]) or nil
     end
     r.last = v
+    row.mYaw, row.mPitch, row.mCalls = mouse.yaw - r.mouseYaw, mouse.pitch - r.mousePitch, mouse.calls - r.mouseCalls
+    r.mouseYaw, r.mousePitch, r.mouseCalls = mouse.yaw, mouse.pitch, mouse.calls
     if pendingMark then
         row.mark = pendingMark
         table.insert(r.marks, { t = row.t, note = pendingMark })
@@ -417,6 +496,10 @@ local function Start(seconds)
     local now = os.clock()
     rec = { set = set, rows = {}, marks = {}, start = now, until_ = now + seconds, stamp = Stamp() }
     local mine = rec
+    MouseAcquire()
+    mine.mouseYaw, mine.mousePitch, mine.mouseCalls = mouse.yaw, mouse.pitch, mouse.calls
+    mine.fired = {}
+    mouse.fired = mine.fired
     log(string.format("Recording %d values every %d ms for up to %d s. Press %s (or .view mark) when the view sticks, .view stop to end",
         #set.cols, SAMPLE_MS, seconds, MARK_KEY))
     local busy = false
@@ -730,7 +813,7 @@ local function HudTick(h)
         if not ok then
             log("On-screen readout unavailable (" .. tostring(panel) .. ") - .view watch writes it to the log")
             h.stop = true
-            if hud == h then hud = nil end
+            if hud == h then hud = nil MouseRelease() end
             return
         end
         h.panel, h.text, h.lastText = panel, text, nil
@@ -758,6 +841,11 @@ local function HudTick(h)
         table.insert(lines, string.format("%-14s  P%8.3f  Y%8.3f", "turn / update", Wrap(p - h.lastP), Wrap(y - h.lastY)))
     end
     h.lastP, h.lastY = p, y
+    if h.mouseYaw then
+        table.insert(lines, string.format("%-14s  P%8.3f  Y%8.3f  (%d inputs)", "mouse / update",
+            mouse.pitch - h.mousePitch, mouse.yaw - h.mouseYaw, mouse.calls - h.mouseCalls))
+    end
+    h.mouseYaw, h.mousePitch, h.mouseCalls = mouse.yaw, mouse.pitch, mouse.calls
     local s = table.concat(lines, "\n")
     if s ~= h.lastText then
         SetText(h.text, s)
@@ -768,6 +856,7 @@ end
 local function HudToggle()
     if hud then
         hud.stop = true
+        ExecuteInGameThread(MouseRelease)
         local h = hud
         hud = nil
         ExecuteInGameThread(function()
@@ -777,6 +866,7 @@ local function HudToggle()
         return
     end
     local mine = { stop = false, built = -100 }
+    ExecuteInGameThread(MouseAcquire)
     hud = mine
     log("On-screen readout on (top right). .view hud again hides it")
     local busy = false

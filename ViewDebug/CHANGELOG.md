@@ -2,6 +2,15 @@
 
 ---
 
+## 0.3.0 (2026-10-13)
+
+### Mouse Input
+- Recordings and the on-screen readout now also capture your mouse input separately from where you aim and what the camera shows. That's the movement the game hands Unreal each frame to turn the view (`mouseYaw`, `mousePitch` and `mouseCalls` columns; "mouse / update" on the readout)
+- So it can tell "the mouse moved but nothing turned" apart from holding the mouse still
+- After a recording, the log says how many times the mouse moved but your aim didn't turn (and the smallest such movement, next to the smallest one that did turn), and how many times your aim turned but the camera didn't
+- It only listens while recording or while the readout is shown, and stops listening right after
+- If the log says "no input seen", the game turns the view without Unreal's look functions; aim, camera and weapon are still recorded
+
 ## 0.2.2 (2026-10-13)
 
 - `.view hud` no longer drops your FPS. Each of its 10 updates a second searched the whole game for the HUD, then rebuilt the panel (and searched every widget for leftovers), and every 5 s it re-read all your character's settings. Now an update only reads the angles shown and sets the text
