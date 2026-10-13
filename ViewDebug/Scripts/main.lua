@@ -19,7 +19,7 @@
 -- Settings: config.lua (see config.example.lua).
 -- Only reads while recording or watching; it stops itself after a while.
 ------------------------------------------------------------
-local VERSION = "0.2.0"
+local VERSION = "0.2.1"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
@@ -125,21 +125,48 @@ local function Kind(v)
     return nil
 end
 
+-- Setting types that are safe to read. Reading some others (links to
+-- objects, event lists, ...) crashes this UE4SS build, so a setting is only
+-- read once its type is known to be one of these.
+local SAFE_TYPES = { FloatProperty = "number", DoubleProperty = "number", IntProperty = "number",
+                     BoolProperty = "bool" }
+local SAFE_STRUCTS = { Rotator = "rot", Vector = "vec", Vector2D = "vec2" }
+local typesUnknownWarned = false
+
+local function KindOfProperty(prop)
+    local t = nil
+    pcall(function() t = prop:GetClass():GetFName():ToString() end)
+    if not t then return nil, false end
+    if SAFE_TYPES[t] then return SAFE_TYPES[t], true end
+    if t == "StructProperty" then
+        local st = nil
+        pcall(function() st = prop:GetStruct():GetFName():ToString() end)
+        return st and SAFE_STRUCTS[st] or nil, true
+    end
+    return nil, true
+end
+
 -- The object class's own settings (only its own class: walking parent
 -- classes crashed this UE4SS build for the mod menu). fn(name, value, kind)
 local function EachSetting(obj, fn)
+    local unknown = 0
     pcall(function()
         obj:GetClass():ForEachProperty(function(prop)
             local name = ""
             pcall(function() name = prop:GetFName():ToString() end)
-            if name ~= "" then
+            local kind, known = KindOfProperty(prop)
+            if not known then unknown = unknown + 1 end
+            if name ~= "" and kind then
                 local value = nil
                 pcall(function() value = obj[name] end)
-                local kind = Kind(value)
-                if kind then fn(name, value, kind) end
+                if Kind(value) == kind then fn(name, value, kind) end
             end
         end)
     end)
+    if unknown > 0 and not typesUnknownWarned then
+        typesUnknownWarned = true
+        log("Couldn't tell the type of " .. unknown .. " settings, so they're skipped (reading the wrong type crashes)")
+    end
 end
 
 -- The character's parts and everything attached to them (the held weapon's
@@ -178,7 +205,13 @@ local function Fmt(n)
     return string.format("%.4f", n)
 end
 
+local traced = false
 local function Build(pc)
+    -- The first look-up logs each step: if the game crashes, the last line says where
+    local trace = not traced
+    traced = true
+    local function step(what) if trace then log("  first look-up: " .. what) end end
+    step("finding you")
     if not Valid(pc) then pc = LocalController() end
     if not pc then return nil, "no local player controller (load into a world first)" end
     local pawn = nil
@@ -222,7 +255,9 @@ local function Build(pc)
     end
 
     -- Every part's angle and position relative to what it hangs on
+    step("your character's parts")
     local parts = ComponentTree(pawn)
+    step(#parts .. " parts")
     local others, animInstances = {}, {}
     for _, p in ipairs(parts) do
         local comp = p.comp
@@ -242,6 +277,7 @@ local function Build(pc)
     -- Settings that sound like aim / sway / rotation on the character, its
     -- animation (arms sway usually lives there), the held items, the camera
     local function addSettings(prefix, obj)
+        step("settings of " .. NameOf(obj) .. " (" .. ClassName(obj) .. ")")
         local n = 0
         EachSetting(obj, function(name, _, kind)
             if n < MAX_PROPS_PER_OBJECT and Wanted(name) then
@@ -255,6 +291,7 @@ local function Build(pc)
     for _, a in ipairs(animInstances) do addSettings("anim[" .. a.label .. "]", a.obj) end
     for name, obj in pairs(others) do addSettings(Short(name), obj) end
 
+    step("done, " .. #cols .. " values")
     return { pc = pc, pawn = pawn, pcm = pcm, cols = cols, parts = parts, anims = animInstances }
 end
 

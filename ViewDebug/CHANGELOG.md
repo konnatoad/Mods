@@ -2,6 +2,11 @@
 
 ---
 
+## 0.2.1 (2026-10-13)
+
+- `.view hud` crashed the game (and `.view`, `.view scan` and `.view rec` would have too). Looking for aim and sway settings, the mod read every setting on your character, its animation and weapon, and reading some kinds (links to other objects, event lists) crashes UE4SS. It now checks each setting's type first and reads only numbers, true/false, angles and positions
+- The first look-up after loading writes each step to the log (`first look-up: ...`), so if the game still crashes, the last line shows where
+
 ## 0.2.0 (2026-10-13)
 
 - `.view hud` shows the angles on screen, live (top right, 10 times a second): where you look, the camera, the arms and weapon meshes, rotations in the arms animation (like sway), and how far the view turned since the last update. `.view hud` again hides it
