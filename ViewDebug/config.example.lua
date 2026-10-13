@@ -1,0 +1,12 @@
+-- View Debug settings. Copy this file to config.lua (in the same folder)
+-- and change what you like; `git pull` never touches config.lua.
+return {
+    -- How often .view rec reads the angles, in milliseconds (16 = about 60 a second)
+    sampleMs = 16,
+
+    -- A recording stops by itself after this many seconds (at most 600)
+    maxSeconds = 60,
+
+    -- Key that marks the moment the view sticks while recording (UE4SS key name)
+    markKey = "F11",
+}

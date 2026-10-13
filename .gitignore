@@ -26,3 +26,7 @@ RadiationShield/settings.txt
 */config.lua
 */settings.txt
 StackThemAll/scripts/stackConfig.lua
+
+# View Debug recordings and scans
+ViewDebug/recording_*.csv
+ViewDebug/scan_*.txt
