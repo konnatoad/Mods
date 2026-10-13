@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.11
+
+- `.season` back to 4.6.9's defaults (speed 1.0, duration 0): the game's own values (4.6.10) froze the game. Those defaults make the seasons cycle, so don't use `.season` for now
+
+---
+
 ## Version 4.6.10
 
 - `.season winter` made the seasons cycle nonstop: its default speed 1.0 and duration 0 made each season last no time at all. Without your own numbers it now uses the game's own transition speed and season duration (60 and 180)

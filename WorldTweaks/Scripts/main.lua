@@ -56,19 +56,7 @@ local SEASONS = { spring = 0, summer = 1, autumn = 2, fall = 2, winter = 3 }
 local applyRunning = false
 local askedFor = nil          -- joined: the weather manager we asked the host about
 local hostAnswered = false
-local seasonAppliedTo = nil   -- address of the weather manager the season was set on
-
--- Toggle Season(season, transition speed, season duration). The game's own
--- speed and duration go with it (60 and 180 here): the mod menu's 1.0 and 0
--- made each season last no time at all, so the seasons cycled nonstop.
-local function SetSeason(wm, index)
-    local speed, duration = nil, nil
-    pcall(function() speed = wm["Season Transition Speed"] end)
-    pcall(function() duration = wm["Season Duration"] end)
-    if type(speed) ~= "number" or speed <= 0 then speed = 60.0 end
-    if type(duration) ~= "number" or duration <= 0 then duration = 180.0 end
-    return pcall(function() wm["Toggle Season"](wm, index, speed, duration) end)
-end
+local seasonPausedSaid = false
 
 local function log(msg)
     print("[WorldTweaks] " .. tostring(msg) .. "\n")
@@ -222,14 +210,12 @@ local function Apply()
         wm["Night Length"] = Config.nightLength
     end)
 
-    local seasonIndex = SEASONS[string.lower(Config.season or "")]
-    local address = AddressOf(wm)
-    if seasonIndex and address ~= seasonAppliedTo then
-        -- once per loaded world, so respawning doesn't restart the transition
-        if SetSeason(wm, seasonIndex) then
-            seasonAppliedTo = address
-            log("Season set to " .. Config.season)
-        end
+    -- The season is paused: Toggle Season with (season, 1.0, 0), the mod
+    -- menu's values, set the seasons cycling quickly. Until it's known which of
+    -- its values does that (.worldinfo lists them), it isn't called.
+    if SEASONS[string.lower(Config.season or "")] and not seasonPausedSaid then
+        seasonPausedSaid = true
+        log("Season setting paused in this version (it made the seasons cycle). Run .worldinfo and send the lines")
     end
 
     if okLength then
@@ -314,10 +300,8 @@ local function OnClientMessage(selfParam, textParam)
         wm["Day Length"] = day
         wm["Night Length"] = night
     end)
-    local address = AddressOf(wm)
-    if season and season >= 0 and address ~= seasonAppliedTo then
-        if SetSeason(wm, season) then seasonAppliedTo = address end
-    end
+    -- the host's season isn't applied while the season setting is paused
+    -- (see Apply); the host's game decides the season of its world anyway
     log(string.format("Using the host's day length %.1f, night length %.1f", day, night))
 end
 

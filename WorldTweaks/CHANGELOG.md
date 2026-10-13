@@ -2,6 +2,10 @@
 
 ---
 
+## 1.3.1 (2026-10-13)
+
+- Season setting paused again, as in 1.2.2: Toggle Season with the game's own speed and duration (1.3.0) froze the game right after setting the season. Until it's known what Toggle Season's values mean, World Tweaks doesn't change the season
+
 ## 1.3.0 (2026-10-13)
 
 ### Season Setting Back

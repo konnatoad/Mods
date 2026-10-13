@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.10 (patched for current game version)
+    MISERY Mod Menu v4.6.11 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -1272,7 +1272,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.10 ===")
+    Log("=== MISERY Mod Menu v4.6.11 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -7061,10 +7061,8 @@ end)
 -- Season control
 RegisterConsoleCommandHandler(".season", function(FullCommand, Parameters)
     local season = Parameters[1]
-    -- speed / duration: what you type, else the game's own (60 / 180). The
-    -- old defaults 1.0 and 0 made each season last no time, so they cycled.
-    local speed = tonumber(Parameters[2])
-    local duration = tonumber(Parameters[3])
+    local speed = tonumber(Parameters[2]) or 1.0
+    local duration = tonumber(Parameters[3]) or 0
 
     if not season then
         Log("Usage: .season <type> [speed] [duration]")
@@ -7087,10 +7085,6 @@ RegisterConsoleCommandHandler(".season", function(FullCommand, Parameters)
     ExecuteInGameThread(function()
         local wm = GetWeatherManager()
         if not wm then Log("WeatherManager not found!") return end
-        if not speed then pcall(function() speed = wm["Season Transition Speed"] end) end
-        if not duration then pcall(function() duration = wm["Season Duration"] end) end
-        if type(speed) ~= "number" or speed <= 0 then speed = 60.0 end
-        if type(duration) ~= "number" or duration <= 0 then duration = 180.0 end
         pcall(function()
             wm["Toggle Season"](wm, seasonIndex, speed, duration)
             Log("Season changing to: " .. season .. " (enum " .. seasonIndex .. ")")
@@ -8168,7 +8162,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.10 Loaded!")
+Log("  MISERY Mod Menu v4.6.11 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")
