@@ -467,9 +467,17 @@ local function Restart(name)
     return ok
 end
 
--- which: "changed", "all", or a mod name. Returns a short summary, and
--- whether the hub restarts itself (its menu should close first).
-local function Reload(which, beforeSelf)
+-- which: "changed", "all", or a mod name. finished(summary, selfRestart) is
+-- called on the game thread once done (selfRestart: the hub restarts itself,
+-- its menu was closed first).
+--
+-- The other mods are restarted from a background task, not the game thread.
+-- Stopping a mod waits for that mod; a mod with timers (the Mod Menu) can be
+-- waiting at that moment to hand work to the game thread, which then never
+-- comes back: restarting from the game thread hung the game now and then.
+local reloading = false
+local function Reload(which, beforeSelf, finished)
+    finished = finished or function() end
     local list = {}
     if which == "changed" or which == "all" then
         local includeSelf = false
@@ -482,7 +490,8 @@ local function Reload(which, beforeSelf)
         if #list == 0 then
             local msg = which == "changed" and "No mod has changed since it was loaded" or "No mods to restart"
             log(msg)
-            return msg
+            finished(msg)
+            return
         end
     else
         local name = which
@@ -491,26 +500,44 @@ local function Reload(which, beforeSelf)
         end
         if not Script(name) then
             log("No mod called '" .. which .. "' (looked for " .. MODS_DIR .. name .. "/Scripts/main.lua)")
-            return "No mod called " .. which
+            finished("No mod called " .. which)
+            return
         end
         list = { name }
     end
-    local done, selfRestart = 0, false
-    for _, name in ipairs(list) do
-        if name == SELF and beforeSelf then beforeSelf() end
-        if Restart(name) then
-            done = done + 1
-            selfRestart = selfRestart or name == SELF
+    if reloading then
+        log("Already restarting mods - wait a moment")
+        finished("Already restarting mods")
+        return
+    end
+    reloading = true
+    LoopAsync(10, function()
+        -- background task: every mod but the hub itself
+        local done = 0
+        for _, name in ipairs(list) do
+            if name ~= SELF and Restart(name) then done = done + 1 end
         end
-    end
-    local msg
-    if #list == 1 then
-        msg = (done == 1 and "Restarted " or "Couldn't restart ") .. list[1]
-    else
-        msg = done .. " of " .. #list .. " mods restarted"
-    end
-    log(msg)
-    return msg, selfRestart
+        ExecuteInGameThread(function()
+            reloading = false
+            local selfRestart = false
+            if list[#list] == SELF then
+                if beforeSelf then beforeSelf() end
+                if Restart(SELF) then
+                    done = done + 1
+                    selfRestart = true
+                end
+            end
+            local msg
+            if #list == 1 then
+                msg = (done == 1 and "Restarted " or "Couldn't restart ") .. list[1]
+            else
+                msg = done .. " of " .. #list .. " mods restarted"
+            end
+            log(msg)
+            finished(msg, selfRestart)
+        end)
+        return true
+    end)
 end
 
 ------------------------------------------------------------
@@ -873,11 +900,13 @@ local Close, Render
 
 -- From the menu: show the result, unless the hub itself restarts (it closes first)
 local function RunReload(which)
-    local msg, selfRestart = Reload(which, function() Close() end)
-    if not selfRestart then
+    hub.status = "Restarting..."
+    Render()
+    Reload(which, function() Close() end, function(msg, selfRestart)
+        if selfRestart then return end
         hub.status = msg
-        Render()
-    end
+        if hub.open then Render() end
+    end)
 end
 
 local function ShowMod(name)
@@ -1233,9 +1262,7 @@ end)
 
 RegisterConsoleCommandHandler(".reloadmods", function(FullCommand, Parameters)
     local arg = (Parameters and Parameters[1]) or ""
-    Reload(arg == "" and "changed" or (arg:lower() == "all" and "all" or arg), function()
-        ExecuteInGameThread(function() Close() end)
-    end)
+    Reload(arg == "" and "changed" or (arg:lower() == "all" and "all" or arg), function() Close() end)
     return true
 end)
 
