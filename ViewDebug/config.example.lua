@@ -4,6 +4,9 @@ return {
     -- How often .view rec reads the angles, in milliseconds (16 = about 60 a second)
     sampleMs = 16,
 
+    -- How often the on-screen readout (.view hud) updates, in milliseconds
+    hudMs = 100,
+
     -- A recording stops by itself after this many seconds (at most 600)
     maxSeconds = 60,
 

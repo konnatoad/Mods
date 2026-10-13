@@ -6,6 +6,7 @@
 -- view's angles and writes them down, so a later mod can fix it.
 --
 --   .view                 your view's angles now, in the log
+--   .view hud             show / hide the angles on screen, live (top right)
 --   .view scan            everything on your character that turns: its parts
 --                         and their angles, plus every number setting that
 --                         looks like aim / sway / rotation (scan_<time>.txt)
@@ -18,7 +19,7 @@
 -- Settings: config.lua (see config.example.lua).
 -- Only reads while recording or watching; it stops itself after a while.
 ------------------------------------------------------------
-local VERSION = "0.1.0"
+local VERSION = "0.2.0"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
@@ -40,6 +41,7 @@ local cfg = UserConfig()
 local SAMPLE_MS = math.max(10, math.floor(tonumber(cfg.sampleMs) or 16))
 local MAX_SECONDS = math.min(600, math.max(5, tonumber(cfg.maxSeconds) or 60))
 local MARK_KEY = tostring(cfg.markKey or "F11")
+local HUD_MS = math.max(30, math.floor(tonumber(cfg.hudMs) or 100))
 local WATCH_SECONDS = 120
 local MAX_COMPONENTS = 40
 local MAX_PROPS_PER_OBJECT = 60
@@ -176,8 +178,8 @@ local function Fmt(n)
     return string.format("%.4f", n)
 end
 
-local function Build()
-    local pc = LocalController()
+local function Build(pc)
+    if not Valid(pc) then pc = LocalController() end
     if not pc then return nil, "no local player controller (load into a world first)" end
     local pawn = nil
     pcall(function() pawn = pc.Pawn end)
@@ -532,10 +534,212 @@ local function Scan()
 end
 
 ------------------------------------------------------------
+-- On-screen readout (.view hud)
+------------------------------------------------------------
+local UMG = "/Script/UMG."
+local HUD_PREFIX = "ViewDebugPanel_"
+local hudTag = string.format("%x%x", os.time(), math.floor(os.clock() * 1000))
+local hudCount = 0
+local hud = nil            -- { stop, set, rows, built, panel, text, hudObj, last, markUntil, markNote }
+local COLLAPSED, HIT_TEST_INVISIBLE = 1, 3
+local PANEL_COLOR = { R = 0.006, G = 0.009, B = 0.015, A = 0.78 }
+local TEXT_COLOR = { R = 0.791, G = 0.831, B = 0.888, A = 1 }
+
+local function Construct(className, outer, name)
+    local cls = StaticFindObject(UMG .. className)
+    if not Valid(cls) then error(className .. " class not found", 0) end
+    local obj = nil
+    if name then pcall(function() obj = StaticConstructObject(cls, outer, FName(name)) end) end
+    if not Valid(obj) then obj = StaticConstructObject(cls, outer) end
+    if not Valid(obj) then error("could not create " .. className, 0) end
+    return obj
+end
+
+local function SetText(text, s)
+    if not pcall(function() text:SetText(FText(s)) end) then pcall(function() text:SetText(s) end) end
+end
+
+-- Panels a previous copy of this mod (.reloadmods) left on the screen
+local function RemoveLeftovers()
+    pcall(function()
+        for _, w in ipairs(FindAllOf("Border") or {}) do
+            local name = NameOf(w)
+            if name:find(HUD_PREFIX, 1, true) == 1 and not name:find(hudTag, 1, true) then
+                pcall(function() w:RemoveFromParent() end)
+            end
+        end
+    end)
+end
+
+-- Rows to show: { label, cols = { index, ... } }. Where you look, the camera,
+-- every mesh's angle (arms, weapon) and rotations in the animations (sway)
+local function HudRows(set)
+    local byName = {}
+    for i, col in ipairs(set.cols) do byName[col.name] = i end
+    local meshes = MeshLabels(set)
+    local rows = {}
+    local function addRot(label, prefix, axes)
+        local idx = {}
+        for _, ax in ipairs(axes) do
+            if byName[prefix .. "." .. ax] then table.insert(idx, { ax = ax, i = byName[prefix .. "." .. ax] }) end
+        end
+        if #idx > 0 then table.insert(rows, { label = label, cols = idx }) end
+    end
+    addRot("look", "ctrl", { "P", "Y" })
+    addRot("camera", "cam", { "P", "Y" })
+    for _, col in ipairs(set.cols) do
+        local prefix = col.name:match("^(.+%.rel)%.P$")
+        if prefix then
+            local comp = prefix:match("([^/]+)%.rel$")
+            if comp and meshes[comp] then addRot(comp, prefix, { "P", "Y", "R" }) end
+        end
+    end
+    local anims = 0
+    for _, col in ipairs(set.cols) do
+        local prefix = col.name:match("^(anim%[.-%]%..+)%.P$")
+        if prefix and anims < 8 then
+            anims = anims + 1
+            addRot(prefix:gsub("^anim%[.-%]%.", "anim "), prefix, { "P", "Y", "R" })
+        end
+    end
+    return rows
+end
+
+local function HudBuildPanel(hudObj)
+    local tree = hudObj.WidgetTree
+    hudCount = hudCount + 1
+    local panel = Construct("Border", tree, HUD_PREFIX .. hudTag .. "_" .. hudCount)
+    panel:SetBrushColor(PANEL_COLOR)
+    pcall(function() panel:SetPadding({ Left = 10, Top = 6, Right = 12, Bottom = 8 }) end)
+    local text = Construct("TextBlock", tree)
+    pcall(function() text.Font.Size = 11 end)
+    pcall(function() text:SetColorAndOpacity({ SpecifiedColor = TEXT_COLOR, ColorUseRule = 0 }) end)
+    pcall(function() text:SetShadowOffset({ X = 0.0, Y = 1.0 }) end)
+    panel:SetContent(text)
+    local root = hudObj.WidgetTree.RootWidget
+    local cls = ClassName(root)
+    if cls == "CanvasPanel" then
+        local slot = root:AddChildToCanvas(panel)
+        pcall(function() slot:SetAnchors({ Minimum = { X = 1, Y = 0 }, Maximum = { X = 1, Y = 0 } }) end)
+        pcall(function() slot:SetAlignment({ X = 1, Y = 0 }) end)
+        pcall(function() slot:SetPosition({ X = -24, Y = 24 }) end)
+        pcall(function() slot:SetAutoSize(true) end)
+        pcall(function() slot:SetZOrder(99) end)
+    elseif cls == "Overlay" then
+        local slot = root:AddChildToOverlay(panel)
+        pcall(function() slot:SetHorizontalAlignment(3) end)
+        pcall(function() slot:SetVerticalAlignment(1) end)
+        pcall(function() slot:SetPadding({ Left = 0, Top = 24, Right = 24, Bottom = 0 }) end)
+    else
+        error("the HUD's root is a " .. cls, 0)
+    end
+    return panel, text
+end
+
+local function HudRemove()
+    if hud and hud.panel then pcall(function() hud.panel:RemoveFromParent() end) end
+    if hud then hud.panel, hud.text = nil, nil end
+end
+
+local function Num(v)
+    if v == nil then return "      -" end
+    return string.format("%8.3f", v)
+end
+
+-- Game thread, every HUD_MS while shown
+local function HudTick(h)
+    local now = os.clock()
+    -- (Re)find your character and its parts every few seconds: weapon swaps, respawns
+    if not h.set or not Valid(h.set.pawn) or now - h.built > 5 then
+        local set = Build(h.set and h.set.pc)
+        if not set then
+            if h.panel then pcall(function() h.panel:SetVisibility(COLLAPSED) end) end
+            return
+        end
+        h.set, h.rows, h.built = set, HudRows(set), now
+    end
+    local hudObj = nil
+    pcall(function() hudObj = FindFirstOf("BP_InventoryHUD_C") end)
+    if not Valid(hudObj) then return end
+    if hudObj ~= h.hudObj or not Valid(h.panel) then
+        HudRemove()
+        RemoveLeftovers()
+        local ok, panel, text = pcall(HudBuildPanel, hudObj)
+        if not ok then
+            log("On-screen readout unavailable (" .. tostring(panel) .. ") - .view watch writes it to the log")
+            h.stop = true
+            if hud == h then hud = nil end
+            return
+        end
+        h.panel, h.text, h.hudObj = panel, text, hudObj
+    end
+
+    local lines = {}
+    local title = "VIEW DEBUG"
+    if rec then title = title .. string.format("   REC %.1f s", now - rec.start) end
+    if h.markUntil and now < h.markUntil then title = title .. "   MARKED: " .. h.markNote end
+    table.insert(lines, title)
+    local values = {}
+    for _, row in ipairs(h.rows) do
+        local parts = { string.format("%-14s", row.label:sub(1, 14)) }
+        for _, c in ipairs(row.cols) do
+            local v = Read(h.set.cols[c.i])
+            values[c.i] = v
+            table.insert(parts, c.ax .. Num(v))
+        end
+        table.insert(lines, table.concat(parts, "  "))
+    end
+    -- How far the view turned since the last update
+    local p, y = Read(h.set.cols[1]), Read(h.set.cols[2])
+    if h.lastP and p and y then
+        table.insert(lines, string.format("%-14s  P%8.3f  Y%8.3f", "turn / update", Wrap(p - h.lastP), Wrap(y - h.lastY)))
+    end
+    h.lastP, h.lastY = p, y
+    local s = table.concat(lines, "\n")
+    if s ~= h.lastText then
+        SetText(h.text, s)
+        h.lastText = s
+    end
+    pcall(function() h.panel:SetVisibility(HIT_TEST_INVISIBLE) end)
+end
+
+local function HudToggle()
+    if hud then
+        hud.stop = true
+        local h = hud
+        hud = nil
+        ExecuteInGameThread(function()
+            if h.panel then pcall(function() h.panel:RemoveFromParent() end) end
+        end)
+        log("On-screen readout off")
+        return
+    end
+    local mine = { stop = false, built = -100 }
+    hud = mine
+    log("On-screen readout on (top right). .view hud again hides it")
+    local busy = false
+    LoopAsync(HUD_MS, function()
+        if mine.stop then return true end
+        if not busy then
+            busy = true
+            ExecuteInGameThread(function()
+                if not mine.stop then
+                    local ok, err = pcall(HudTick, mine)
+                    if not ok and not mine.warned then mine.warned = true log("Readout: " .. tostring(err)) end
+                end
+                busy = false
+            end)
+        end
+        return false
+    end)
+end
+
+------------------------------------------------------------
 -- Commands and the mark key
 ------------------------------------------------------------
 local function Mark(note)
     note = (note and note ~= "") and note or "stuck"
+    if hud then hud.markNote, hud.markUntil = note, os.clock() + 2 end
     if rec then
         pendingMark = note
     else
@@ -558,8 +762,9 @@ RegisterConsoleCommandHandler(".view", function(FullCommand, Parameters)
         elseif a == "stop" then
             if rec then Finish("stopped") else log("Not recording") end
         elseif a == "watch" then Watch()
+        elseif a == "hud" or a == "show" then HudToggle()
         else
-            log(".view | .view scan | .view rec [seconds] | .view stop | .view mark [note] | .view watch")
+            log(".view | .view hud | .view scan | .view rec [seconds] | .view stop | .view mark [note] | .view watch")
         end
     end)
     return true

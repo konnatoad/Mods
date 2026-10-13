@@ -2,6 +2,12 @@
 
 ---
 
+## 0.2.0 (2026-10-13)
+
+- `.view hud` shows the angles on screen, live (top right, 10 times a second): where you look, the camera, the arms and weapon meshes, rotations in the arms animation (like sway), and how far the view turned since the last update. `.view hud` again hides it
+- While it's shown, F11 / `.view mark` flashes MARKED on it, and a recording shows REC with its time
+- `hudMs` in `config.lua` sets how often it updates
+
 ## 0.1.0 (2026-10-13)
 
 ### First Version: Recording Only

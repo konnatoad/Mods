@@ -4,7 +4,7 @@
 
 ## 1.4.9 (2026-10-13)
 
-- View Debug is in the list, with its commands
+- View Debug is in the list, with its commands (`.view hud` included)
 
 ## 1.4.8 (2026-10-13)
 
