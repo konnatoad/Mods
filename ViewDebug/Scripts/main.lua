@@ -10,16 +10,19 @@
 --   .view scan            everything on your character that turns: its parts
 --                         and their angles, plus every number setting that
 --                         looks like aim / sway / rotation (scan_<time>.txt)
+--   .view buffer [s]      keep the last 25 s of angles (on / off)
+--   .view dump            save them now to buffer_<time>.csv (or press F12:
+--                         saves 2 s later, so the stuck moment is in it too)
 --   .view rec [seconds]   record the angles many times a second to
 --                         recording_<time>.csv (stops by itself)
---   .view stop            stop recording now
---   .view mark [note]     mark this moment (or press the mark key, F11)
+--   .view stop            stop recording / the buffer
+--   .view mark [note]     mark this moment (or press the mark key, F12)
 --   .view watch           print the main angles to the log 4 times a second
 --
 -- Settings: config.lua (see config.example.lua).
 -- Only reads while recording or watching; it stops itself after a while.
 ------------------------------------------------------------
-local VERSION = "0.3.0"
+local VERSION = "0.4.0"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
@@ -40,7 +43,8 @@ end
 local cfg = UserConfig()
 local SAMPLE_MS = math.max(10, math.floor(tonumber(cfg.sampleMs) or 16))
 local MAX_SECONDS = math.min(600, math.max(5, tonumber(cfg.maxSeconds) or 60))
-local MARK_KEY = tostring(cfg.markKey or "F11")
+local BUFFER_SECONDS = math.min(60, math.max(2, tonumber(cfg.bufferSeconds) or 25))
+local MARK_KEY = tostring(cfg.markKey or "F12")
 local HUD_MS = math.max(30, math.floor(tonumber(cfg.hudMs) or 100))
 local WATCH_SECONDS = 120
 local MAX_COMPONENTS = 40
@@ -352,11 +356,15 @@ local function MouseRelease()
 end
 
 ------------------------------------------------------------
--- Recording
+-- Recording: .view rec (from now on) and .view buffer (the last few
+-- seconds, kept until the mark key saves them)
 ------------------------------------------------------------
-local rec = nil       -- { set, rows, start, until_, marks, stop }
+-- rec = { mode = "rec" | "buffer", set, rows, start, until_, stop,
+--         dumpAt, dumpFrom, dumpNote, ... }
+local rec = nil
 local pendingMark = nil
 local watching = nil
+local AFTER_MARK = 2      -- buffer: seconds kept after the mark key before saving
 
 local stamps = 0
 local function Stamp()
@@ -370,59 +378,81 @@ local function Csv(s)
     return s
 end
 
-local function Finish(reason)
-    local r = rec
-    if not r then return end
-    rec = nil
-    r.stop = true
-    MouseRelease()
-    local rows, cols = r.rows, r.set.cols
-    if #rows == 0 then log("Recording stopped (" .. reason .. "): nothing recorded") return end
+-- Names of the character's parts in attachment order: changes when you
+-- swap weapons. Only reads properties, so it's cheap enough once a second.
+local function PartsSignature(pawn)
+    local names = {}
+    for _, p in ipairs(ComponentTree(pawn)) do table.insert(names, NameOf(p.comp)) end
+    return table.concat(names, "|")
+end
+
+-- Writes rows to <prefix>_<time>.csv and the summary to the log. Rows can
+-- come from different look-ups (weapon swaps): columns are matched by name.
+local function Write(r, rows, prefix, title)
+    if #rows == 0 then log(title .. ": nothing recorded") return end
+
+    local order, index = {}, {}      -- column names in order; [set][name] = i
+    for _, row in ipairs(rows) do
+        if not index[row.set] then
+            index[row.set] = {}
+            for i, col in ipairs(row.set.cols) do
+                index[row.set][col.name] = i
+                if not order[col.name] then
+                    order[col.name] = true
+                    table.insert(order, col.name)
+                end
+            end
+        end
+    end
+    local function value(row, name)
+        local i = index[row.set][name]
+        return i and row.v[i] or nil
+    end
 
     -- Keep only the columns that changed (plus where you look), so the file is readable
     local keep = {}
-    for i, col in ipairs(cols) do
+    for _, name in ipairs(order) do
         local first, changed, lo, hi = nil, false, math.huge, -math.huge
         for _, row in ipairs(rows) do
-            local v = row.v[i]
+            local v = value(row, name)
             if v ~= nil then
                 if first == nil then first = v elseif v ~= first then changed = true end
                 if v < lo then lo = v end
                 if v > hi then hi = v end
             end
         end
-        if changed or col.name:find("^ctrl%.[PYR]$") or col.name:find("^cam%.") then
-            table.insert(keep, { i = i, name = col.name, range = hi - lo, lo = lo, hi = hi })
+        if changed or name:find("^ctrl%.[PYR]$") or name:find("^cam%.") then
+            table.insert(keep, { name = name, range = hi - lo, lo = lo, hi = hi })
         end
     end
 
-    local path = MOD_DIR .. "recording_" .. r.stamp .. ".csv"
-    local file = io.open(path, "w")
-    if not file then log("Couldn't write " .. path) return end
+    local t0 = rows[1].t
+    local stamp = Stamp()
+    local fileName = prefix .. "_" .. stamp .. ".csv"
+    local file = io.open(MOD_DIR .. fileName, "w")
+    if not file then log("Couldn't write " .. MOD_DIR .. fileName) return end
     local header = { "t", "dYaw", "dPitch", "mouseYaw", "mousePitch", "mouseCalls", "mark" }
     for _, k in ipairs(keep) do table.insert(header, Csv(k.name)) end
     file:write(table.concat(header, ",") .. "\n")
     for _, row in ipairs(rows) do
-        local line = { Fmt(row.t), Fmt(row.dYaw), Fmt(row.dPitch), Fmt(row.mYaw), Fmt(row.mPitch),
+        local line = { Fmt(row.t - t0), Fmt(row.dYaw), Fmt(row.dPitch), Fmt(row.mYaw), Fmt(row.mPitch),
                        Fmt(row.mCalls), Csv(row.mark or "") }
-        for _, k in ipairs(keep) do table.insert(line, Fmt(row.v[k.i])) end
+        for _, k in ipairs(keep) do table.insert(line, Fmt(value(row, k.name))) end
         file:write(table.concat(line, ",") .. "\n")
     end
     file:close()
 
-    local seconds = rows[#rows].t
+    local seconds = rows[#rows].t - t0
     local slowTurns = 0
     for _, row in ipairs(rows) do
         local d = math.max(math.abs(row.dYaw or 0), math.abs(row.dPitch or 0))
         if d > 0 and d < 0.05 then slowTurns = slowTurns + 1 end
     end
-    log(string.format("Recording stopped (%s): %d samples over %.1f s (%.0f a second), %d of %d values saved (the ones that changed)",
-        reason, #rows, seconds, #rows / math.max(seconds, 0.001), #keep, #cols))
+    log(string.format("%s: %d samples over %.1f s (%.0f a second), %d of %d values saved (the ones that changed)",
+        title, #rows, seconds, #rows / math.max(seconds, 0.001), #keep, #order))
     log("  Samples with a very slow turn (under 0.05 degrees): " .. slowTurns)
 
     -- Mouse moved but the view didn't turn / view turned but the camera didn't
-    local camY = nil
-    for i, col in ipairs(cols) do if col.name == "cam.Y" then camY = i end end
     local lost, smallestLost, smallestTurned, camStuck, prevCam = 0, nil, nil, 0, nil
     local mouseCalls = 0
     for _, row in ipairs(rows) do
@@ -435,7 +465,7 @@ local function Finish(reason)
         elseif m > 0 and turned then
             if not smallestTurned or m < smallestTurned then smallestTurned = m end
         end
-        local cam = camY and row.v[camY]
+        local cam = value(row, "cam.Y")
         if turned and cam and prevCam and cam == prevCam then camStuck = camStuck + 1 end
         prevCam = cam
     end
@@ -443,7 +473,7 @@ local function Finish(reason)
         log("  Mouse: no input seen through Unreal's look functions (the game turns the view some other way)")
     else
         local fired = {}
-        for path, n in pairs(r.fired or {}) do table.insert(fired, path:match(":(.+)$") .. " x" .. n) end
+        for path in pairs(mouse.fired) do table.insert(fired, (path:match(":(.+)$"))) end
         log("  Mouse: " .. mouseCalls .. " inputs (" .. table.concat(fired, ", ") .. ")")
         log("  Samples where the mouse moved but your aim didn't turn: " .. lost
             .. (smallestLost and (" (smallest such input " .. Fmt(smallestLost) .. ")") or ""))
@@ -458,57 +488,137 @@ local function Finish(reason)
             log(string.format("  changed most: %s  %s .. %s", k.name, Fmt(k.lo), Fmt(k.hi)))
         end
     end
-    for _, m in ipairs(r.marks) do log(string.format("  mark at %.2f s: %s", m.t, m.note)) end
-    log("  Saved: ue4ss\\Mods\\ViewDebug\\recording_" .. r.stamp .. ".csv - send this file")
+    for _, row in ipairs(rows) do
+        if row.mark then log(string.format("  mark at %.2f s: %s", row.t - t0, row.mark)) end
+    end
+    log("  Saved: ue4ss\\Mods\\ViewDebug\\" .. fileName .. " - send this file")
+end
+
+local function Finish(reason)
+    local r = rec
+    if not r then return end
+    rec = nil
+    r.stop = true
+    MouseRelease()
+    if r.mode == "rec" then
+        Write(r, r.rows, "recording", "Recording stopped (" .. reason .. ")")
+    else
+        log("Buffer off (" .. reason .. ")" .. (r.dumpAt and ", the pending save is dropped" or ""))
+    end
+end
+
+-- Buffer: save from dumpFrom up to now, keep going
+local function Dump(r)
+    local rows = {}
+    for _, row in ipairs(r.rows) do
+        if row.t >= r.dumpFrom then table.insert(rows, row) end
+    end
+    r.dumpAt = nil
+    Write(r, rows, "buffer", "Saved the buffer (" .. r.dumpNote .. ")")
+end
+
+-- .view dump: save the buffer now
+local function DumpNow()
+    local r = rec
+    if not r or r.mode ~= "buffer" then log("The buffer is off - .view buffer turns it on") return end
+    local last = r.rows[#r.rows]
+    if not last then log("The buffer is still empty") return end
+    r.dumpFrom, r.dumpNote = last.t - r.window, "dump"
+    Dump(r)
 end
 
 local function Sample()
     local r = rec
     if not r or r.stop then return end
     local now = os.clock()
-    if not Valid(r.set.pawn) then Finish("your character is gone") return end
-    if now >= r.until_ then Finish("time's up") return end
+    if r.mode == "rec" and now >= r.until_ then Finish("time's up") return end
+
+    -- A new character (respawn, level) or weapon: look it up again
+    local stale = not Valid(r.set.pawn)
+    if not stale and now - (r.checked or 0) > 1 then
+        r.checked = now
+        stale = PartsSignature(r.set.pawn) ~= r.signature
+    end
+    if stale then
+        if now - (r.tried or -100) < 2 then return end
+        r.tried = now
+        local set = Build(r.set.pc)
+        if not set then
+            if r.mode == "rec" then Finish("your character is gone") end
+            return   -- buffer: wait for the character to come back
+        end
+        r.set, r.signature, r.checked, r.lastV = set, PartsSignature(set.pawn), now, nil
+    end
+
     local v = {}
     for i, col in ipairs(r.set.cols) do v[i] = Read(col) end
-    local row = { t = now - r.start, v = v }
-    -- columns 1-2 are ctrl.P / ctrl.Y
-    if r.last then
-        row.dPitch = (v[1] and r.last[1]) and Wrap(v[1] - r.last[1]) or nil
-        row.dYaw = (v[2] and r.last[2]) and Wrap(v[2] - r.last[2]) or nil
+    local row = { t = now - r.start, set = r.set, v = v }
+    -- columns 1-2 are ctrl.P / ctrl.Y in every look-up
+    if r.lastV then
+        row.dPitch = (v[1] and r.lastV[1]) and Wrap(v[1] - r.lastV[1]) or nil
+        row.dYaw = (v[2] and r.lastV[2]) and Wrap(v[2] - r.lastV[2]) or nil
     end
-    r.last = v
+    r.lastV = v
     row.mYaw, row.mPitch, row.mCalls = mouse.yaw - r.mouseYaw, mouse.pitch - r.mousePitch, mouse.calls - r.mouseCalls
     r.mouseYaw, r.mousePitch, r.mouseCalls = mouse.yaw, mouse.pitch, mouse.calls
     if pendingMark then
         row.mark = pendingMark
-        table.insert(r.marks, { t = row.t, note = pendingMark })
-        log(string.format("Marked at %.2f s: %s", row.t, pendingMark))
+        if r.mode == "buffer" and not r.dumpAt then
+            r.dumpAt, r.dumpFrom, r.dumpNote = now + AFTER_MARK, row.t - r.window, pendingMark
+            log(string.format("Marked: %s - saving the last %d s in %d s (keep doing what you did)",
+                pendingMark, math.floor(r.window), AFTER_MARK))
+        else
+            log(string.format("Marked at %.2f s: %s", row.t, pendingMark))
+        end
         pendingMark = nil
     end
     table.insert(r.rows, row)
+
+    if r.mode == "buffer" then
+        if r.dumpAt and now >= r.dumpAt then Dump(r) end
+        -- forget what's older than the buffer (plus room for a save after the mark key)
+        local oldest = row.t - r.window - AFTER_MARK - 1
+        local drop = 0
+        while r.rows[drop + 1] and r.rows[drop + 1].t < oldest do drop = drop + 1 end
+        if drop > 0 then
+            local n = #r.rows
+            table.move(r.rows, drop + 1, n, 1)
+            for i = n - drop + 1, n do r.rows[i] = nil end
+        end
+    end
 end
 
-local function Start(seconds)
-    if rec then log("Already recording - .view stop first") return end
+local function Start(mode, arg)
+    if rec then
+        log((rec.mode == "rec" and "Already recording" or "The buffer is on") .. " - .view stop first")
+        return
+    end
     local set, err = Build()
     if not set then log("Can't record: " .. err) return end
-    seconds = math.min(MAX_SECONDS, math.max(1, tonumber(seconds) or MAX_SECONDS))
     local now = os.clock()
-    rec = { set = set, rows = {}, marks = {}, start = now, until_ = now + seconds, stamp = Stamp() }
+    rec = { mode = mode, set = set, rows = {}, start = now, signature = PartsSignature(set.pawn), checked = now }
     local mine = rec
+    if mode == "rec" then
+        local seconds = math.min(MAX_SECONDS, math.max(1, tonumber(arg) or MAX_SECONDS))
+        mine.until_ = now + seconds
+        log(string.format("Recording %d values every %d ms for up to %d s. Press %s (or .view mark) when the view sticks, .view stop to end",
+            #set.cols, SAMPLE_MS, seconds, MARK_KEY))
+    else
+        mine.window = math.min(60, math.max(2, tonumber(arg) or BUFFER_SECONDS))
+        log(string.format("Buffer on: keeping the last %d s. When the view sticks, .view dump saves them (or press %s); .view buffer again turns it off",
+            math.floor(mine.window), MARK_KEY))
+    end
     MouseAcquire()
     mine.mouseYaw, mine.mousePitch, mine.mouseCalls = mouse.yaw, mouse.pitch, mouse.calls
-    mine.fired = {}
-    mouse.fired = mine.fired
-    log(string.format("Recording %d values every %d ms for up to %d s. Press %s (or .view mark) when the view sticks, .view stop to end",
-        #set.cols, SAMPLE_MS, seconds, MARK_KEY))
+    mouse.fired = {}
     local busy = false
     LoopAsync(SAMPLE_MS, function()
         if mine.stop or rec ~= mine then return true end
         if not busy then
             busy = true
             ExecuteInGameThread(function()
-                pcall(Sample)
+                local ok, e = pcall(Sample)
+                if not ok and not mine.warned then mine.warned = true log("Recording: " .. tostring(e)) end
                 busy = false
             end)
         end
@@ -770,14 +880,6 @@ local function Num(v)
 end
 
 -- Game thread, every HUD_MS while shown
--- Names of the character's parts in attachment order: changes when you
--- swap weapons. Only reads properties, so it's cheap enough once a second.
-local function PartsSignature(pawn)
-    local names = {}
-    for _, p in ipairs(ComponentTree(pawn)) do table.insert(names, NameOf(p.comp)) end
-    return table.concat(names, "|")
-end
-
 -- Each update only reads the angles shown and sets the text. Finding your
 -- character's settings, the HUD and building the panel happen only when
 -- something changed (respawn, weapon swap, level load), at most every 2 s.
@@ -822,7 +924,8 @@ local function HudTick(h)
 
     local lines = {}
     local title = "VIEW DEBUG"
-    if rec then title = title .. string.format("   REC %.1f s", now - rec.start) end
+    if rec and rec.mode == "rec" then title = title .. string.format("   REC %.1f s", now - rec.start)
+    elseif rec then title = title .. (rec.dumpAt and "   SAVING..." or ("   BUFFER (" .. MARK_KEY .. " saves)")) end
     if h.markUntil and now < h.markUntil then title = title .. "   MARKED: " .. h.markNote end
     table.insert(lines, title)
     local values = {}
@@ -910,13 +1013,16 @@ RegisterConsoleCommandHandler(".view", function(FullCommand, Parameters)
     ExecuteInGameThread(function()
         if a == "" then Snapshot()
         elseif a == "scan" then Scan()
-        elseif a == "rec" or a == "record" then Start(args[2])
+        elseif a == "rec" or a == "record" then Start("rec", args[2])
+        elseif a == "buffer" or a == "buf" then
+            if rec and rec.mode == "buffer" then Finish("turned off") else Start("buffer", args[2]) end
+        elseif a == "dump" then DumpNow()
         elseif a == "stop" then
             if rec then Finish("stopped") else log("Not recording") end
         elseif a == "watch" then Watch()
         elseif a == "hud" or a == "show" then HudToggle()
         else
-            log(".view | .view hud | .view scan | .view rec [seconds] | .view stop | .view mark [note] | .view watch")
+            log(".view | .view hud | .view buffer [seconds] | .view dump | .view rec [seconds] | .view stop | .view mark [note] | .view watch | .view scan")
         end
     end)
     return true
@@ -928,4 +1034,4 @@ else
     log("markKey '" .. MARK_KEY .. "' isn't a key name; use .view mark")
 end
 
-log("Loaded v" .. VERSION .. ": .view rec records your view's angles, " .. MARK_KEY .. " marks when it sticks")
+log("Loaded v" .. VERSION .. ": .view buffer keeps the last " .. BUFFER_SECONDS .. " s of your view's angles, " .. MARK_KEY .. " saves them")

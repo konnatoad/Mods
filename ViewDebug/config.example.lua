@@ -10,6 +10,10 @@ return {
     -- A recording stops by itself after this many seconds (at most 600)
     maxSeconds = 60,
 
-    -- Key that marks the moment the view sticks while recording (UE4SS key name)
-    markKey = "F11",
+    -- How many seconds .view buffer keeps (at most 60)
+    bufferSeconds = 25,
+
+    -- Key that marks the moment the view sticks: saves the buffer, or marks
+    -- a recording (UE4SS key name; F11 is the game's fullscreen key)
+    markKey = "F12",
 }

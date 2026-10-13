@@ -65,7 +65,7 @@ Every mod has a `CHANGELOG.md`; in game, `.mods` → pick a mod → **Changelog*
 | **ReticleSize** *(new)* | `.reticle 50` (or `.dot 50`): the crosshair dot's size; `.reticle color red` / `alpha 50`: its colour and see-through-ness | Only your screen |
 | **SurvivalStats** *(new)* | `.stats`: a small panel with your exact health, stamina, hunger, thirst, radiation, insanity... Off until you switch it on | Only reads your own numbers |
 | **WhistleRange** *(new)* | Joined players get whistles (and see the other players) from as far away as the host does | Only the host needs it |
-| **ViewDebug** *(new, testing)* | `.view hud`: your view's angles on screen, live; `.view rec`: records your view's angles to find why the weapon gets stuck at an angle after slow mouse moves. Changes nothing | Only reads your own view |
+| **ViewDebug** *(new, testing)* | `.view hud`: your view's angles on screen, live; `.view buffer`: keeps the last 25 s of your view's angles, `.view dump` saves them to find why the weapon gets stuck at an angle after slow mouse moves. Changes nothing | Only reads your own view |
 | **NotSoShaky** | Softer camera shake when you're hit | Only your view |
 | **MISERY_StructuralFreedom** | Relaxed building support rules; normal placement rules still apply | Everyone needs it |
 
@@ -128,7 +128,7 @@ By hand: copy the mod's `config.example.lua` to `config.lua` and change it; a li
 | RandomEmissions | `randomMin = 1800`, `randomMax = 3600` (seconds), `isSirenEnabled = true`, `sirenMin = 120`, `sirenMax = 300`, `sirenVolume = 3.0` |
 | MISERYModMenu | `allowJoined = true` (hosting: give items and stats to players who ask), `newLook = true` (false: the game's colours), `newLayout = true` (false: the game's layout) |
 | WhistleRange | `rangeMeters = 0` (how far players' characters reach joined players; 0 = no limit, Unreal's own is 150) |
-| ViewDebug | `hudMs = 100` (how often `.view hud` updates), `sampleMs = 16` (how often `.view rec` reads the angles), `maxSeconds = 60` (a recording stops by itself), `markKey = "F11"` |
+| ViewDebug | `hudMs = 100` (how often `.view hud` updates), `sampleMs = 16` (how often `.view rec` reads the angles), `maxSeconds = 60` (a recording stops by itself), `bufferSeconds = 25` (how much `.view buffer` keeps), `markKey = "F12"` |
 | StackThemAll | stack size per category: `Ammo_StackSize = 1000`, and 100 for Food, Drink, Consumable, Resource, Plant, Object, BuildPart and Artifact; `onlyStacksChanges = false`; `aphapeticallySorted = true` |
 
 StackThemAll's per-item values (e.g. `Resource_Rubles = 250`) are in `StackThemAll\scripts\stackConfig.lua`.
@@ -217,8 +217,8 @@ git stash; git pull
   `.headbob scan` (walk, then run), `.reticle scan` or `.stats scan` and send the lines.
 - **[WhistleRange]**: hosting, "sent to players up to no limit away" lines appear as players join. If joined players
   still don't hear far whistles, whistle once, then run `.whistle scan` and send the lines.
-- **[ViewDebug]**: when the weapon gets stuck at an angle, run `.view rec`, move the mouse slowly until it sticks,
-  press F11, then `.view stop`. Send the `recording_*.csv` from `ue4ss\Mods\ViewDebug`.
+- **[ViewDebug]**: run `.view buffer` and play; when the weapon gets stuck at an angle, run `.view dump` (or press
+  F12). Send the `buffer_*.csv` from `ue4ss\Mods\ViewDebug`.
 - **[WorldTweaks] / [ModMenu] ... config.lua ignored**: your `config.lua` has a mistake; the log says what.
 
 If something is broken, please open an issue and include those lines.

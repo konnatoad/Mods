@@ -2,6 +2,17 @@
 
 ---
 
+## 0.4.0 (2026-10-13)
+
+### Buffer: Save It After It Happens
+- `.view buffer` keeps the last 25 seconds of everything `.view rec` records (aim, camera, weapon, mouse input), forgetting older seconds. `.view buffer` again (or `.view stop`) turns it off
+- When the view sticks, `.view dump` saves those 25 seconds to `buffer_<time>.csv` and the buffer keeps going
+- Or press F12 (or `.view mark`) without opening the console: 2 seconds later it saves the 25 seconds before the press and the 2 after
+- `.view buffer 40` keeps 40 seconds (up to 60); `bufferSeconds` in `config.lua` sets the default
+- The mark key is now F12: F11 switches the game to fullscreen. Change it with `markKey`
+- Recordings and the buffer look your character up again after a respawn or weapon swap and keep going, instead of stopping
+- The readout shows BUFFER while it's on, and SAVING... between the press and the save
+
 ## 0.3.0 (2026-10-13)
 
 ### Mouse Input
