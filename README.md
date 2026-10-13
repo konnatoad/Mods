@@ -140,7 +140,7 @@ Press `~` in game to open the console. `.mods` shows every mod's commands too.
 | Command | Effect |
 |---|---|
 | `.mods` | Mod Hub: the loaded mods, their keys, commands and changelogs; opens their menus |
-| `.reloadmods` | Restarts the mods whose `main.lua` changed since they loaded (`.reloadmods all`, or `.reloadmods <Name>`) |
+| `.reloadmods` | Restarts the mods whose `main.lua` changed since they loaded (or `.reloadmods <Name>` for one mod) |
 | `.radshield [on\|off]` | Radiation Shield on / off (same as HOME) |
 | `.radshield 75` | 75% less radiation, and switches it on (saved) |
 | `.radmenu` | Radiation Shield settings menu (opens and closes it) |

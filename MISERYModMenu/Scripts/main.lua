@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.9 (patched for current game version)
+    MISERY Mod Menu v4.6.11 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -1272,7 +1272,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.9 ===")
+    Log("=== MISERY Mod Menu v4.6.11 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -8162,7 +8162,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.9 Loaded!")
+Log("  MISERY Mod Menu v4.6.11 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")

@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.8 (2026-10-13)
+
+- No more "Restart all mods" (and `.reloadmods all`): restarting every mod at once isn't needed. "Restart changed mods" (`.reloadmods`) restarts the ones whose script changed, and each mod's page has "Restart this mod" (`.reloadmods <Name>`)
+
 ## 1.4.7 (2026-10-13)
 
 - Knows the new Anomaly Fix mod and its `.anomaly scan`

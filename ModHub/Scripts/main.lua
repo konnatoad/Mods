@@ -8,7 +8,6 @@
 --   .mods                  open / close the hub (in a world)
 --                          Up/Down choose, Right/Enter open, Left back
 --   .reloadmods            restart the mods whose main.lua changed
---   .reloadmods all        restart all of them
 --   .reloadmods <Name>     restart one, e.g. .reloadmods RadiationShield
 --
 -- Each mod's page also shows its CHANGELOG.md, and Settings for the values
@@ -87,7 +86,7 @@ local INFO = {
     { name = "ModHub", title = "Mod Hub",
       about = "This menu: the loaded mods, their keys, commands, settings and changelogs, and restarting mods you've changed.",
       commands = { { ".mods", "Open / close this menu" }, { ".reloadmods", "Restart the mods you've changed" },
-                   { ".reloadmods all", "Restart every mod" }, { ".reloadmods <Name>", "Restart one mod" } } },
+                   { ".reloadmods <Name>", "Restart one mod" } } },
     -- UE4SS's own: shown, never restarted from here
     { name = "Keybinds", title = "Keybinds", builtin = true, about = "UE4SS: built-in key bindings." },
     { name = "ConsoleEnablerMod", title = "Console Enabler", builtin = true, about = "UE4SS: the ~ console." },
@@ -992,7 +991,6 @@ local function ListView(tree, body)
     local tools = Section(tree, body, "RELOAD")
     ActionRow(tree, tools, "Restart changed mods", changed > 0 and tostring(changed) or "none",
         changed > 0 and WARN or MUTED, function() RunReload("changed") end)
-    ActionRow(tree, tools, "Restart all mods", nil, nil, function() RunReload("all") end)
     ActionRow(tree, body, "Close", nil, nil, function() Close() end, true)
 end
 
@@ -1313,7 +1311,12 @@ end)
 
 RegisterConsoleCommandHandler(".reloadmods", function(FullCommand, Parameters)
     local arg = (Parameters and Parameters[1]) or ""
-    Reload(arg == "" and "changed" or (arg:lower() == "all" and "all" or arg), function() Close() end)
+    if arg:lower() == "all" then
+        -- restarting every mod at once isn't offered: the changed ones, or one by one
+        log("No 'all' any more: .reloadmods restarts the mods you've changed, .reloadmods <Name> one mod")
+        return true
+    end
+    Reload(arg == "" and "changed" or arg, function() Close() end)
     return true
 end)
 

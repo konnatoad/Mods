@@ -2,6 +2,16 @@
 
 ---
 
+## 1.3.1 (2026-10-13)
+
+- Season setting paused again, as in 1.2.2: Toggle Season with the game's own speed and duration (1.3.0) froze the game right after setting the season. Until it's known what Toggle Season's values mean, World Tweaks doesn't change the season
+
+## 1.3.0 (2026-10-13)
+
+### Season Setting Back
+- `season` works again. The seasons cycled because the game's Toggle Season was given the mod menu's speed 1.0 and duration 0: a season lasting no time at all. It now gets the game's own transition speed and season duration (60 and 180), so the season changes like the game changes it
+- Joined players get the host's season again
+
 ## 1.2.2 (2026-10-13)
 
 ### Season Setting Paused
