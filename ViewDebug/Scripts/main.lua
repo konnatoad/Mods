@@ -13,6 +13,9 @@
 --   .view buffer [s]      keep the last 25 s of angles (on / off)
 --   .view dump            save them now to buffer_<time>.csv (or the hotkey,
 --                         if set: saves 2 s later, so the stuck moment is in it)
+--   .view dumps           list the saved dumps, newest first
+--   .view read [n|name]   show a dump on screen: its walls (mouse moving, aim
+--                         stuck), at what angle, for how long; again closes it
 --   .view rec [seconds]   record the angles many times a second to
 --                         recording_<time>.csv (stops by itself)
 --   .view stop            stop recording / the buffer
@@ -23,7 +26,7 @@
 -- Only reads while recording, buffering, showing or watching, every frame
 -- on the game thread (never from a background timer).
 ------------------------------------------------------------
-local VERSION = "0.5.1"
+local VERSION = "0.6.0"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
@@ -500,6 +503,51 @@ local function PartsSignature(pawn)
     return table.concat(names, "|")
 end
 
+-- Walls: stretches where the mouse kept moving on an axis but your aim
+-- didn't turn on it. rows: { t, dYaw, dPitch, mYaw, mPitch, P, Y } (P / Y:
+-- where you aim). Frames without input on that axis don't end a wall; a
+-- frame where the aim turns does, and its input is what broke through.
+-- Returns { axis, from, to, frames, angle, pushed, smallest, breakInput, breakTurn }
+local MIN_WALL_FRAMES = 2
+
+local function Walls(rows)
+    local walls = {}
+    local function scan(axis, dKey, mKey, angleKey)
+        local cur = nil
+        for _, row in ipairs(rows) do
+            local m, d = row[mKey] or 0, row[dKey]
+            local atLimit = axis == "pitch" and row.P and math.abs(Wrap(row.P)) > 89.5
+            if d ~= nil and not atLimit then
+                if m ~= 0 and d == 0 then
+                    if not cur then
+                        cur = { axis = axis, from = row.t, frames = 0, angle = row[angleKey], pushed = 0 }
+                    end
+                    cur.to, cur.frames, cur.pushed = row.t, cur.frames + 1, cur.pushed + m
+                    if not cur.smallest or math.abs(m) < cur.smallest then cur.smallest = math.abs(m) end
+                elseif d ~= 0 and cur then
+                    cur.breakInput, cur.breakTurn = m, d
+                    if cur.frames >= MIN_WALL_FRAMES then table.insert(walls, cur) end
+                    cur = nil
+                end
+            end
+        end
+        if cur and cur.frames >= MIN_WALL_FRAMES then table.insert(walls, cur) end
+    end
+    scan("yaw", "dYaw", "mYaw", "Y")
+    scan("pitch", "dPitch", "mPitch", "P")
+    table.sort(walls, function(a, b) return a.from < b.from end)
+    return walls
+end
+
+local function WallText(w)
+    local angle = w.angle and (w.axis == "pitch" and Wrap(w.angle) or w.angle)
+    return string.format("%6.2f s  %-5s stuck at %s for %.2f s (%d frames), pushed %s (smallest %s)%s",
+        w.from, w.axis, angle and string.format("%.3f", angle) or "?", (w.to or w.from) - w.from, w.frames,
+        Fmt(w.pushed), Fmt(w.smallest),
+        w.breakInput and string.format(", broke through with %s -> turned %s", Fmt(w.breakInput), Fmt(w.breakTurn))
+            or ", never broke through")
+end
+
 -- Writes rows to <prefix>_<time>.csv and the summary to the log. Rows can
 -- come from different look-ups (weapon swaps): columns are matched by name.
 local function Write(r, rows, prefix, title)
@@ -555,6 +603,8 @@ local function Write(r, rows, prefix, title)
         file:write(table.concat(line, ",") .. "\n")
     end
     file:close()
+    local index = io.open(MOD_DIR .. "dumps.txt", "a")   -- for .view dumps / .view read
+    if index then index:write(fileName .. "\n") index:close() end
 
     local seconds = rows[#rows].t - t0
     local slowTurns = 0
@@ -566,25 +616,16 @@ local function Write(r, rows, prefix, title)
         title, #rows, seconds, #rows / math.max(seconds, 0.001), #keep, #order))
     log("  Samples with a very slow turn (under 0.05 degrees): " .. slowTurns)
 
-    -- Mouse moved but the view didn't turn / view turned but the camera didn't
-    local lost, smallestLost, smallestTurned, camStuck, prevCam = 0, nil, nil, 0, nil
-    local mouseCalls = 0
+    -- Walls (mouse moving, aim stuck) and aim turning while the camera didn't
+    local camStuck, prevCam, mouseCalls, view = 0, nil, 0, {}
     for _, row in ipairs(rows) do
         mouseCalls = mouseCalls + (row.mCalls or 0)
-        local m = math.max(math.abs(row.mYaw or 0), math.abs(row.mPitch or 0))
-        -- looking straight up / down: pushing further is ignored on purpose
-        local pitch = value(row, "ctrl.P")
-        if pitch and math.abs(Wrap(pitch)) > 89.5 then m = math.abs(row.mYaw or 0) end
         local turned = (row.dYaw or 0) ~= 0 or (row.dPitch or 0) ~= 0
-        if m > 0 and not turned and row.dYaw ~= nil then
-            lost = lost + 1
-            if not smallestLost or m < smallestLost then smallestLost = m end
-        elseif m > 0 and turned then
-            if not smallestTurned or m < smallestTurned then smallestTurned = m end
-        end
         local cam = value(row, "cam.Y")
         if turned and cam and prevCam and cam == prevCam then camStuck = camStuck + 1 end
         prevCam = cam
+        table.insert(view, { t = row.t - t0, dYaw = row.dYaw, dPitch = row.dPitch, mYaw = row.mYaw,
+                             mPitch = row.mPitch, P = value(row, "ctrl.P"), Y = value(row, "ctrl.Y") })
     end
     if mouseCalls == 0 then
         log("  Mouse: no input seen through Unreal's look functions (the game turns the view some other way)")
@@ -592,9 +633,9 @@ local function Write(r, rows, prefix, title)
         local fired = {}
         for path in pairs(mouse.fired) do table.insert(fired, (path:match(":(.+)$"))) end
         log("  Mouse: " .. mouseCalls .. " inputs (" .. table.concat(fired, ", ") .. ")")
-        log("  Samples where the mouse moved but your aim didn't turn: " .. lost
-            .. (smallestLost and (" (smallest such input " .. Fmt(smallestLost) .. ")") or ""))
-        log("  Smallest mouse input that did turn your aim: " .. (smallestTurned and Fmt(smallestTurned) or "-"))
+        local walls = Walls(view)
+        log("  Walls (mouse moving, aim stuck): " .. #walls)
+        for _, w in ipairs(walls) do log("    " .. WallText(w)) end
     end
     log("  Samples where your aim turned but the camera didn't: " .. camStuck)
     table.sort(keep, function(a, b) return a.range > b.range end)
@@ -938,7 +979,7 @@ local function HudRows(set)
     return rows
 end
 
-local function HudBuildPanel(hudObj)
+local function HudBuildPanel(hudObj, side)
     local tree = hudObj.WidgetTree
     hudCount = hudCount + 1
     local panel = Construct("Border", tree, HUD_PREFIX .. hudTag .. "_" .. hudCount)
@@ -953,16 +994,19 @@ local function HudBuildPanel(hudObj)
     local cls = ClassName(root)
     if cls == "CanvasPanel" then
         local slot = root:AddChildToCanvas(panel)
-        pcall(function() slot:SetAnchors({ Minimum = { X = 1, Y = 0 }, Maximum = { X = 1, Y = 0 } }) end)
-        pcall(function() slot:SetAlignment({ X = 1, Y = 0 }) end)
-        pcall(function() slot:SetPosition({ X = -24, Y = 24 }) end)
+        local ax, ay, px, py = 1, 0, -24, 24          -- top right
+        if side == "left" then ax, ay, px, py = 0, 0.5, 24, 0 end
+        pcall(function() slot:SetAnchors({ Minimum = { X = ax, Y = ay }, Maximum = { X = ax, Y = ay } }) end)
+        pcall(function() slot:SetAlignment({ X = ax, Y = ay }) end)
+        pcall(function() slot:SetPosition({ X = px, Y = py }) end)
         pcall(function() slot:SetAutoSize(true) end)
         pcall(function() slot:SetZOrder(99) end)
     elseif cls == "Overlay" then
         local slot = root:AddChildToOverlay(panel)
-        pcall(function() slot:SetHorizontalAlignment(3) end)
-        pcall(function() slot:SetVerticalAlignment(1) end)
-        pcall(function() slot:SetPadding({ Left = 0, Top = 24, Right = 24, Bottom = 0 }) end)
+        pcall(function() slot:SetHorizontalAlignment(side == "left" and 1 or 3) end)
+        pcall(function() slot:SetVerticalAlignment(side == "left" and 2 or 1) end)
+        pcall(function() slot:SetPadding(side == "left" and { Left = 24, Top = 0, Right = 0, Bottom = 0 }
+            or { Left = 0, Top = 24, Right = 24, Bottom = 0 }) end)
     else
         error("the HUD's root is a " .. cls, 0)
     end
@@ -1078,6 +1122,151 @@ local function HudToggle()
 end
 
 ------------------------------------------------------------
+-- Reading dumps in game: .view dumps, .view read [n | name]
+------------------------------------------------------------
+local INDEX_PATH = MOD_DIR .. "dumps.txt"   -- every file written, oldest first
+local reader = nil                           -- { panel, text } while a dump is shown
+
+local function DumpList()
+    local list = {}
+    local file = io.open(INDEX_PATH, "r")
+    if not file then return list end
+    for raw in file:lines() do
+        local line = raw:gsub("%s+$", "")
+        if line ~= "" then
+            local f = io.open(MOD_DIR .. line, "r")
+            if f then f:close() table.insert(list, 1, line) end   -- newest first, existing only
+        end
+    end
+    file:close()
+    return list
+end
+
+local function SplitCsv(line)
+    local out, i, n = {}, 1, #line
+    while i <= n + 1 do
+        if line:sub(i, i) == '"' then
+            local j, buf = i + 1, {}
+            while j <= n do
+                local c = line:sub(j, j)
+                if c == '"' then
+                    if line:sub(j + 1, j + 1) == '"' then table.insert(buf, '"') j = j + 2
+                    else j = j + 1 break end
+                else table.insert(buf, c) j = j + 1 end
+            end
+            table.insert(out, table.concat(buf))
+            i = j + 1
+        else
+            local j = line:find(",", i, true) or (n + 1)
+            table.insert(out, line:sub(i, j - 1))
+            i = j + 1
+        end
+    end
+    return out
+end
+
+-- name: a number from .view dumps, a file name (with or without .csv), or nil (newest)
+local function FindDump(name)
+    local list = DumpList()
+    local n = tonumber(name)
+    if not name or name == "" then return list[1], list end
+    if n then return list[n], list end
+    if not name:find("%.csv$") then name = name .. ".csv" end
+    local f = io.open(MOD_DIR .. name, "r")
+    if f then f:close() return name, list end
+    return nil, list
+end
+
+local function LoadDump(fileName)
+    local file = io.open(MOD_DIR .. fileName, "r")
+    if not file then return nil end
+    local header, rows, marks = nil, {}, {}
+    for raw in file:lines() do
+        local line = raw:gsub("\r$", "")
+        if not header then
+            header = {}
+            for i, h in ipairs(SplitCsv(line)) do header[h] = i end
+        elseif line ~= "" then
+            local c = SplitCsv(line)
+            local function num(k) return header[k] and tonumber(c[header[k]]) or nil end
+            local row = { t = num("t"), dYaw = num("dYaw"), dPitch = num("dPitch"), mYaw = num("mouseYaw"),
+                          mPitch = num("mousePitch"), mCalls = num("mouseCalls"), P = num("ctrl.P"), Y = num("ctrl.Y") }
+            local mark = header.mark and c[header.mark] or ""
+            if mark ~= "" then table.insert(marks, { t = row.t, note = mark }) end
+            table.insert(rows, row)
+        end
+    end
+    file:close()
+    return rows, marks
+end
+
+local function ReaderClose()
+    if reader and reader.panel then pcall(function() reader.panel:RemoveFromParent() end) end
+    reader = nil
+end
+
+local function ReaderShow(lines)
+    ReaderClose()
+    local hudObj = nil
+    pcall(function() hudObj = FindFirstOf("BP_InventoryHUD_C") end)
+    if not Valid(hudObj) then log("  (no HUD to show it on: load into a world)") return end
+    RemoveLeftovers()
+    local ok, panel, text = pcall(HudBuildPanel, hudObj, "left")
+    if not ok then log("  (couldn't show it on screen: " .. tostring(panel) .. ")") return end
+    SetText(text, table.concat(lines, "\n"))
+    pcall(function() panel:SetVisibility(HIT_TEST_INVISIBLE) end)
+    reader = { panel = panel, text = text }
+end
+
+local MAX_SHOWN_WALLS = 10
+
+local function ReadDump(name)
+    if reader and (not name or name == "") then ReaderClose() log("Dump closed") return end
+    local fileName, list = FindDump(name)
+    if not fileName then
+        if #list == 0 and (not name or name == "") then log("No dumps yet: .view buffer, then .view dump")
+        else log("No dump '" .. tostring(name) .. "' - .view dumps lists them") end
+        return
+    end
+    local rows, marks = LoadDump(fileName)
+    if not rows or #rows == 0 then log("Couldn't read " .. fileName) return end
+    local seconds = (rows[#rows].t or 0) - (rows[1].t or 0)
+    local inputs = 0
+    for _, row in ipairs(rows) do inputs = inputs + (row.mCalls or 0) end
+    local walls = Walls(rows)
+
+    local lines = { string.format("DUMP  %s", fileName:gsub("%.csv$", "")),
+                    string.format("%.1f s, %d samples, %d mouse inputs", seconds, #rows, inputs), "" }
+    if inputs == 0 then
+        table.insert(lines, "No mouse input recorded")
+    elseif #walls == 0 then
+        table.insert(lines, "No walls: your aim followed every mouse movement")
+    else
+        table.insert(lines, #walls .. " WALL(S): mouse moving, aim stuck")
+        for i, w in ipairs(walls) do
+            if i <= MAX_SHOWN_WALLS then table.insert(lines, WallText(w)) end
+        end
+        if #walls > MAX_SHOWN_WALLS then table.insert(lines, "... " .. (#walls - MAX_SHOWN_WALLS) .. " more in the log") end
+    end
+    for _, m in ipairs(marks) do table.insert(lines, string.format("mark at %.2f s: %s", m.t - (rows[1].t or 0), m.note)) end
+    table.insert(lines, "")
+    table.insert(lines, ".view read again closes this")
+
+    log("Read " .. fileName .. string.format(": %.1f s, %d samples, %d mouse inputs, %d wall(s)", seconds, #rows, inputs, #walls))
+    for _, w in ipairs(walls) do log("  wall: " .. WallText(w)) end
+    ReaderShow(lines)
+end
+
+local function ListDumps()
+    local list = DumpList()
+    if #list == 0 then log("No dumps yet: .view buffer, then .view dump (older ones: .view read <file name>)") return end
+    log("Dumps, newest first (.view read <number>):")
+    for i, name in ipairs(list) do
+        if i <= 20 then log(string.format("  %d  %s", i, name)) end
+    end
+end
+
+------------------------------------------------------------
 -- Commands and the mark key
 ------------------------------------------------------------
 local function Mark(note)
@@ -1105,12 +1294,14 @@ RegisterConsoleCommandHandler(".view", function(FullCommand, Parameters)
         elseif a == "buffer" or a == "buf" then
             if rec and rec.mode == "buffer" then Finish("turned off") else Start("buffer", args[2]) end
         elseif a == "dump" then DumpNow()
+        elseif a == "dumps" or a == "list" then ListDumps()
+        elseif a == "read" or a == "open" then ReadDump(args[2])
         elseif a == "stop" then
             if rec then Finish("stopped") else log("Not recording") end
         elseif a == "watch" then Watch()
         elseif a == "hud" or a == "show" then HudToggle()
         else
-            log(".view | .view hud | .view buffer [seconds] | .view dump | .view rec [seconds] | .view stop | .view mark [note] | .view watch | .view scan")
+            log(".view | .view hud | .view buffer [seconds] | .view dump | .view dumps | .view read [n] | .view rec [seconds] | .view stop | .view mark [note] | .view watch | .view scan")
         end
     end)
     return true

@@ -65,7 +65,7 @@ Every mod has a `CHANGELOG.md`; in game, `.mods` → pick a mod → **Changelog*
 | **ReticleSize** *(new)* | `.reticle 50` (or `.dot 50`): the crosshair dot's size; `.reticle color red` / `alpha 50`: its colour and see-through-ness | Only your screen |
 | **SurvivalStats** *(new)* | `.stats`: a small panel with your exact health, stamina, hunger, thirst, radiation, insanity... Off until you switch it on | Only reads your own numbers |
 | **WhistleRange** *(new)* | Joined players get whistles (and see the other players) from as far away as the host does | Only the host needs it |
-| **ViewDebug** *(new, testing)* | `.view hud`: your view's angles on screen, live; `.view buffer`: keeps the last 25 s of your view's angles, `.view dump` saves them to find why the weapon gets stuck at an angle after slow mouse moves. Changes nothing | Only reads your own view |
+| **ViewDebug** *(new, testing)* | `.view hud`: your view's angles on screen, live; `.view buffer`: keeps the last 25 s of your view's angles, `.view dump` saves them, `.view read` shows where your aim got stuck to find why the weapon gets stuck at an angle after slow mouse moves. Changes nothing | Only reads your own view |
 | **NotSoShaky** | Softer camera shake when you're hit | Only your view |
 | **MISERY_StructuralFreedom** | Relaxed building support rules; normal placement rules still apply | Everyone needs it |
 
@@ -217,7 +217,7 @@ git stash; git pull
   `.headbob scan` (walk, then run), `.reticle scan` or `.stats scan` and send the lines.
 - **[WhistleRange]**: hosting, "sent to players up to no limit away" lines appear as players join. If joined players
   still don't hear far whistles, whistle once, then run `.whistle scan` and send the lines.
-- **[ViewDebug]**: run `.view buffer` and play; when the weapon gets stuck at an angle, run `.view dump`. Send the `buffer_*.csv` from `ue4ss\Mods\ViewDebug`.
+- **[ViewDebug]**: run `.view buffer` and play; when the weapon gets stuck at an angle, run `.view dump`, then `.view read` to see it. Send the `buffer_*.csv` from `ue4ss\Mods\ViewDebug`.
 - **[WorldTweaks] / [ModMenu] ... config.lua ignored**: your `config.lua` has a mistake; the log says what.
 
 If something is broken, please open an issue and include those lines.

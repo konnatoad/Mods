@@ -2,6 +2,17 @@
 
 ---
 
+## 0.6.0 (2026-10-13)
+
+### Reading Dumps In Game
+- `.view dumps` lists the dumps and recordings you've saved, newest first, numbered
+- `.view read` shows the newest one on screen (left side); `.view read 2` or `.view read <file name>` shows another. `.view read` again closes it. Dumps from before this version aren't numbered: open them by name (`.view read buffer_20261013_200919_1`)
+- It shows the dump's length and every **wall**: a stretch where you kept moving the mouse on one axis but your aim didn't turn on it. For each: when, left/right or up/down, the angle it stuck at, how long, how much you pushed (and the smallest push), and the movement that broke through. The full list also goes to the log
+- The files stay CSV: the game reads them, and they still open in a spreadsheet
+
+### Walls Instead of Stuck Samples
+- The summary after a dump or recording now lists the walls (same as `.view read`) instead of counting single "the mouse moved but your aim didn't turn" samples. Each axis is checked on its own, a frame without mouse input doesn't end a wall, and looking straight up or down isn't one
+
 ## 0.5.1 (2026-10-13)
 
 - The weapon is back in recordings, the buffer and the readout: its parts' angles and its aim / sway settings, and the same for other things attached to your character (magazine, clothing). The first dump showed the arms never turn relative to the camera, so the stuck angle is most likely on the weapon. (0.4.2 dropped it while chasing the crash, which turned out to be the background timer.) Everything is checked to still exist before every read, and a new weapon is picked up after a swap

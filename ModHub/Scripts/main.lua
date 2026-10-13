@@ -83,6 +83,8 @@ local INFO = {
       commands = { { ".view hud", "Show / hide the angles on screen, live" },
                    { ".view buffer", "Keep the last 25 s of angles (on / off)" },
                    { ".view dump", "Save the last 25 s now" },
+                   { ".view dumps", "List the saved dumps" },
+                   { ".view read [n]", "Show a dump on screen: where your aim got stuck" },
                    { ".view rec [seconds]", "Record the angles from now" },
                    { ".view stop", "Stop recording" }, { ".view mark [note]", "Mark this moment" },
                    { ".view", "Your view's angles now" }, { ".view watch", "Angles in the log, 4 a second" },
