@@ -128,7 +128,7 @@ By hand: copy the mod's `config.example.lua` to `config.lua` and change it; a li
 | RandomEmissions | `randomMin = 1800`, `randomMax = 3600` (seconds), `isSirenEnabled = true`, `sirenMin = 120`, `sirenMax = 300`, `sirenVolume = 3.0` |
 | MISERYModMenu | `allowJoined = true` (hosting: give items and stats to players who ask), `newLook = true` (false: the game's colours), `newLayout = true` (false: the game's layout) |
 | WhistleRange | `rangeMeters = 0` (how far players' characters reach joined players; 0 = no limit, Unreal's own is 150) |
-| ViewDebug | `hudMs = 100` (how often `.view hud` updates), `sampleMs = 16` (how often `.view rec` reads the angles), `maxSeconds = 60` (a recording stops by itself), `bufferSeconds = 25` (how much `.view buffer` keeps), `markKey = "F12"` |
+| ViewDebug | `hudMs = 100` (how often `.view hud` updates), `sampleMs = 16` (how often `.view rec` reads the angles), `maxSeconds = 60` (a recording stops by itself), `bufferSeconds = 25` (how much `.view buffer` keeps), `markKey = ""` (a hotkey that saves the buffer, like `"F12"`; off by default) |
 | StackThemAll | stack size per category: `Ammo_StackSize = 1000`, and 100 for Food, Drink, Consumable, Resource, Plant, Object, BuildPart and Artifact; `onlyStacksChanges = false`; `aphapeticallySorted = true` |
 
 StackThemAll's per-item values (e.g. `Resource_Rubles = 250`) are in `StackThemAll\scripts\stackConfig.lua`.
@@ -217,8 +217,7 @@ git stash; git pull
   `.headbob scan` (walk, then run), `.reticle scan` or `.stats scan` and send the lines.
 - **[WhistleRange]**: hosting, "sent to players up to no limit away" lines appear as players join. If joined players
   still don't hear far whistles, whistle once, then run `.whistle scan` and send the lines.
-- **[ViewDebug]**: run `.view buffer` and play; when the weapon gets stuck at an angle, run `.view dump` (or press
-  F12). Send the `buffer_*.csv` from `ue4ss\Mods\ViewDebug`.
+- **[ViewDebug]**: run `.view buffer` and play; when the weapon gets stuck at an angle, run `.view dump`. Send the `buffer_*.csv` from `ue4ss\Mods\ViewDebug`.
 - **[WorldTweaks] / [ModMenu] ... config.lua ignored**: your `config.lua` has a mistake; the log says what.
 
 If something is broken, please open an issue and include those lines.

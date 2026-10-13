@@ -2,6 +2,10 @@
 
 ---
 
+## 0.4.1 (2026-10-13)
+
+- No hotkey by default: `.view dump` saves the buffer and `.view mark` marks a recording. To use a key as well, set `markKey = "F12"` (or another key) in `config.lua` or in the Mod Hub's settings page
+
 ## 0.4.0 (2026-10-13)
 
 ### Buffer: Save It After It Happens

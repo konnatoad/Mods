@@ -11,18 +11,18 @@
 --                         and their angles, plus every number setting that
 --                         looks like aim / sway / rotation (scan_<time>.txt)
 --   .view buffer [s]      keep the last 25 s of angles (on / off)
---   .view dump            save them now to buffer_<time>.csv (or press F12:
---                         saves 2 s later, so the stuck moment is in it too)
+--   .view dump            save them now to buffer_<time>.csv (or the hotkey,
+--                         if set: saves 2 s later, so the stuck moment is in it)
 --   .view rec [seconds]   record the angles many times a second to
 --                         recording_<time>.csv (stops by itself)
 --   .view stop            stop recording / the buffer
---   .view mark [note]     mark this moment (or press the mark key, F12)
+--   .view mark [note]     mark this moment (markKey in config.lua adds a hotkey)
 --   .view watch           print the main angles to the log 4 times a second
 --
 -- Settings: config.lua (see config.example.lua).
 -- Only reads while recording or watching; it stops itself after a while.
 ------------------------------------------------------------
-local VERSION = "0.4.0"
+local VERSION = "0.4.1"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
@@ -44,7 +44,9 @@ local cfg = UserConfig()
 local SAMPLE_MS = math.max(10, math.floor(tonumber(cfg.sampleMs) or 16))
 local MAX_SECONDS = math.min(600, math.max(5, tonumber(cfg.maxSeconds) or 60))
 local BUFFER_SECONDS = math.min(60, math.max(2, tonumber(cfg.bufferSeconds) or 25))
-local MARK_KEY = tostring(cfg.markKey or "F12")
+local MARK_KEY = tostring(cfg.markKey or "")   -- "" = no hotkey (the default)
+-- "F12 or .view mark" when there's a hotkey, else ".view mark"
+local MARK_HOW = MARK_KEY ~= "" and (MARK_KEY .. " or .view mark") or ".view mark"
 local HUD_MS = math.max(30, math.floor(tonumber(cfg.hudMs) or 100))
 local WATCH_SECONDS = 120
 local MAX_COMPONENTS = 40
@@ -601,12 +603,12 @@ local function Start(mode, arg)
     if mode == "rec" then
         local seconds = math.min(MAX_SECONDS, math.max(1, tonumber(arg) or MAX_SECONDS))
         mine.until_ = now + seconds
-        log(string.format("Recording %d values every %d ms for up to %d s. Press %s (or .view mark) when the view sticks, .view stop to end",
-            #set.cols, SAMPLE_MS, seconds, MARK_KEY))
+        log(string.format("Recording %d values every %d ms for up to %d s. %s when the view sticks, .view stop to end",
+            #set.cols, SAMPLE_MS, seconds, MARK_HOW))
     else
         mine.window = math.min(60, math.max(2, tonumber(arg) or BUFFER_SECONDS))
-        log(string.format("Buffer on: keeping the last %d s. When the view sticks, .view dump saves them (or press %s); .view buffer again turns it off",
-            math.floor(mine.window), MARK_KEY))
+        log(string.format("Buffer on: keeping the last %d s. When the view sticks, .view dump saves them%s; .view buffer again turns it off",
+            math.floor(mine.window), MARK_KEY ~= "" and (" (or press " .. MARK_KEY .. ")") or ""))
     end
     MouseAcquire()
     mine.mouseYaw, mine.mousePitch, mine.mouseCalls = mouse.yaw, mouse.pitch, mouse.calls
@@ -925,7 +927,7 @@ local function HudTick(h)
     local lines = {}
     local title = "VIEW DEBUG"
     if rec and rec.mode == "rec" then title = title .. string.format("   REC %.1f s", now - rec.start)
-    elseif rec then title = title .. (rec.dumpAt and "   SAVING..." or ("   BUFFER (" .. MARK_KEY .. " saves)")) end
+    elseif rec then title = title .. (rec.dumpAt and "   SAVING..." or ("   BUFFER (.view dump saves)")) end
     if h.markUntil and now < h.markUntil then title = title .. "   MARKED: " .. h.markNote end
     table.insert(lines, title)
     local values = {}
@@ -1028,10 +1030,13 @@ RegisterConsoleCommandHandler(".view", function(FullCommand, Parameters)
     return true
 end)
 
-if Key[MARK_KEY] then
+if MARK_KEY == "" then
+    -- no hotkey: .view mark / .view dump
+elseif Key[MARK_KEY] then
     pcall(function() RegisterKeyBind(Key[MARK_KEY], function() Mark("key") end) end)
 else
     log("markKey '" .. MARK_KEY .. "' isn't a key name; use .view mark")
 end
 
-log("Loaded v" .. VERSION .. ": .view buffer keeps the last " .. BUFFER_SECONDS .. " s of your view's angles, " .. MARK_KEY .. " saves them")
+log("Loaded v" .. VERSION .. ": .view buffer keeps the last " .. BUFFER_SECONDS .. " s of your view's angles, .view dump saves them"
+    .. (MARK_KEY ~= "" and (" (or " .. MARK_KEY .. ")") or ""))

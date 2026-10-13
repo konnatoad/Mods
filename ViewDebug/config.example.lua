@@ -13,7 +13,8 @@ return {
     -- How many seconds .view buffer keeps (at most 60)
     bufferSeconds = 25,
 
-    -- Key that marks the moment the view sticks: saves the buffer, or marks
-    -- a recording (UE4SS key name; F11 is the game's fullscreen key)
-    markKey = "F12",
+    -- Hotkey that marks the moment the view sticks: saves the buffer, or marks
+    -- a recording. "" = no hotkey (use .view dump / .view mark). A UE4SS key
+    -- name like "F12" turns it on (F11 is the game's fullscreen key)
+    markKey = "",
 }
