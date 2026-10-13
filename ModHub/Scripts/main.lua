@@ -85,7 +85,7 @@ local INFO = {
                    { ".view dump", "Save the last 25 s now" },
                    { ".view dumps", "List the saved dumps" },
                    { ".view read [n]", "Show a dump on screen: where your aim got stuck" },
-                   { ".view raw [seconds]", "The dump's recorded rows (.view next / .view prev)" },
+                   { ".view raw [seconds]", "The dump's recorded rows (left / right arrow: page)" },
                    { ".view rec [seconds]", "Record the angles from now" },
                    { ".view stop", "Stop recording" }, { ".view mark [note]", "Mark this moment" },
                    { ".view", "Your view's angles now" }, { ".view watch", "Angles in the log, 4 a second" },

@@ -2,6 +2,10 @@
 
 ---
 
+## 0.6.2 (2026-10-13)
+
+- The left / right arrow keys page through `.view raw`. They only do this while the raw rows are on screen; `.view next` / `.view prev` still work
+
 ## 0.6.1 (2026-10-13)
 
 - `.view raw` shows the dump's recorded rows on screen, 30 at a time: time, mouse input (left/right, up/down), how far your aim turned, where your aim and the camera point. Rows where the mouse moved but your aim didn't are marked STUCK, and marks are shown

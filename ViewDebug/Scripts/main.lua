@@ -17,7 +17,8 @@
 --   .view read [n|name]   show a dump on screen: its walls (mouse moving, aim
 --                         stuck), at what angle, for how long; again closes it
 --   .view raw [seconds]   the dump's recorded rows on screen, a page at a
---                         time (.view next / .view prev); STUCK marks a wall
+--                         time (left / right arrow, or .view next / .view prev);
+--                         STUCK marks a wall
 --   .view rec [seconds]   record the angles many times a second to
 --                         recording_<time>.csv (stops by itself)
 --   .view stop            stop recording / the buffer
@@ -28,7 +29,7 @@
 -- Only reads while recording, buffering, showing or watching, every frame
 -- on the game thread (never from a background timer).
 ------------------------------------------------------------
-local VERSION = "0.6.1"
+local VERSION = "0.6.2"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
@@ -1251,7 +1252,7 @@ local function RawPage()
     local rows, t0 = o.rows, o.rows[1].t or 0
     o.first = math.min(math.max(1, o.first), math.max(1, #rows - RAW_ROWS + 1))
     local first = o.first
-    local lines = { string.format("RAW  %s   rows %d-%d of %d   (.view next / .view prev / .view raw <s>)",
+    local lines = { string.format("RAW  %s   rows %d-%d of %d   (left / right arrow: page, .view raw <s>: jump)",
                         o.fileName:gsub("%.csv$", ""), first, math.min(#rows, first + RAW_ROWS - 1), #rows),
                     "       t   mouseY   mouseP     turnY    turnP      aimP      aimY      camP      camY" }
     for i = first, math.min(#rows, first + RAW_ROWS - 1) do
@@ -1269,6 +1270,7 @@ end
 local function ShowRaw()
     local lines = RawPage()
     ReaderShow(lines)
+    if reader then reader.raw = true end   -- the arrow keys page while it's shown
     if not reader then for _, l in ipairs(lines) do log(l) end end   -- no HUD: the log
 end
 
@@ -1379,6 +1381,19 @@ RegisterConsoleCommandHandler(".view", function(FullCommand, Parameters)
     end)
     return true
 end)
+
+-- Left / right arrow page the raw view, only while it's on screen
+for keyName, delta in pairs({ LEFT_ARROW = -1, RIGHT_ARROW = 1 }) do
+    if Key[keyName] then
+        pcall(function()
+            RegisterKeyBind(Key[keyName], function()
+                if reader and reader.raw and opened then
+                    ExecuteInGameThread(function() Page(delta) end)
+                end
+            end)
+        end)
+    end
+end
 
 if MARK_KEY == "" then
     -- no hotkey: .view mark / .view dump
