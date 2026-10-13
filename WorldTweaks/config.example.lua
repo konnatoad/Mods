@@ -7,7 +7,6 @@ return {
     nightLength = 4.0,
 
     -- "" leaves the game's season alone, or "spring", "summer", "autumn", "winter"
-    -- (paused for now: setting it made the seasons cycle; the game's season stays)
     season = "",
 
     -- How bright the night sky is in spring, summer and autumn: game default

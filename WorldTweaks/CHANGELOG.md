@@ -2,6 +2,12 @@
 
 ---
 
+## 1.3.0 (2026-10-13)
+
+### Season Setting Back
+- `season` works again. The seasons cycled because the game's Toggle Season was given the mod menu's speed 1.0 and duration 0: a season lasting no time at all. It now gets the game's own transition speed and season duration (60 and 180), so the season changes like the game changes it
+- Joined players get the host's season again
+
 ## 1.2.2 (2026-10-13)
 
 ### Season Setting Paused
