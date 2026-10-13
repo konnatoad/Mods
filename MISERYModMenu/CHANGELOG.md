@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.7
+
+- The cheats check's timer is a 1 s background tick again: the game-thread timer (LoopInGameThreadWithDelay) of 4.6.5, used by several mods at once, froze the game during normal play. The normal keybinds of 4.6.6 stay
+
+---
+
 ## Version 4.6.6
 
 - Restarting the Mod Menu froze the game right after UE4SS removed its hooks: the next step removes its keys (PageUp, 6-0, `.bind` keys), and it was the only restarted mod using UE4SS's async keybinds. It now uses the normal keybinds like every other mod; the keys work the same

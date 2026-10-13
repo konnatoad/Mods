@@ -163,10 +163,9 @@ pcall(RegisterHook, "/Script/Engine.PlayerController:ClientMessage", OnClientMes
 local isUnloadHooked = false
 local isTickLoopStarted = false
 
--- Repeats fn on the game thread every ms until it returns true: a game-thread
--- timer, like the Mi-8 Cargo Hold's. A background timer that hands its work to
--- the game thread could leave UE4SS waiting forever when the mod was
--- restarted (the game froze). The background timer is only the fallback.
+-- Repeats fn on the game thread every ms until it returns true: a 1 s
+-- background tick that hands fn to the game thread. (Game-thread timers,
+-- LoopInGameThreadWithDelay, in several mods at once froze the game.)
 local function GameLoop(ms, fn)
 	local stopped = false
 	local function tick()
@@ -175,7 +174,6 @@ local function GameLoop(ms, fn)
 		if ok and stop == true then stopped = true end
 		return stopped
 	end
-	if type(LoopInGameThreadWithDelay) == "function" and pcall(LoopInGameThreadWithDelay, ms, tick) then return end
 	LoopAsync(ms, function()
 		if stopped then return true end
 		ExecuteInGameThread(tick)
