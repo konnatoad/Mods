@@ -71,10 +71,6 @@ local INFO = {
                    { ".reticle alpha 50", "50% see-through" }, { ".reticle color reset", "The game's colour" },
                    { ".reticle", "Show the settings" },
                    { ".reticle scan", "If it doesn't work: list what the dot could be" } } },
-    { name = "FieldOfView", title = "Field Of View",
-      about = "Field of view past the game's slider (80-110): sets the game's own setting, so sprinting and aiming work as usual. Only your own game, so co-op is unaffected.",
-      commands = { { ".fov 120", "Field of view 120 (60-130)" }, { ".fov reset", "Back to the game's slider" },
-                   { ".fov", "Show the setting" }, { ".fov scan", "If it doesn't work: what it found" } } },
     { name = "SurvivalStats", title = "Survival Stats",
       about = "A small panel with your exact survival numbers (health, stamina, hunger, thirst, radiation, ...), off until you switch it on. Only reads your own numbers, so it's safe in co-op.",
       commands = { { ".stats", "Panel on / off" }, { ".stats move", "Next position on the screen" },
@@ -476,8 +472,32 @@ end
 -- waiting at that moment to hand work to the game thread, which then never
 -- comes back: restarting from the game thread hung the game now and then.
 local reloading = false
-local function Reload(which, beforeSelf, finished)
+
+-- Whether a mouse-driven screen is open (the inventory, the PageUp menu):
+-- the game shows the cursor for those. Restarting mods while the inventory
+-- was open froze the game (its screen calls hooked functions every frame
+-- while hooks are being removed), so restarts wait until it's closed.
+local cursorController = nil   -- kept while valid: finding it walks every object
+local function CursorShown()
+    local shown = false
+    pcall(function()
+        if not (cursorController and cursorController:IsValid()) then
+            cursorController = nil
+            for _, pc in ipairs(FindAllOf("BP_SGKController_C") or {}) do
+                if pc:IsValid() and pc:IsLocalController() then cursorController = pc break end
+            end
+        end
+        if cursorController then shown = cursorController.bShowMouseCursor == true end
+    end)
+    return shown
+end
+
+local WAIT_FOR_CLOSE_SECONDS = 60
+
+-- notify(text): progress while waiting, for the menu
+local function Reload(which, beforeSelf, finished, notify)
     finished = finished or function() end
+    notify = notify or function() end
     local list = {}
     if which == "changed" or which == "all" then
         local includeSelf = false
@@ -511,32 +531,57 @@ local function Reload(which, beforeSelf, finished)
         return
     end
     reloading = true
-    LoopAsync(10, function()
-        -- background task: every mod but the hub itself
-        local done = 0
-        for _, name in ipairs(list) do
-            if name ~= SELF and Restart(name) then done = done + 1 end
-        end
-        ExecuteInGameThread(function()
-            reloading = false
-            local selfRestart = false
-            if list[#list] == SELF then
-                if beforeSelf then beforeSelf() end
-                if Restart(SELF) then
-                    done = done + 1
-                    selfRestart = true
+    local function Go()
+        LoopAsync(10, function()
+            -- background task: every mod but the hub itself
+            local done = 0
+            for _, name in ipairs(list) do
+                if name ~= SELF and Restart(name) then done = done + 1 end
+            end
+            ExecuteInGameThread(function()
+                reloading = false
+                local selfRestart = false
+                if list[#list] == SELF then
+                    if beforeSelf then beforeSelf() end
+                    if Restart(SELF) then
+                        done = done + 1
+                        selfRestart = true
+                    end
                 end
-            end
-            local msg
-            if #list == 1 then
-                msg = (done == 1 and "Restarted " or "Couldn't restart ") .. list[1]
-            else
-                msg = done .. " of " .. #list .. " mods restarted"
-            end
-            log(msg)
-            finished(msg, selfRestart)
+                local msg
+                if #list == 1 then
+                    msg = (done == 1 and "Restarted " or "Couldn't restart ") .. list[1]
+                else
+                    msg = done .. " of " .. #list .. " mods restarted"
+                end
+                log(msg)
+                finished(msg, selfRestart)
+            end)
+            return true
         end)
-        return true
+    end
+
+    if not CursorShown() then Go() return end
+    local msg = "Close the inventory (or the menu using the mouse): the mods restart as soon as it's closed"
+    log(msg)
+    notify(msg)
+    local waited, started = 0, false
+    LoopAsync(500, function()
+        if started then return true end
+        waited = waited + 0.5
+        ExecuteInGameThread(function()
+            if started or not reloading then return end
+            if not CursorShown() then
+                started = true
+                Go()
+            elseif waited >= WAIT_FOR_CLOSE_SECONDS then
+                started = true
+                reloading = false
+                log("Not restarted: the inventory stayed open")
+                finished("Not restarted: the inventory stayed open")
+            end
+        end)
+        return false
     end)
 end
 
@@ -904,6 +949,9 @@ local function RunReload(which)
     Render()
     Reload(which, function() Close() end, function(msg, selfRestart)
         if selfRestart then return end
+        hub.status = msg
+        if hub.open then Render() end
+    end, function(msg)
         hub.status = msg
         if hub.open then Render() end
     end)

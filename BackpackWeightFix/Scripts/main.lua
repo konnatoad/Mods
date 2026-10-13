@@ -174,8 +174,31 @@ local function FixStuckWeights(verbose)
     return fixed
 end
 
-LoopAsync(checkEverySeconds * 1000, function()
-    ExecuteInGameThread(function() FixStuckWeights(false) end)
+-- Repeats fn on the game thread every ms until it returns true: a 1 s
+-- background tick that hands fn to the game thread. (Game-thread timers,
+-- LoopInGameThreadWithDelay, in several mods at once froze the game.)
+local function GameLoop(ms, fn)
+    local stopped = false
+    local function tick()
+        if stopped then return true end
+        local ok, stop = pcall(fn)
+        if ok and stop == true then stopped = true end
+        return stopped
+    end
+    LoopAsync(ms, function()
+        if stopped then return true end
+        ExecuteInGameThread(tick)
+        return false
+    end)
+end
+
+-- A 1 s tick that does the check every checkEverySeconds
+local secondsSinceCheck = 0
+GameLoop(1000, function()
+    secondsSinceCheck = secondsSinceCheck + 1
+    if secondsSinceCheck < checkEverySeconds then return false end
+    secondsSinceCheck = 0
+    FixStuckWeights(false)
     return false
 end)
 

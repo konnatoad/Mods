@@ -163,6 +163,24 @@ pcall(RegisterHook, "/Script/Engine.PlayerController:ClientMessage", OnClientMes
 local isUnloadHooked = false
 local isTickLoopStarted = false
 
+-- Repeats fn on the game thread every ms until it returns true: a 1 s
+-- background tick that hands fn to the game thread. (Game-thread timers,
+-- LoopInGameThreadWithDelay, in several mods at once froze the game.)
+local function GameLoop(ms, fn)
+	local stopped = false
+	local function tick()
+		if stopped then return true end
+		local ok, stop = pcall(fn)
+		if ok and stop == true then stopped = true end
+		return stopped
+	end
+	LoopAsync(ms, function()
+		if stopped then return true end
+		ExecuteInGameThread(tick)
+		return false
+	end)
+end
+
 local function Setup()
 	if not isUnloadHooked then
 		isUnloadHooked = pcall(RegisterHook, "/Game/Blueprints/BP_GlobalManager.BP_GlobalManager_C:UnloadPreviousLevels", OnUnloadPreviousLevels)
@@ -170,10 +188,7 @@ local function Setup()
 
 	if not isTickLoopStarted then
 		isTickLoopStarted = true
-		LoopAsync(CHECK_EVERY_MS, function()
-			ExecuteInGameThread(function() pcall(OnTick) end)
-			return false
-		end)
+		GameLoop(CHECK_EVERY_MS, function() pcall(OnTick) end)
 	end
 end
 

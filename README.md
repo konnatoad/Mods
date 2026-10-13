@@ -63,7 +63,6 @@ Every mod has a `CHANGELOG.md`; in game, `.mods` → pick a mod → **Changelog*
 | **RandomEmissions** | Emissions at random times, with a siren before each one | The host picks the times; everyone hears the siren |
 | **HeadBob** *(new)* | `.headbob 50`: how much the view bobs while walking and running | Only your view |
 | **ReticleSize** *(new)* | `.reticle 50` (or `.dot 50`): the crosshair dot's size; `.reticle color red` / `alpha 50`: its colour and see-through-ness | Only your screen |
-| **FieldOfView** *(new)* | `.fov 120`: the field of view past the game's 80-110 slider (60-130); sprinting and aiming work as usual | Only your view |
 | **SurvivalStats** *(new)* | `.stats`: a small panel with your exact health, stamina, hunger, thirst, radiation, insanity... Off until you switch it on | Only reads your own numbers |
 | **WhistleRange** *(new)* | Joined players get whistles (and see the other players) from as far away as the host does | Only the host needs it |
 | **NotSoShaky** | Softer camera shake when you're hit | Only your view |
@@ -100,7 +99,7 @@ changes nothing in the host's world.
 | RandomEmissions | The host's game picks the emission times; your siren plays when the host's does |
 | StackThemAll, MISERY_StructuralFreedom | Everyone needs them, with the same settings |
 | WhistleRange | The host's copy widens how far players' characters (and their whistles) are sent; yours does nothing in someone else's world |
-| ModHub, HeadBob, ReticleSize, FieldOfView, SurvivalStats, NotSoShaky | Only change your own game |
+| ModHub, HeadBob, ReticleSize, SurvivalStats, NotSoShaky | Only change your own game |
 
 ## Settings
 
@@ -111,7 +110,6 @@ Most settings are changed in game and saved by the mod:
 | RadiationShield | `.radmenu` (saved to `RadiationShield\settings.txt`) |
 | HeadBob | `.headbob ...` (saved to `HeadBob\settings.txt`) |
 | ReticleSize | `.reticle ...` (saved to `ReticleSize\settings.txt`) |
-| FieldOfView | `.fov ...` (saved to `FieldOfView\settings.txt`) |
 | SurvivalStats | `.stats`, `.stats move` (saved to `SurvivalStats\settings.txt`) |
 | MISERYModMenu key bindings | `.bind <key> <command>` (saved to `MISERYModMenu\bindings.txt`) |
 
@@ -152,7 +150,6 @@ Press `~` in game to open the console. `.mods` shows every mod's commands too.
 | `.reticle 50` / `.dot 50` | Crosshair dot at 50% of its size, 10-400 (`.reticle reset`; `.reticle` shows it) |
 | `.reticle color red` | Crosshair colour: white, red, green, blue, yellow, cyan, magenta, pink, orange, black or hex like `ff8800` (`ff880080` with alpha); `.reticle alpha 50` = 50% see-through; `.reticle color reset` = the game's |
 | `.reticle scan` | If the dot doesn't change: lists the widgets it could be |
-| `.fov 120` | Field of view 120, 60-130 (`.fov reset` gives the game's slider back; `.fov` shows it; `.fov scan` if the view doesn't change) |
 | `.stats` | Survival numbers panel on / off (`.stats move` puts it elsewhere; `.stats scan` if a stat is missing) |
 | `.whistle` | Hosting: the range players' characters are sent to joined players (`.whistle scan` lists whistle things) |
 | `.fixweight` | Fix stuck container weight right now |
@@ -214,8 +211,8 @@ git stash; git pull
 - **[RadiationShield]** "Working: radiation hit X reduced to Y": the shield is cutting radiation. "ignored the
   smaller radiation amount": it switched to its backup method, that's fine. "Indicator unavailable": no badge, the
   shield still works.
-- **[HeadBob]** / **[ReticleSize]** / **[FieldOfView]** / **[SurvivalStats]**: if nothing changes, run
-  `.headbob scan` (walk, then run), `.reticle scan`, `.fov scan` or `.stats scan` and send the lines.
+- **[HeadBob]** / **[ReticleSize]** / **[SurvivalStats]**: if nothing changes, run
+  `.headbob scan` (walk, then run), `.reticle scan` or `.stats scan` and send the lines.
 - **[WhistleRange]**: hosting, "sent to players up to no limit away" lines appear as players join. If joined players
   still don't hear far whistles, whistle once, then run `.whistle scan` and send the lines.
 - **[WorldTweaks] / [ModMenu] ... config.lua ignored**: your `config.lua` has a mistake; the log says what.
@@ -235,7 +232,7 @@ mod adds an entry to its `CHANGELOG.md` with a new version.
 - **StackThemAll, MISERYModMenu, Mi8CargoHold (originally Mi 8 Cargo Hold / ChopperStorage), RandomEmissions,
   MISERY_StructuralFreedom, NotSoShaky**: their original authors. This repository has modified versions; each
   mod's `CHANGELOG.md` says what changed.
-- **ModHub, RadiationShield, WorldTweaks, BackpackWeightFix, HeadBob, ReticleSize, FieldOfView, SurvivalStats,
-  WhistleRange**: made for this repository.
+- **ModHub, RadiationShield, WorldTweaks, BackpackWeightFix, HeadBob, ReticleSize, SurvivalStats, WhistleRange**:
+  made for this repository.
 
 MISERY is a game by its developers. This project isn't affiliated with them.

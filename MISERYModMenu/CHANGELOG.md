@@ -2,6 +2,44 @@
 
 ---
 
+## Version 4.6.8
+
+- Back to the code of 4.6.1, the last version restarting the Mod Menu never froze the game in, to find which later change made restarts freeze after the PageUp menu was used (4.6.2's changes come back one at a time once that's known)
+
+---
+
+## Version 4.6.7
+
+- The cheats check's timer is a 1 s background tick again: the game-thread timer (LoopInGameThreadWithDelay) of 4.6.5, used by several mods at once, froze the game during normal play. The normal keybinds of 4.6.6 stay
+
+---
+
+## Version 4.6.6
+
+- Restarting the Mod Menu froze the game right after UE4SS removed its hooks: the next step removes its keys (PageUp, 6-0, `.bind` keys), and it was the only restarted mod using UE4SS's async keybinds. It now uses the normal keybinds like every other mod; the keys work the same
+
+---
+
+## Version 4.6.5
+
+- The cheats check's timer now runs on the game thread (like the Mi-8 Cargo Hold's, which never froze). Background timers that hand their work to the game thread could leave UE4SS waiting forever when mods were restarted, freezing the game
+
+---
+
+## Version 4.6.4
+
+- Restarting the Mod Menu could freeze the game for a few seconds: UE4SS can only stop a mod once its timers wake up, and the check that switches cheats on slept 5 s. It now ticks every second (still checking every 5 s)
+
+---
+
+## Version 4.6.3
+
+### Restarting No Longer Hangs the Game
+- Restarting the Mod Menu (Mod Hub's Restart, `.reloadmods`) could hang the game, mostly after using the PageUp menu: UE4SS froze while removing the Mod Menu's NotifyOnNewObject watches (for new controllers, inventories and characters). No other mod used those
+- The watches are gone: switching the game's cheats on and building the item list now happen when the player spawns (`ClientRestart`, like the other mods), and right away when the Mod Menu is restarted in a world
+
+---
+
 ## Version 4.6.2
 
 ### Performance

@@ -2,6 +2,18 @@
 
 ---
 
+## 1.2.5 (2026-10-13)
+
+- Its timer is a 1 s background tick again: the game-thread timer (LoopInGameThreadWithDelay) of the previous version, used by several mods at once, froze the game during normal play
+
+## 1.2.4 (2026-10-13)
+
+- Its timer now runs on the game thread (like the Mi-8 Cargo Hold's, which never froze). Background timers that hand their work to the game thread could leave UE4SS waiting forever when mods were restarted, freezing the game
+
+## 1.2.3 (2026-10-13)
+
+- Restarting the mod (Mod Hub, `.reloadmods`) could freeze the game for up to 30 s: UE4SS can only stop a mod once its timer wakes up, and this one slept 30 s. It now ticks every second and checks every `checkEverySeconds` as before
+
 ## 1.2.1 (2026-10-12)
 
 ### Performance

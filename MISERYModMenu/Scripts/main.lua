@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6 (patched for current game version)
+    MISERY Mod Menu v4.6.8 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -965,17 +965,13 @@ local function ScaleWidgetForScreen(widget)
 end
 
 -- Get cheat menu widget via InventoryHUD property (WD_CheatMenu_C no longer standalone)
--- The HUD is kept while valid: finding it walks every object in the game,
--- which every PageUp did. A level load makes a new HUD; the next call looks again.
 local function GetCheatMenuWidget()
     local cheatMenu = nil
     pcall(function()
-        if not Coop.Valid(Coop.hud) then
-            Coop.hud = nil
-            local huds = FindAllOf("BP_InventoryHUD_C")
-            if huds and #huds > 0 then Coop.hud = huds[1] end
+        local huds = FindAllOf("BP_InventoryHUD_C")
+        if huds and #huds > 0 then
+            pcall(function() cheatMenu = huds[1].CheatMenu end)
         end
-        if Coop.hud then cheatMenu = Coop.hud.CheatMenu end
     end)
     return cheatMenu
 end
@@ -1272,7 +1268,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6 ===")
+    Log("=== MISERY Mod Menu v4.6.8 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -7822,8 +7818,7 @@ pcall(function()
     NotifyOnNewObject("/Script/Engine.PlayerController", function(controller)
         -- Delay slightly to let game initialize
         LoopAsync(1000, function()
-            -- game objects only on the game thread (timers run beside it)
-            ExecuteInGameThread(function() pcall(TryAutoEnableCheats) end)
+            TryAutoEnableCheats()
             return true  -- Run once
         end)
     end)
@@ -7833,14 +7828,12 @@ end)
 pcall(function()
     NotifyOnNewObject("/Game/SurvivalGameKitV2/Components/BP_PlayerInventory.BP_PlayerInventory_C", function(inv)
         LoopAsync(500, function()
-            ExecuteInGameThread(function()
-                pcall(TryAutoEnableCheats)
-                -- Also build item cache
-                if not CachedItems then
-                    BuildItemCache()
-                    Log("[Auto] Item cache ready!")
-                end
-            end)
+            TryAutoEnableCheats()
+            -- Also build item cache
+            if not CachedItems then
+                BuildItemCache()
+                Log("[Auto] Item cache ready!")
+            end
             return true
         end)
     end)
@@ -7850,23 +7843,18 @@ end)
 pcall(function()
     NotifyOnNewObject("/Game/SurvivalGameKitV2/Blueprints/Characters/BP_SGKMasterCharacter.BP_SGKMasterCharacter_C", function(char)
         LoopAsync(500, function()
-            ExecuteInGameThread(function() pcall(TryAutoEnableCheats) end)
+            TryAutoEnableCheats()
             return true
         end)
     end)
 end)
 
--- Fallback: every 5 seconds until cheats are enabled. Each look for the
--- player walks every object in the game, and at the main menu there is no
--- player to find, so with the watchers above it only runs once they have
--- found the player.
+-- Fallback: Periodic check every 5 seconds until cheats are enabled
 LoopAsync(5000, function()
     if autoEnableDone then
         return true  -- Stop checking
     end
-    ExecuteInGameThread(function()
-        if Coop.Valid(Coop.ctrl) or not HAS_NotifyOnNewObject then pcall(TryAutoEnableCheats) end
-    end)
+    TryAutoEnableCheats()
     return false  -- Keep checking
 end)
 
@@ -8162,7 +8150,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6 Loaded!")
+Log("  MISERY Mod Menu v4.6.8 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")
