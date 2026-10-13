@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6 (patched for current game version)
+    MISERY Mod Menu v4.6.3 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -70,7 +70,6 @@ local HAS_ExecuteInGameThread = ValidateAPI("ExecuteInGameThread")
 local HAS_ForEachUObject = ValidateAPI("ForEachUObject")
 local HAS_FindAllOf = ValidateAPI("FindAllOf")
 local HAS_LoopAsync = ValidateAPI("LoopAsync")
-local HAS_NotifyOnNewObject = ValidateAPI("NotifyOnNewObject")
 local HAS_ExecuteConsoleCommand = ValidateAPI("ExecuteConsoleCommand")
 
 -- Wrapper for keybind registration with error handling
@@ -1272,7 +1271,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6 ===")
+    Log("=== MISERY Mod Menu v4.6.3 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -7817,55 +7816,49 @@ local function TryAutoEnableCheats()
     end
 end
 
--- Watch for player controller creation
+-- When the player spawns (a world loads, or after dying): switch the game's
+-- cheats on and build the item cache. This used NotifyOnNewObject (watching
+-- for new controllers, inventories and characters); UE4SS couldn't stop a mod
+-- holding those while the game was making objects, so restarting the Mod
+-- Menu (Mod Hub, .reloadmods) hung the game now and then.
+local function OnPlayerReady()
+    pcall(TryAutoEnableCheats)
+    if not CachedItems then
+        BuildItemCache()
+        Log("[Auto] Item cache ready!")
+    end
+end
+
 pcall(function()
-    NotifyOnNewObject("/Script/Engine.PlayerController", function(controller)
-        -- Delay slightly to let game initialize
-        LoopAsync(1000, function()
+    RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
+        Coop.inWorld = true
+        LoopAsync(500, function()
             -- game objects only on the game thread (timers run beside it)
-            ExecuteInGameThread(function() pcall(TryAutoEnableCheats) end)
-            return true  -- Run once
-        end)
-    end)
-end)
-
--- Watch for inventory creation (means player is in-game)
-pcall(function()
-    NotifyOnNewObject("/Game/SurvivalGameKitV2/Components/BP_PlayerInventory.BP_PlayerInventory_C", function(inv)
-        LoopAsync(500, function()
-            ExecuteInGameThread(function()
-                pcall(TryAutoEnableCheats)
-                -- Also build item cache
-                if not CachedItems then
-                    BuildItemCache()
-                    Log("[Auto] Item cache ready!")
-                end
-            end)
+            ExecuteInGameThread(OnPlayerReady)
             return true
         end)
     end)
 end)
 
--- Also try on game character spawn
-pcall(function()
-    NotifyOnNewObject("/Game/SurvivalGameKitV2/Blueprints/Characters/BP_SGKMasterCharacter.BP_SGKMasterCharacter_C", function(char)
-        LoopAsync(500, function()
-            ExecuteInGameThread(function() pcall(TryAutoEnableCheats) end)
-            return true
-        end)
-    end)
+-- Restarted in a world (Mod Hub, .reloadmods): no spawn comes, so now
+ExecuteInGameThread(function()
+    local pc = nil
+    pcall(function() pc = FindFirstOf("PlayerController") end)
+    if pc and pc:IsValid() then
+        Coop.inWorld = true
+        OnPlayerReady()
+    end
 end)
 
 -- Fallback: every 5 seconds until cheats are enabled. Each look for the
 -- player walks every object in the game, and at the main menu there is no
--- player to find, so with the watchers above it only runs once they have
--- found the player.
+-- player to find, so it only runs once a player has spawned.
 LoopAsync(5000, function()
     if autoEnableDone then
         return true  -- Stop checking
     end
     ExecuteInGameThread(function()
-        if Coop.Valid(Coop.ctrl) or not HAS_NotifyOnNewObject then pcall(TryAutoEnableCheats) end
+        if Coop.inWorld or Coop.Valid(Coop.ctrl) then pcall(TryAutoEnableCheats) end
     end)
     return false  -- Keep checking
 end)
@@ -8162,7 +8155,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6 Loaded!")
+Log("  MISERY Mod Menu v4.6.3 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")

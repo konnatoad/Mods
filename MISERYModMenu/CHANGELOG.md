@@ -2,6 +2,14 @@
 
 ---
 
+## Version 4.6.3
+
+### Restarting No Longer Hangs the Game
+- Restarting the Mod Menu (Mod Hub's Restart, `.reloadmods`) could hang the game, mostly after using the PageUp menu: UE4SS froze while removing the Mod Menu's NotifyOnNewObject watches (for new controllers, inventories and characters). No other mod used those
+- The watches are gone: switching the game's cheats on and building the item list now happen when the player spawns (`ClientRestart`, like the other mods), and right away when the Mod Menu is restarted in a world
+
+---
+
 ## Version 4.6.2
 
 ### Performance
