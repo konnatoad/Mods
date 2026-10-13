@@ -2,6 +2,12 @@
 
 ---
 
+## 0.6.1 (2026-10-13)
+
+- `.view raw` shows the dump's recorded rows on screen, 30 at a time: time, mouse input (left/right, up/down), how far your aim turned, where your aim and the camera point. Rows where the mouse moved but your aim didn't are marked STUCK, and marks are shown
+- `.view raw` opens at the first wall (or the start); `.view raw 12.5` opens at 12.5 s. `.view next` / `.view prev` page through, `.view read` closes it
+- Works on the dump last opened with `.view read`, or the newest. Without a HUD (not in a world) the rows go to the log
+
 ## 0.6.0 (2026-10-13)
 
 ### Reading Dumps In Game

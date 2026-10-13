@@ -16,6 +16,8 @@
 --   .view dumps           list the saved dumps, newest first
 --   .view read [n|name]   show a dump on screen: its walls (mouse moving, aim
 --                         stuck), at what angle, for how long; again closes it
+--   .view raw [seconds]   the dump's recorded rows on screen, a page at a
+--                         time (.view next / .view prev); STUCK marks a wall
 --   .view rec [seconds]   record the angles many times a second to
 --                         recording_<time>.csv (stops by itself)
 --   .view stop            stop recording / the buffer
@@ -26,7 +28,7 @@
 -- Only reads while recording, buffering, showing or watching, every frame
 -- on the game thread (never from a background timer).
 ------------------------------------------------------------
-local VERSION = "0.6.0"
+local VERSION = "0.6.1"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
@@ -1190,8 +1192,10 @@ local function LoadDump(fileName)
             local c = SplitCsv(line)
             local function num(k) return header[k] and tonumber(c[header[k]]) or nil end
             local row = { t = num("t"), dYaw = num("dYaw"), dPitch = num("dPitch"), mYaw = num("mouseYaw"),
-                          mPitch = num("mousePitch"), mCalls = num("mouseCalls"), P = num("ctrl.P"), Y = num("ctrl.Y") }
+                          mPitch = num("mousePitch"), mCalls = num("mouseCalls"), P = num("ctrl.P"), Y = num("ctrl.Y"),
+                          camP = num("cam.P"), camY = num("cam.Y") }
             local mark = header.mark and c[header.mark] or ""
+            if mark ~= "" then row.mark = mark end
             if mark ~= "" then table.insert(marks, { t = row.t, note = mark }) end
             table.insert(rows, row)
         end
@@ -1220,20 +1224,86 @@ end
 
 local MAX_SHOWN_WALLS = 10
 
-local function ReadDump(name)
-    if reader and (not name or name == "") then ReaderClose() log("Dump closed") return end
+local opened = nil   -- { fileName, rows, marks, walls, page } of the dump last read
+
+-- Loads a dump (see FindDump for name) into opened; false if there's none
+local function OpenDump(name)
     local fileName, list = FindDump(name)
     if not fileName then
         if #list == 0 and (not name or name == "") then log("No dumps yet: .view buffer, then .view dump")
         else log("No dump '" .. tostring(name) .. "' - .view dumps lists them") end
-        return
+        return false
     end
     local rows, marks = LoadDump(fileName)
-    if not rows or #rows == 0 then log("Couldn't read " .. fileName) return end
+    if not rows or #rows == 0 then log("Couldn't read " .. fileName) return false end
+    opened = { fileName = fileName, rows = rows, marks = marks, walls = Walls(rows), first = 1 }
+    return true
+end
+
+local RAW_ROWS = 30
+
+local function Num3(v) return v and string.format("%8.3f", v) or "       -" end
+
+-- One page of the raw rows: time, mouse input, how far the aim turned, where
+-- the aim and camera point. STUCK: the mouse moved on an axis, the aim didn't
+local function RawPage()
+    local o = opened
+    local rows, t0 = o.rows, o.rows[1].t or 0
+    o.first = math.min(math.max(1, o.first), math.max(1, #rows - RAW_ROWS + 1))
+    local first = o.first
+    local lines = { string.format("RAW  %s   rows %d-%d of %d   (.view next / .view prev / .view raw <s>)",
+                        o.fileName:gsub("%.csv$", ""), first, math.min(#rows, first + RAW_ROWS - 1), #rows),
+                    "       t   mouseY   mouseP     turnY    turnP      aimP      aimY      camP      camY" }
+    for i = first, math.min(#rows, first + RAW_ROWS - 1) do
+        local r = rows[i]
+        local stuck = ((r.mYaw or 0) ~= 0 and r.dYaw == 0)
+            or ((r.mPitch or 0) ~= 0 and r.dPitch == 0 and not (r.P and math.abs(Wrap(r.P)) > 89.5))
+        table.insert(lines, string.format("%8.3f %s %s  %s %s  %s %s  %s %s%s%s",
+            (r.t or 0) - t0, Num3(r.mYaw), Num3(r.mPitch), Num3(r.dYaw), Num3(r.dPitch),
+            Num3(r.P and Wrap(r.P)), Num3(r.Y), Num3(r.camP and Wrap(r.camP)), Num3(r.camY),
+            stuck and "  STUCK" or "", r.mark and ("  mark: " .. r.mark) or ""))
+    end
+    return lines
+end
+
+local function ShowRaw()
+    local lines = RawPage()
+    ReaderShow(lines)
+    if not reader then for _, l in ipairs(lines) do log(l) end end   -- no HUD: the log
+end
+
+-- .view raw [seconds]: page at that time (default: the first wall, or the start)
+local function Raw(at)
+    if not opened and not OpenDump(nil) then return end
+    local rows, t0 = opened.rows, opened.rows[1].t or 0
+    local target = tonumber(at)
+    if not target and #opened.walls > 0 then target = opened.walls[1].from end
+    local index = 1
+    if target then
+        for i, r in ipairs(rows) do
+            if (r.t or 0) - t0 >= target then index = i break end
+            index = i
+        end
+        index = math.max(1, index - 3)   -- a few rows before it
+    end
+    opened.first = index
+    ShowRaw()
+end
+
+local function Page(delta)
+    if not opened then log("No dump open - .view read or .view raw first") return end
+    opened.first = opened.first + delta * RAW_ROWS
+    ShowRaw()
+end
+
+local function ReadDump(name)
+    if reader and (not name or name == "") then ReaderClose() log("Dump closed") return end
+    if not OpenDump(name) then return end
+    local fileName, rows, marks = opened.fileName, opened.rows, opened.marks
     local seconds = (rows[#rows].t or 0) - (rows[1].t or 0)
     local inputs = 0
     for _, row in ipairs(rows) do inputs = inputs + (row.mCalls or 0) end
-    local walls = Walls(rows)
+    local walls = opened.walls
 
     local lines = { string.format("DUMP  %s", fileName:gsub("%.csv$", "")),
                     string.format("%.1f s, %d samples, %d mouse inputs", seconds, #rows, inputs), "" }
@@ -1250,7 +1320,7 @@ local function ReadDump(name)
     end
     for _, m in ipairs(marks) do table.insert(lines, string.format("mark at %.2f s: %s", m.t - (rows[1].t or 0), m.note)) end
     table.insert(lines, "")
-    table.insert(lines, ".view read again closes this")
+    table.insert(lines, ".view raw: the recorded rows   .view read again closes this")
 
     log("Read " .. fileName .. string.format(": %.1f s, %d samples, %d mouse inputs, %d wall(s)", seconds, #rows, inputs, #walls))
     for _, w in ipairs(walls) do log("  wall: " .. WallText(w)) end
@@ -1296,12 +1366,15 @@ RegisterConsoleCommandHandler(".view", function(FullCommand, Parameters)
         elseif a == "dump" then DumpNow()
         elseif a == "dumps" or a == "list" then ListDumps()
         elseif a == "read" or a == "open" then ReadDump(args[2])
+        elseif a == "raw" then Raw(args[2])
+        elseif a == "next" then Page(1)
+        elseif a == "prev" or a == "back" then Page(-1)
         elseif a == "stop" then
             if rec then Finish("stopped") else log("Not recording") end
         elseif a == "watch" then Watch()
         elseif a == "hud" or a == "show" then HudToggle()
         else
-            log(".view | .view hud | .view buffer [seconds] | .view dump | .view dumps | .view read [n] | .view rec [seconds] | .view stop | .view mark [note] | .view watch | .view scan")
+            log(".view | .view hud | .view buffer [seconds] | .view dump | .view dumps | .view read [n] | .view raw [s] | .view next / prev | .view rec [seconds] | .view stop | .view mark [note] | .view watch | .view scan")
         end
     end)
     return true
