@@ -47,6 +47,7 @@ for key, value in pairs(UserConfig()) do Config[key] = value end
 if Config.nightSkyLight == false then Config.nightSkyLight = nil end   -- false = keep the game's value
 
 local WEATHER_MANAGER = "BP_MultiplayerDynamicWeatherManager_C"
+local WEATHER_MANAGER_PATH = "/Game/MultiplayerDynamicWeatherSystem/Blueprints/BP_MultiplayerDynamicWeatherManager.BP_MultiplayerDynamicWeatherManager_C"
 local WEATHER_TABLE = "/Game/MultiplayerDynamicWeatherSystem/Blueprints/DT_Weather.DT_Weather"
 local DUMP_PATH = "./ue4ss/Mods/WorldTweaks/weather_dump.txt"
 -- E_Seasons enum (from the mod menu's .season command)
@@ -55,7 +56,7 @@ local SEASONS = { spring = 0, summer = 1, autumn = 2, fall = 2, winter = 3 }
 local applyRunning = false
 local askedFor = nil          -- joined: the weather manager we asked the host about
 local hostAnswered = false
-local seasonAppliedTo = nil   -- address of the weather manager the season was set on
+local seasonPausedSaid = false
 
 local function log(msg)
     print("[WorldTweaks] " .. tostring(msg) .. "\n")
@@ -209,14 +210,12 @@ local function Apply()
         wm["Night Length"] = Config.nightLength
     end)
 
-    local seasonIndex = SEASONS[string.lower(Config.season or "")]
-    local address = AddressOf(wm)
-    if seasonIndex and address ~= seasonAppliedTo then
-        -- once per loaded world, so respawning doesn't restart the transition
-        if pcall(function() wm["Toggle Season"](wm, seasonIndex, 1.0, 0) end) then
-            seasonAppliedTo = address
-            log("Season set to " .. Config.season)
-        end
+    -- The season is paused: Toggle Season with (season, 1.0, 0), the mod
+    -- menu's values, set the seasons cycling quickly. Until it's known which of
+    -- its values does that (.worldinfo lists them), it isn't called.
+    if SEASONS[string.lower(Config.season or "")] and not seasonPausedSaid then
+        seasonPausedSaid = true
+        log("Season setting paused in this version (it made the seasons cycle). Run .worldinfo and send the lines")
     end
 
     if okLength then
@@ -301,10 +300,8 @@ local function OnClientMessage(selfParam, textParam)
         wm["Day Length"] = day
         wm["Night Length"] = night
     end)
-    local address = AddressOf(wm)
-    if season and season >= 0 and address ~= seasonAppliedTo then
-        if pcall(function() wm["Toggle Season"](wm, season, 1.0, 0) end) then seasonAppliedTo = address end
-    end
+    -- the host's season isn't applied while the season setting is paused
+    -- (see Apply); the host's game decides the season of its world anyway
     log(string.format("Using the host's day length %.1f, night length %.1f", day, night))
 end
 
@@ -339,12 +336,32 @@ end
 local INFO_FIELDS = {
     "Day Length", "Night Length", "Current Time",
     "Season", "Current Season", "Season Length", "Days Per Season", "Season Duration",
+    "Season Speed", "Seasons Speed", "Season Transition Speed", "Transition Speed", "Season Progress",
+    "Season Alpha", "Season Time", "Target Season", "Next Season", "Previous Season", "Is Changing Season",
+    "Changing Season", "Season Transition", "Auto Season", "Automatic Seasons", "Cycle Seasons",
     "Day", "Month", "Year", "Current Day", "Current Month", "Days In Month", "Month Length",
 }
 RegisterConsoleCommandHandler(".worldinfo", function()
     ExecuteInGameThread(function()
         local wm = FindWeatherManager()
         if not wm then log("Weather manager not found - load a world first") return end
+        -- what Toggle Season takes (its parameters: names and types)
+        pcall(function()
+            local fn = StaticFindObject(WEATHER_MANAGER_PATH .. ":Toggle Season")
+            if not (fn and fn:IsValid()) then log("  Toggle Season: not found") return end
+            local params = {}
+            fn:ForEachProperty(function(prop)
+                local isParam = false
+                pcall(function() isParam = prop:HasAnyPropertyFlags(0x80) end)   -- CPF_Parm
+                if isParam then
+                    local name, kind = "?", "?"
+                    pcall(function() name = prop:GetFName():ToString() end)
+                    pcall(function() kind = prop:GetClass():GetFName():ToString() end)
+                    table.insert(params, name .. " (" .. kind .. ")")
+                end
+            end)
+            log("  Toggle Season takes: " .. table.concat(params, ", "))
+        end)
         for _, name in ipairs(INFO_FIELDS) do
             local ok, value = pcall(function() return wm[name] end)
             if ok and (type(value) == "number" or type(value) == "boolean") then
