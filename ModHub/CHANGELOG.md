@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.7 (2026-10-13)
+
+- Knows the new Anomaly Fix mod and its `.anomaly scan`
+
 ## 1.4.6 (2026-10-13)
 
 - Field Of View is gone from the list: the mod was removed (calling the game's functions every second, it froze the game when mods were restarted)
