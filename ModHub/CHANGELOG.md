@@ -2,6 +2,13 @@
 
 ---
 
+## 1.4.4 (2026-10-13)
+
+### No More Hang on Restart
+- "Restart all mods" sometimes hung the game while the Mod Menu was being stopped. The hub restarted mods from the game thread; stopping a mod waits for it, and a mod with timers (the Mod Menu) can be waiting at that moment to hand work to the game thread, so each waited for the other forever
+- Mods are now restarted from a background task, which leaves the game thread free; the menu shows "Restarting..." and then the result. The hub restarts itself last, as before
+- Starting another restart while one is running is turned down ("Already restarting mods")
+
 ## 1.4.3 (2026-10-13)
 
 - Reticle Size's page: its new colour and alpha commands
