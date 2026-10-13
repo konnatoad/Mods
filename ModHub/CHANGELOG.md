@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.8 (2026-10-13)
+
+- No more "Restart all mods" (and `.reloadmods all`): restarting every mod at once isn't needed. "Restart changed mods" (`.reloadmods`) restarts the ones whose script changed, and each mod's page has "Restart this mod" (`.reloadmods <Name>`)
+
 ## 1.4.6 (2026-10-13)
 
 - Field Of View is gone from the list: the mod was removed (calling the game's functions every second, it froze the game when mods were restarted)
