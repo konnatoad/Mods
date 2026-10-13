@@ -2,6 +2,12 @@
 
 ---
 
+## 1.4.5 (2026-10-13)
+
+### Restarts Wait for the Inventory
+- Restarting mods while the inventory was open froze the game: its screen keeps calling functions that mods hook while UE4SS is removing those hooks
+- With the inventory (or another mouse-driven screen, like the PageUp menu) open, the hub now says "Close the inventory..." and restarts the mods as soon as it's closed. After 60 s it gives up and says so
+
 ## 1.4.4 (2026-10-13)
 
 ### No More Hang on Restart
