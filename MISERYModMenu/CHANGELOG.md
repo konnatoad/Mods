@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.6
+
+- Restarting the Mod Menu froze the game right after UE4SS removed its hooks: the next step removes its keys (PageUp, 6-0, `.bind` keys), and it was the only restarted mod using UE4SS's async keybinds. It now uses the normal keybinds like every other mod; the keys work the same
+
+---
+
 ## Version 4.6.5
 
 - The cheats check's timer now runs on the game thread (like the Mi-8 Cargo Hold's, which never froze). Background timers that hand their work to the game thread could leave UE4SS waiting forever when mods were restarted, freezing the game

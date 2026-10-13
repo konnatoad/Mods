@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.5 (patched for current game version)
+    MISERY Mod Menu v4.6.6 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -64,7 +64,7 @@ local function ValidateAPI(name)
 end
 
 -- Check critical UE4SS APIs
-local HAS_RegisterKeyBindAsync = ValidateAPI("RegisterKeyBindAsync")
+local HAS_RegisterKeyBind = ValidateAPI("RegisterKeyBind")
 local HAS_RegisterConsoleCommandHandler = ValidateAPI("RegisterConsoleCommandHandler")
 local HAS_ExecuteInGameThread = ValidateAPI("ExecuteInGameThread")
 local HAS_ForEachUObject = ValidateAPI("ForEachUObject")
@@ -74,8 +74,8 @@ local HAS_ExecuteConsoleCommand = ValidateAPI("ExecuteConsoleCommand")
 
 -- Wrapper for keybind registration with error handling
 local function SafeRegisterKeyBind(keyEnum, modifiers, callback, keyName)
-    if not HAS_RegisterKeyBindAsync then
-        table.insert(InitErrors, "Cannot bind " .. (keyName or "key") .. ": RegisterKeyBindAsync not available")
+    if not HAS_RegisterKeyBind then
+        table.insert(InitErrors, "Cannot bind " .. (keyName or "key") .. ": RegisterKeyBind not available")
         return false
     end
 
@@ -84,8 +84,11 @@ local function SafeRegisterKeyBind(keyEnum, modifiers, callback, keyName)
         return false
     end
 
+    -- The normal keybinds, like every other mod (the callbacks hand their work
+    -- to the game thread anyway). With RegisterKeyBindAsync, restarting the Mod
+    -- Menu froze the game while UE4SS removed its keys.
     local ok, err = pcall(function()
-        RegisterKeyBindAsync(keyEnum, modifiers or {}, callback)
+        RegisterKeyBind(keyEnum, modifiers or {}, callback)
     end)
 
     if not ok then
@@ -1271,7 +1274,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.5 ===")
+    Log("=== MISERY Mod Menu v4.6.6 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -1392,7 +1395,7 @@ RegisterConsoleCommandHandler(".bind", function(FullCommand, Parameters)
     customBindings[keyName] = { command = command, arg = arg }
 
     -- Register the keybind
-    RegisterKeyBindAsync(keyEnum, {}, function()
+    RegisterKeyBind(keyEnum, {}, function()
         ExecuteInGameThread(function()
             local binding = customBindings[keyName]
             if binding and CommandHandlers[binding.command] and not Coop.Refuse("." .. binding.command) then
@@ -7912,7 +7915,7 @@ SafeRegisterCommand(".diag", function(FullCommand, Parameters)
 
     -- API availability
     Log("API STATUS:")
-    Log("  RegisterKeyBindAsync: " .. (HAS_RegisterKeyBindAsync and "OK" or "MISSING"))
+    Log("  RegisterKeyBind: " .. (HAS_RegisterKeyBind and "OK" or "MISSING"))
     Log("  RegisterConsoleCommandHandler: " .. (HAS_RegisterConsoleCommandHandler and "OK" or "MISSING"))
     Log("  ExecuteInGameThread: " .. (HAS_ExecuteInGameThread and "OK" or "MISSING"))
     Log("  ForEachUObject: " .. (HAS_ForEachUObject and "OK" or "MISSING"))
@@ -8167,7 +8170,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.5 Loaded!")
+Log("  MISERY Mod Menu v4.6.6 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")
