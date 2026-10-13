@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.7 (patched for current game version)
+    MISERY Mod Menu v4.6.8 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -64,18 +64,19 @@ local function ValidateAPI(name)
 end
 
 -- Check critical UE4SS APIs
-local HAS_RegisterKeyBind = ValidateAPI("RegisterKeyBind")
+local HAS_RegisterKeyBindAsync = ValidateAPI("RegisterKeyBindAsync")
 local HAS_RegisterConsoleCommandHandler = ValidateAPI("RegisterConsoleCommandHandler")
 local HAS_ExecuteInGameThread = ValidateAPI("ExecuteInGameThread")
 local HAS_ForEachUObject = ValidateAPI("ForEachUObject")
 local HAS_FindAllOf = ValidateAPI("FindAllOf")
 local HAS_LoopAsync = ValidateAPI("LoopAsync")
+local HAS_NotifyOnNewObject = ValidateAPI("NotifyOnNewObject")
 local HAS_ExecuteConsoleCommand = ValidateAPI("ExecuteConsoleCommand")
 
 -- Wrapper for keybind registration with error handling
 local function SafeRegisterKeyBind(keyEnum, modifiers, callback, keyName)
-    if not HAS_RegisterKeyBind then
-        table.insert(InitErrors, "Cannot bind " .. (keyName or "key") .. ": RegisterKeyBind not available")
+    if not HAS_RegisterKeyBindAsync then
+        table.insert(InitErrors, "Cannot bind " .. (keyName or "key") .. ": RegisterKeyBindAsync not available")
         return false
     end
 
@@ -84,11 +85,8 @@ local function SafeRegisterKeyBind(keyEnum, modifiers, callback, keyName)
         return false
     end
 
-    -- The normal keybinds, like every other mod (the callbacks hand their work
-    -- to the game thread anyway). With RegisterKeyBindAsync, restarting the Mod
-    -- Menu froze the game while UE4SS removed its keys.
     local ok, err = pcall(function()
-        RegisterKeyBind(keyEnum, modifiers or {}, callback)
+        RegisterKeyBindAsync(keyEnum, modifiers or {}, callback)
     end)
 
     if not ok then
@@ -967,17 +965,13 @@ local function ScaleWidgetForScreen(widget)
 end
 
 -- Get cheat menu widget via InventoryHUD property (WD_CheatMenu_C no longer standalone)
--- The HUD is kept while valid: finding it walks every object in the game,
--- which every PageUp did. A level load makes a new HUD; the next call looks again.
 local function GetCheatMenuWidget()
     local cheatMenu = nil
     pcall(function()
-        if not Coop.Valid(Coop.hud) then
-            Coop.hud = nil
-            local huds = FindAllOf("BP_InventoryHUD_C")
-            if huds and #huds > 0 then Coop.hud = huds[1] end
+        local huds = FindAllOf("BP_InventoryHUD_C")
+        if huds and #huds > 0 then
+            pcall(function() cheatMenu = huds[1].CheatMenu end)
         end
-        if Coop.hud then cheatMenu = Coop.hud.CheatMenu end
     end)
     return cheatMenu
 end
@@ -1274,7 +1268,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.7 ===")
+    Log("=== MISERY Mod Menu v4.6.8 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -1395,7 +1389,7 @@ RegisterConsoleCommandHandler(".bind", function(FullCommand, Parameters)
     customBindings[keyName] = { command = command, arg = arg }
 
     -- Register the keybind
-    RegisterKeyBind(keyEnum, {}, function()
+    RegisterKeyBindAsync(keyEnum, {}, function()
         ExecuteInGameThread(function()
             local binding = customBindings[keyName]
             if binding and CommandHandlers[binding.command] and not Coop.Refuse("." .. binding.command) then
@@ -7819,59 +7813,49 @@ local function TryAutoEnableCheats()
     end
 end
 
--- When the player spawns (a world loads, or after dying): switch the game's
--- cheats on and build the item cache. This used NotifyOnNewObject (watching
--- for new controllers, inventories and characters); UE4SS couldn't stop a mod
--- holding those while the game was making objects, so restarting the Mod
--- Menu (Mod Hub, .reloadmods) hung the game now and then.
-local function OnPlayerReady()
-    pcall(TryAutoEnableCheats)
-    if not CachedItems then
-        BuildItemCache()
-        Log("[Auto] Item cache ready!")
-    end
-end
-
+-- Watch for player controller creation
 pcall(function()
-    RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
-        Coop.inWorld = true
+    NotifyOnNewObject("/Script/Engine.PlayerController", function(controller)
+        -- Delay slightly to let game initialize
+        LoopAsync(1000, function()
+            TryAutoEnableCheats()
+            return true  -- Run once
+        end)
+    end)
+end)
+
+-- Watch for inventory creation (means player is in-game)
+pcall(function()
+    NotifyOnNewObject("/Game/SurvivalGameKitV2/Components/BP_PlayerInventory.BP_PlayerInventory_C", function(inv)
         LoopAsync(500, function()
-            -- game objects only on the game thread (timers run beside it)
-            ExecuteInGameThread(OnPlayerReady)
+            TryAutoEnableCheats()
+            -- Also build item cache
+            if not CachedItems then
+                BuildItemCache()
+                Log("[Auto] Item cache ready!")
+            end
             return true
         end)
     end)
 end)
 
--- Restarted in a world (Mod Hub, .reloadmods): no spawn comes, so now
-ExecuteInGameThread(function()
-    local pc = nil
-    pcall(function() pc = FindFirstOf("PlayerController") end)
-    if pc and pc:IsValid() then
-        Coop.inWorld = true
-        OnPlayerReady()
-    end
+-- Also try on game character spawn
+pcall(function()
+    NotifyOnNewObject("/Game/SurvivalGameKitV2/Blueprints/Characters/BP_SGKMasterCharacter.BP_SGKMasterCharacter_C", function(char)
+        LoopAsync(500, function()
+            TryAutoEnableCheats()
+            return true
+        end)
+    end)
 end)
 
--- Fallback: every 5 seconds until cheats are enabled. Each look for the
--- player walks every object in the game, and at the main menu there is no
--- player to find, so it only runs once a player has spawned.
--- (A 1 s tick, checking every 5th: a mod can only be stopped once its timer
--- wakes up, and a long timer froze the game that long on a restart.)
--- A 1 s background tick handing the check to the game thread. (Game-thread
--- timers, LoopInGameThreadWithDelay, in several mods at once froze the game.)
-Coop.fallbackTicks = 0
-Coop.fallbackTick = function()
-    if autoEnableDone then return true end  -- Stop checking
-    Coop.fallbackTicks = Coop.fallbackTicks + 1
-    if Coop.fallbackTicks % 5 ~= 0 then return false end
-    if Coop.inWorld or Coop.Valid(Coop.ctrl) then pcall(TryAutoEnableCheats) end
+-- Fallback: Periodic check every 5 seconds until cheats are enabled
+LoopAsync(5000, function()
+    if autoEnableDone then
+        return true  -- Stop checking
+    end
+    TryAutoEnableCheats()
     return false  -- Keep checking
-end
-LoopAsync(1000, function()
-    if autoEnableDone then return true end
-    ExecuteInGameThread(Coop.fallbackTick)
-    return false
 end)
 
 -- ============================================================
@@ -7911,7 +7895,7 @@ SafeRegisterCommand(".diag", function(FullCommand, Parameters)
 
     -- API availability
     Log("API STATUS:")
-    Log("  RegisterKeyBind: " .. (HAS_RegisterKeyBind and "OK" or "MISSING"))
+    Log("  RegisterKeyBindAsync: " .. (HAS_RegisterKeyBindAsync and "OK" or "MISSING"))
     Log("  RegisterConsoleCommandHandler: " .. (HAS_RegisterConsoleCommandHandler and "OK" or "MISSING"))
     Log("  ExecuteInGameThread: " .. (HAS_ExecuteInGameThread and "OK" or "MISSING"))
     Log("  ForEachUObject: " .. (HAS_ForEachUObject and "OK" or "MISSING"))
@@ -8166,7 +8150,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.7 Loaded!")
+Log("  MISERY Mod Menu v4.6.8 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")

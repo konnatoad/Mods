@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.8
+
+- Back to the code of 4.6.1, the last version restarting the Mod Menu never froze the game in, to find which later change made restarts freeze after the PageUp menu was used (4.6.2's changes come back one at a time once that's known)
+
+---
+
 ## Version 4.6.7
 
 - The cheats check's timer is a 1 s background tick again: the game-thread timer (LoopInGameThreadWithDelay) of 4.6.5, used by several mods at once, froze the game during normal play. The normal keybinds of 4.6.6 stay
