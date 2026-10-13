@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.6 (2026-10-13)
+
+- Field Of View is gone from the list: the mod was removed (calling the game's functions every second, it froze the game when mods were restarted)
+
 ## 1.4.5 (2026-10-13)
 
 ### Restarts Wait for the Inventory
