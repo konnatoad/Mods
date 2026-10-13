@@ -2,6 +2,13 @@
 
 ---
 
+## 1.2.2 (2026-10-13)
+
+### Season Setting Paused
+- Setting a season mid-game made the seasons cycle quickly (summer, autumn, ...): the game's Toggle Season was called with the mod menu's values (speed 1.0, duration 0), and one of them doesn't mean what it was taken for
+- Until that's known, World Tweaks doesn't change the season at all (also not the host's season for joined players); the log says so when `season` is set
+- `.worldinfo` now lists what Toggle Season takes (its parameter names and types) and more of the weather system's season values, to set it up properly
+
 ## 1.2.1 (2026-10-13)
 
 - Changing a setting (in the Mod Hub's Settings, or `config.lua`) and restarting the mod in a world now applies it straight away; before, nothing happened until the next load or respawn
