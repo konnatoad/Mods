@@ -19,7 +19,7 @@
 -- Settings: config.lua (see config.example.lua).
 -- Only reads while recording or watching; it stops itself after a while.
 ------------------------------------------------------------
-local VERSION = "0.2.1"
+local VERSION = "0.2.2"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
@@ -597,7 +597,10 @@ local function SetText(text, s)
 end
 
 -- Panels a previous copy of this mod (.reloadmods) left on the screen
+local leftoversRemoved = false
 local function RemoveLeftovers()
+    if leftoversRemoved then return end
+    leftoversRemoved = true
     pcall(function()
         for _, w in ipairs(FindAllOf("Border") or {}) do
             local name = NameOf(w)
@@ -684,31 +687,54 @@ local function Num(v)
 end
 
 -- Game thread, every HUD_MS while shown
+-- Names of the character's parts in attachment order: changes when you
+-- swap weapons. Only reads properties, so it's cheap enough once a second.
+local function PartsSignature(pawn)
+    local names = {}
+    for _, p in ipairs(ComponentTree(pawn)) do table.insert(names, NameOf(p.comp)) end
+    return table.concat(names, "|")
+end
+
+-- Each update only reads the angles shown and sets the text. Finding your
+-- character's settings, the HUD and building the panel happen only when
+-- something changed (respawn, weapon swap, level load), at most every 2 s.
 local function HudTick(h)
     local now = os.clock()
-    -- (Re)find your character and its parts every few seconds: weapon swaps, respawns
-    if not h.set or not Valid(h.set.pawn) or now - h.built > 5 then
+    local stale = not h.set or not Valid(h.set.pawn)
+    if not stale and now - (h.checked or 0) > 1 then
+        h.checked = now
+        stale = PartsSignature(h.set.pawn) ~= h.signature
+    end
+    if stale then
+        if now - (h.tried or -100) < 2 then return end
+        h.tried = now
         local set = Build(h.set and h.set.pc)
         if not set then
             if h.panel then pcall(function() h.panel:SetVisibility(COLLAPSED) end) end
             return
         end
-        h.set, h.rows, h.built = set, HudRows(set), now
+        h.set, h.rows, h.signature, h.checked = set, HudRows(set), PartsSignature(set.pawn), now
+        if Valid(h.panel) then pcall(function() h.panel:SetVisibility(HIT_TEST_INVISIBLE) end) end
     end
-    local hudObj = nil
-    pcall(function() hudObj = FindFirstOf("BP_InventoryHUD_C") end)
-    if not Valid(hudObj) then return end
-    if hudObj ~= h.hudObj or not Valid(h.panel) then
+    if not Valid(h.hudObj) then
+        if now - (h.hudTried or -100) < 2 then return end
+        h.hudTried = now
+        pcall(function() h.hudObj = FindFirstOf("BP_InventoryHUD_C") end)
+        if not Valid(h.hudObj) then return end
+        h.panel = nil   -- a new HUD (level load): build the panel there
+    end
+    if not Valid(h.panel) then
         HudRemove()
         RemoveLeftovers()
-        local ok, panel, text = pcall(HudBuildPanel, hudObj)
+        local ok, panel, text = pcall(HudBuildPanel, h.hudObj)
         if not ok then
             log("On-screen readout unavailable (" .. tostring(panel) .. ") - .view watch writes it to the log")
             h.stop = true
             if hud == h then hud = nil end
             return
         end
-        h.panel, h.text, h.hudObj = panel, text, hudObj
+        h.panel, h.text, h.lastText = panel, text, nil
+        pcall(function() h.panel:SetVisibility(HIT_TEST_INVISIBLE) end)
     end
 
     local lines = {}
@@ -737,7 +763,6 @@ local function HudTick(h)
         SetText(h.text, s)
         h.lastText = s
     end
-    pcall(function() h.panel:SetVisibility(HIT_TEST_INVISIBLE) end)
 end
 
 local function HudToggle()

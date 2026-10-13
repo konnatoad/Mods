@@ -2,6 +2,11 @@
 
 ---
 
+## 0.2.2 (2026-10-13)
+
+- `.view hud` no longer drops your FPS. Each of its 10 updates a second searched the whole game for the HUD, then rebuilt the panel (and searched every widget for leftovers), and every 5 s it re-read all your character's settings. Now an update only reads the angles shown and sets the text
+- It looks your character up again only when something changed: a respawn, a level load or a weapon swap (checked once a second by reading the names of your character's parts)
+
 ## 0.2.1 (2026-10-13)
 
 - `.view hud` crashed the game (and `.view`, `.view scan` and `.view rec` would have too). Looking for aim and sway settings, the mod read every setting on your character, its animation and weapon, and reading some kinds (links to other objects, event lists) crashes UE4SS. It now checks each setting's type first and reads only numbers, true/false, angles and positions
