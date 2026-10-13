@@ -2,6 +2,12 @@
 
 ---
 
+## 0.5.0 (2026-10-13)
+
+- The buffer still crashed the game after 15-25 seconds. The cause wasn't what it read but how: it took its readings on a background timer 60 times a second, while the mouse listener ran on the game thread every frame. The mod's Lua code running on two threads at once breaks Lua within seconds
+- Now recordings, the buffer, the readout and `.view watch` all run from one of the game's own every-frame events (the controller's, your character's or its animation's), on the game thread, and nothing runs on a background timer. The log says which event it uses ("Running every frame with ..."); it's only hooked while one of them is on
+- If the game has no such event to hook, the log says so and nothing starts
+
 ## 0.4.2 (2026-10-13)
 
 - The buffer crashed the game after a while. Recordings, the buffer and the readout also read things attached to your character that come and go (the weapon, its magazine, clothing): reading one just after the game removes it (reloading, swapping) crashes, and the mod only noticed a removal once a second

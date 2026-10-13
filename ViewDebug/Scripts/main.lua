@@ -20,9 +20,10 @@
 --   .view watch           print the main angles to the log 4 times a second
 --
 -- Settings: config.lua (see config.example.lua).
--- Only reads while recording or watching; it stops itself after a while.
+-- Only reads while recording, buffering, showing or watching, every frame
+-- on the game thread (never from a background timer).
 ------------------------------------------------------------
-local VERSION = "0.4.2"
+local VERSION = "0.5.0"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
@@ -374,6 +375,86 @@ local function MouseRelease()
 end
 
 ------------------------------------------------------------
+-- Every frame, on the game thread
+------------------------------------------------------------
+-- Recordings, the buffer, the readout and watch all run from one of the
+-- game's own every-frame events (hooked while one of them is on), never
+-- from a background timer: Lua code running on a background timer and on
+-- the game thread at the same time crashed the game within seconds.
+-- users[name] = { ms, fn, last }; fn runs at most every ms.
+local ticker = { users = {}, hook = nil }
+
+-- The class's path, e.g. "/Game/.../BP_SGKController.BP_SGKController_C"
+local function ClassPath(obj)
+    local full = ""
+    pcall(function() full = obj:GetClass():GetFullName() end)
+    return full:match("^%S+%s+(/.+)$")
+end
+
+-- Every-frame events a class can have, in the order they're tried: the
+-- controller (lives through deaths), your character, its animations
+local function FrameEvents(set)
+    local list = {}
+    local function try(obj, event)
+        local path = ClassPath(obj)
+        if path then table.insert(list, path .. ":" .. event) end
+    end
+    try(set.pc, "ReceiveTick")
+    try(set.pawn, "ReceiveTick")
+    for _, a in ipairs(set.anims) do try(a.obj, "BlueprintUpdateAnimation") end
+    try(set.pcm, "BlueprintUpdateCamera")
+    return list
+end
+
+local function OnFrame()
+    local now = os.clock()
+    for name, u in pairs(ticker.users) do
+        if (now - u.last) * 1000 >= u.ms - 2 then   -- frames aren't exact: 16 ms ~ every frame at 60 fps
+            u.last = now
+            local ok, err = pcall(u.fn, now)
+            if not ok and not u.warned then u.warned = true log(name .. ": " .. tostring(err)) end
+        end
+    end
+end
+
+local function TickerHook(set)
+    if ticker.hook then return true end
+    for _, path in ipairs(FrameEvents(set)) do
+        local fn = nil
+        pcall(function() fn = StaticFindObject(path) end)
+        if Valid(fn) then
+            local ok, pre, post = pcall(RegisterHook, path, function() OnFrame() end)
+            if ok and pre then
+                ticker.hook = { path, pre, post }
+                log("Running every frame with " .. path:match("([^%.]+)$"))
+                return true
+            end
+        end
+    end
+    log("Found no every-frame event to run from (tried the controller, your character, its animations and the camera)")
+    return false
+end
+
+-- Start running fn every ms. set: a look-up, to find the event to hook
+local function TickerAdd(name, ms, fn, set)
+    if not TickerHook(set) then return false end
+    ticker.users[name] = { ms = ms, fn = fn, last = -100 }
+    return true
+end
+
+-- Stop running it; the hook goes when nothing uses it (removed on a later
+-- frame, never from inside the hook itself)
+local function TickerRemove(name)
+    ticker.users[name] = nil
+    ExecuteInGameThread(function()
+        if next(ticker.users) == nil and ticker.hook then
+            pcall(UnregisterHook, ticker.hook[1], ticker.hook[2], ticker.hook[3])
+            ticker.hook = nil
+        end
+    end)
+end
+
+------------------------------------------------------------
 -- Recording: .view rec (from now on) and .view buffer (the last few
 -- seconds, kept until the mark key saves them)
 ------------------------------------------------------------
@@ -521,6 +602,7 @@ local function Finish(reason)
     if not r then return end
     rec = nil
     r.stop = true
+    TickerRemove("Recording")
     MouseRelease()
     if r.mode == "rec" then
         Write(r, r.rows, "recording", "Recording stopped (" .. reason .. ")")
@@ -620,6 +702,10 @@ local function Start(mode, arg)
     local now = os.clock()
     rec = { mode = mode, set = set, rows = {}, start = now, signature = PartsSignature(set.pawn), checked = now }
     local mine = rec
+    if not TickerAdd("Recording", SAMPLE_MS, function() Sample() end, set) then
+        rec = nil
+        return
+    end
     if mode == "rec" then
         local seconds = math.min(MAX_SECONDS, math.max(1, tonumber(arg) or MAX_SECONDS))
         mine.until_ = now + seconds
@@ -633,19 +719,6 @@ local function Start(mode, arg)
     MouseAcquire()
     mine.mouseYaw, mine.mousePitch, mine.mouseCalls = mouse.yaw, mouse.pitch, mouse.calls
     mouse.fired = {}
-    local busy = false
-    LoopAsync(SAMPLE_MS, function()
-        if mine.stop or rec ~= mine then return true end
-        if not busy then
-            busy = true
-            ExecuteInGameThread(function()
-                local ok, e = pcall(Sample)
-                if not ok and not mine.warned then mine.warned = true log("Recording: " .. tostring(e)) end
-                busy = false
-            end)
-        end
-        return false
-    end)
 end
 
 ------------------------------------------------------------
@@ -686,37 +759,28 @@ local function Snapshot(note)
 end
 
 local function Watch()
-    if watching then watching.stop = true watching = nil log("Watch off") return end
+    if watching then watching = nil TickerRemove("Watch") log("Watch off") return end
     local set, err = Build()
     if not set then log("Can't watch: " .. err) return end
     local meshes = MeshLabels(set)
-    local mine = { stop = false, until_ = os.clock() + WATCH_SECONDS }
+    local mine = { until_ = os.clock() + WATCH_SECONDS }
+    local ok = TickerAdd("Watch", 250, function(now)
+        if watching ~= mine then return end
+        if now >= mine.until_ or not Valid(set.pawn) or not AllValid(set) then
+            watching = nil
+            TickerRemove("Watch")
+            log("Watch off")
+            return
+        end
+        log("watch: " .. Line(set, function(n)
+            if IsMain(n) then return true end
+            local comp = n:match("([^/]+)%.rel%.[PY]$")
+            return comp ~= nil and meshes[comp] == true
+        end))
+    end, set)
+    if not ok then return end
     watching = mine
     log("Watch on for " .. WATCH_SECONDS .. " s (.view watch again to stop)")
-    local busy = false
-    LoopAsync(250, function()
-        if mine.stop then return true end
-        if not busy then
-            busy = true
-            ExecuteInGameThread(function()
-                pcall(function()
-                    if os.clock() >= mine.until_ or not Valid(set.pawn) or not AllValid(set) then
-                        mine.stop = true
-                        if watching == mine then watching = nil end
-                        log("Watch off")
-                        return
-                    end
-                    log("watch: " .. Line(set, function(n)
-                        if IsMain(n) then return true end
-                        local comp = n:match("([^/]+)%.rel%.[PY]$")
-                        return comp ~= nil and meshes[comp] == true
-                    end))
-                end)
-                busy = false
-            end)
-        end
-        return false
-    end)
 end
 
 local function Scan()
@@ -937,7 +1001,7 @@ local function HudTick(h)
         if not ok then
             log("On-screen readout unavailable (" .. tostring(panel) .. ") - .view watch writes it to the log")
             h.stop = true
-            if hud == h then hud = nil MouseRelease() end
+            if hud == h then hud = nil TickerRemove("Readout") MouseRelease() end
             return
         end
         h.panel, h.text, h.lastText = panel, text, nil
@@ -980,35 +1044,23 @@ end
 
 local function HudToggle()
     if hud then
-        hud.stop = true
-        ExecuteInGameThread(MouseRelease)
         local h = hud
         hud = nil
-        ExecuteInGameThread(function()
-            if h.panel then pcall(function() h.panel:RemoveFromParent() end) end
-        end)
+        h.stop = true
+        TickerRemove("Readout")
+        MouseRelease()
+        if h.panel then pcall(function() h.panel:RemoveFromParent() end) end
         log("On-screen readout off")
         return
     end
-    local mine = { stop = false, built = -100 }
-    ExecuteInGameThread(MouseAcquire)
+    local set, err = Build()
+    if not set then log("Can't show the readout: " .. err) return end
+    local now = os.clock()
+    local mine = { stop = false, set = set, rows = HudRows(set), signature = PartsSignature(set.pawn), checked = now }
+    if not TickerAdd("Readout", HUD_MS, function() if not mine.stop then HudTick(mine) end end, set) then return end
+    MouseAcquire()
     hud = mine
     log("On-screen readout on (top right). .view hud again hides it")
-    local busy = false
-    LoopAsync(HUD_MS, function()
-        if mine.stop then return true end
-        if not busy then
-            busy = true
-            ExecuteInGameThread(function()
-                if not mine.stop then
-                    local ok, err = pcall(HudTick, mine)
-                    if not ok and not mine.warned then mine.warned = true log("Readout: " .. tostring(err)) end
-                end
-                busy = false
-            end)
-        end
-        return false
-    end)
 end
 
 ------------------------------------------------------------
