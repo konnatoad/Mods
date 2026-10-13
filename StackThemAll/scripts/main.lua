@@ -1,4 +1,4 @@
-ModName, ModVersion = "Stack Them All", "1.3.1"
+ModName, ModVersion = "Stack Them All", "1.3.2"
 local stackThemAllConfig = require("stackThemAllConfig")
 -- Your own settings go in StackThemAll\config.lua (start from config.example.lua),
 -- not in this file, so `git pull` can always update the mod. config.lua

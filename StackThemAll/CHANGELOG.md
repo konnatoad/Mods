@@ -2,6 +2,10 @@
 
 ---
 
+## 1.3.2 (2026-10-13)
+
+- `config.example.lua` lists every category's stack size (Ammo, Food, Drink, Consumable, Resource, Plant, Object, BuildPart, Artifact) and the sorting option, not just two examples, so the Mod Hub's Settings page shows all of them
+
 ## 1.3.1 (2026-10-13)
 
 - Restarting the mod in a world (`.reloadmods`, or the Mod Hub after a settings change) applies the stack sizes straight away; before, only the next load did

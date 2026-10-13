@@ -129,7 +129,7 @@ By hand: copy the mod's `config.example.lua` to `config.lua` and change it; a li
 | RandomEmissions | `randomMin = 1800`, `randomMax = 3600` (seconds), `isSirenEnabled = true`, `sirenMin = 120`, `sirenMax = 300`, `sirenVolume = 3.0` |
 | MISERYModMenu | `allowJoined = true` (hosting: give items and stats to players who ask), `newLook = true` (false: the game's colours), `newLayout = true` (false: the game's layout) |
 | WhistleRange | `rangeMeters = 0` (how far players' characters reach joined players; 0 = no limit, Unreal's own is 150) |
-| StackThemAll | stack size per category, e.g. `Food_StackSize = 100`, and `onlyStacksChanges = false` (the defaults are in `scripts\stackThemAllConfig.lua`) |
+| StackThemAll | stack size per category: `Ammo_StackSize = 1000`, and 100 for Food, Drink, Consumable, Resource, Plant, Object, BuildPart and Artifact; `onlyStacksChanges = false`; `aphapeticallySorted = true` |
 
 StackThemAll's per-item values (e.g. `Resource_Rubles = 250`) are in `StackThemAll\scripts\stackConfig.lua`.
 The first launch makes it from `stackConfig.default.lua`, and later launches add items from game updates to it.
