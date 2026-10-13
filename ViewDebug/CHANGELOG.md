@@ -2,6 +2,12 @@
 
 ---
 
+## 0.5.1 (2026-10-13)
+
+- The weapon is back in recordings, the buffer and the readout: its parts' angles and its aim / sway settings, and the same for other things attached to your character (magazine, clothing). The first dump showed the arms never turn relative to the camera, so the stuck angle is most likely on the weapon. (0.4.2 dropped it while chasing the crash, which turned out to be the background timer.) Everything is checked to still exist before every read, and a new weapon is picked up after a swap
+- Attached things are named by their kind (`BP_Saiga12_C/...`), so a new copy of the same weapon keeps the same columns
+- "The mouse moved but your aim didn't turn" no longer counts looking straight up or down: pushing further there is ignored on purpose
+
 ## 0.5.0 (2026-10-13)
 
 - The buffer still crashed the game after 15-25 seconds. The cause wasn't what it read but how: it took its readings on a background timer 60 times a second, while the mouse listener ran on the game thread every frame. The mod's Lua code running on two threads at once breaks Lua within seconds

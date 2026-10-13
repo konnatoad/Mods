@@ -23,7 +23,7 @@
 -- Only reads while recording, buffering, showing or watching, every frame
 -- on the game thread (never from a background timer).
 ------------------------------------------------------------
-local VERSION = "0.5.0"
+local VERSION = "0.5.1"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
@@ -267,20 +267,30 @@ local function Build(pc)
         add("cam.FOV", function() return pcm.CameraCachePrivate.POV.FOV end, pcm)
     end
 
-    -- Every part's angle and position relative to what it hangs on. Only
-    -- your character's own parts: things attached to it (weapon, magazine,
-    -- clothing) come and go, and reading one just after it's gone crashes
-    -- the game. .view scan still lists them.
+    -- Every part's angle and position relative to what it hangs on: your
+    -- character's own and those of what's attached to it (weapon, magazine,
+    -- clothing). Attached things come and go; everything read is checked to
+    -- still exist before every read (AllValid), which catches a removed one
+    -- before the game frees it.
     step("your character's parts")
     local parts = ComponentTree(pawn)
-    local animInstances = {}
+    local animInstances, others, seenOwner = {}, {}, {}
     local own = 0
     for _, p in ipairs(parts) do
         local comp = p.comp
         local owner = OwnerOf(comp)
-        local label = NameOf(comp)
-        if Valid(owner) and NameOf(owner) == NameOf(pawn) then
-            own = own + 1
+        if Valid(owner) then
+            local label = NameOf(comp)
+            if NameOf(owner) == NameOf(pawn) then
+                own = own + 1
+            else
+                -- by class (BP_Saiga12_C), so a new copy of the weapon keeps its columns
+                label = ClassName(owner) .. "/" .. label
+                if not seenOwner[NameOf(owner)] then
+                    seenOwner[NameOf(owner)] = true
+                    table.insert(others, owner)
+                end
+            end
             addValue(label .. ".rel", comp, "RelativeRotation", "rot")
             addValue(label .. ".loc", comp, "RelativeLocation", "vec")
             local anim = nil
@@ -288,10 +298,10 @@ local function Build(pc)
             if Valid(anim) then table.insert(animInstances, { label = label, obj = anim }) end
         end
     end
-    step(#parts .. " parts, " .. own .. " of them your character's own")
+    step(#parts .. " parts, " .. own .. " of them your character's own, " .. #others .. " attached things")
 
     -- Settings that sound like aim / sway / rotation on the character, its
-    -- animation (arms sway usually lives there)
+    -- animation (arms sway usually lives there), what's attached (the weapon)
     local function addSettings(prefix, obj)
         step("settings of " .. NameOf(obj) .. " (" .. ClassName(obj) .. ")")
         local n = 0
@@ -305,6 +315,7 @@ local function Build(pc)
     addSettings("pawn", pawn)
     addSettings("ctrl", pc)
     for _, a in ipairs(animInstances) do addSettings("anim[" .. a.label .. "]", a.obj) end
+    for _, obj in ipairs(others) do addSettings(ClassName(obj), obj) end
 
     step("done, " .. #cols .. " values")
     return { pc = pc, pawn = pawn, pcm = pcm, cols = cols, parts = parts, anims = animInstances, objects = objects }
@@ -561,6 +572,9 @@ local function Write(r, rows, prefix, title)
     for _, row in ipairs(rows) do
         mouseCalls = mouseCalls + (row.mCalls or 0)
         local m = math.max(math.abs(row.mYaw or 0), math.abs(row.mPitch or 0))
+        -- looking straight up / down: pushing further is ignored on purpose
+        local pitch = value(row, "ctrl.P")
+        if pitch and math.abs(Wrap(pitch)) > 89.5 then m = math.abs(row.mYaw or 0) end
         local turned = (row.dYaw or 0) ~= 0 or (row.dPitch or 0) ~= 0
         if m > 0 and not turned and row.dYaw ~= nil then
             lost = lost + 1
