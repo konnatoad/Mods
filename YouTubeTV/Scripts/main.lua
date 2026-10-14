@@ -22,7 +22,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.1.4"
+local VERSION = "0.1.5"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -336,17 +336,22 @@ end
 local function NearbyTvs()
     local here = PlayerLocation()
     if not here then return nil, "load into a world first" end
-    local found = {}
-    local actorClass = StaticFindObject("/Script/Engine.Actor")
-    pcall(function()
-        ForEachUObject(function(obj)
-            local isActor = false
-            pcall(function() isActor = obj:IsA(actorClass) end)
-            if isActor and not NameOf(obj):find("^Default__") then
+    -- FindAllOf, not ForEachUObject: walking every object also reaches ones
+    -- the engine is still building or tearing down, and touching one of those
+    -- crashed the game (0.1.4). Each actor is checked before it's read.
+    local actors = {}
+    pcall(function() actors = FindAllOf("Actor") or {} end)
+    local found, near = {}, 0
+    for _, obj in ipairs(actors) do
+        if Valid(obj) and not NameOf(obj):find("^Default__") then
+            local root = nil
+            pcall(function() root = obj.RootComponent end)
+            if Valid(root) then
                 local ok, l = pcall(function() return obj:K2_GetActorLocation() end)
                 if ok and l then
                     local d = Distance(here, l)
                     if d <= SCAN_METERS then
+                        near = near + 1
                         local tv = LooksLikeTv(ClassName(obj)) or LooksLikeTv(NameOf(obj))
                         if not tv then
                             for _, m in ipairs(Meshes(obj)) do
@@ -357,9 +362,9 @@ local function NearbyTvs()
                     end
                 end
             end
-            return false
-        end)
-    end)
+        end
+    end
+    log(string.format("  looked at %d actors, %d within %d m", #actors, near, SCAN_METERS))
     table.sort(found, function(a, b) return a.dist < b.dist end)
     return found
 end
@@ -451,11 +456,18 @@ local function Status()
         if not ok then text = "(error: " .. tostring(v) .. ")"
         elseif type(v) == "userdata" or type(v) == "table" then
             local parts = {}
-            for _, k in ipairs({ "X", "Y", "Ticks" }) do
-                local okk, kv = pcall(function() return v[k] end)
-                if okk and kv ~= nil then table.insert(parts, k .. "=" .. tostring(kv)) end
+            -- names and strings first (an FName answers X / Y with itself)
+            local okS, s = pcall(function() return v:ToString() end)
+            if okS and type(s) == "string" then
+                table.insert(parts, s)
+            else
+                for _, k in ipairs({ "X", "Y", "Ticks" }) do
+                    local okk, kv = pcall(function() return v[k] end)
+                    if okk and (type(kv) == "number" or type(kv) == "string") then
+                        table.insert(parts, k .. "=" .. tostring(kv))
+                    end
+                end
             end
-            if #parts == 0 then pcall(function() table.insert(parts, v:ToString()) end) end
             text = #parts > 0 and table.concat(parts, " ") or tostring(v)
         else text = tostring(v) end
         log(string.format("  %-22s %s", label, text))
@@ -473,7 +485,7 @@ local function Status()
     get("length", function() return p:GetDuration() end)
     get("time", function() return p:GetTime() end)
     get("rate", function() return p:GetRate() end)
-    get("video tracks", function() return p:GetNumTracks(1) end)   -- 1 = video
+    get("video tracks", function() return p:GetNumTracks(6) end)   -- 6 = video
     get("audio tracks", function() return p:GetNumTracks(0) end)   -- 0 = audio
     get("video size", function() return p:GetVideoTrackDimensions(-1, -1) end)
     get("texture size", function() return string.format("%sx%s", tostring(t:GetWidth()), tostring(t:GetHeight())) end)

@@ -2,6 +2,12 @@
 
 ---
 
+## 0.1.5 (2026-10-14)
+
+- `.tv scan` (and `.tv on`) crashed the game: looking for TVs walked through every object in the game, including ones the engine was still building or removing. They now go through the game's list of actors, check each one before reading it, and log how many they looked at
+- `.tv status` shows the decoder's name and the file instead of object addresses, and counts video tracks (it counted caption tracks)
+- Found with `.tv status`: the video does play (ready, playing, 640x360, sound on), so what's left is getting it seen and heard
+
 ## 0.1.4 (2026-10-14)
 
 - `.tv hud` opened the video (the game said yes) but nothing showed or played. `.tv status` asks the player what it's doing: which decoder it picked, ready / preparing / playing, the video's length and time, its tracks and size, the picture's size, and whether the sound is on. If it's ready but not playing, it tells it to play
