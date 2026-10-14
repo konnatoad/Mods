@@ -25,7 +25,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.4.0"
+local VERSION = "0.4.1"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -899,11 +899,18 @@ local function HasOurEntry(box)
     return false, count
 end
 
+-- The first TV menu logs each step before doing it: if the game crashes,
+-- the last line says where (0.4.0 crashed with no line at all)
+local traceSteps = true
+local function Step(what) if traceSteps then log("E menu step: " .. what) end end
+
 local function AddEntry(menu, actor)
+    Step("reading the menu's entry box")
     local box = nil
     pcall(function() box = menu.ContextVerticalBox end)
     if not Valid(box) then return end
     local label = PlayingOn(actor) and LABEL_OFF or LABEL_ON
+    Step("looking for our entry")
     local has, index, existing = HasOurEntry(box)
     if has then
         eMenu.entry, eMenu.index, eMenu.tvActor = existing, index, actor
@@ -912,27 +919,33 @@ local function AddEntry(menu, actor)
     local lib, cls, pc = Find("/Script/UMG.Default__WidgetBlueprintLibrary"), Find(ENTRY_CLASS), LocalController()
     if not (lib and cls and pc) then LogOnce("noparts", "E menu: couldn't find what's needed to add the entry") return end
     local entry = nil
+    Step("creating the entry widget")
     local ok, err = pcall(function() entry = lib:Create(menu, cls, pc) end)
     if not ok or not Valid(entry) then LogOnce("create", "E menu: couldn't create the entry: " .. tostring(err)) return end
     local action = { [E_ACTION_TYPE] = E_TYPE, [E_ACTION_NAME] = FText(label) }
+    Step("filling it in (InitializeEntry)")
     ok, err = pcall(function() entry:InitializeEntry(action, actor, index) end)
     if not ok then LogOnce("init", "E menu: InitializeEntry failed: " .. tostring(err)) return end
+    Step("adding it to the menu")
     ok, err = pcall(function() box:AddChildToVerticalBox(entry) end)
     if not ok then LogOnce("add", "E menu: couldn't add the entry: " .. tostring(err)) return end
     pcall(function() entry:EntrySelected(false) end)
     eMenu.entry, eMenu.index, eMenu.tvActor = entry, index, actor
     LogOnce("added", "E menu: added '" .. label .. "' to the TV's menu (entry " .. index .. ")")
+    traceSteps = false
 end
 
 local function OnMenuBuilt(self, lookAtActor)
+    LogOnce("hookran", "E menu step: the menu hook ran (first time, any object)")
     local menu, actor = nil, nil
     pcall(function() menu = self:get() end)
-    pcall(function() actor = lookAtActor:get() end)
     if not Valid(menu) then return end
+    pcall(function() actor = lookAtActor:get() end)
+    if traceSteps and Valid(actor) then LogOnce("first:" .. NameOf(actor), "E menu step: menu for " .. NameOf(actor)) end
     eMenu.menu = menu
     eMenu.entry, eMenu.index, eMenu.tvActor = nil, nil, nil
     if not IsTv(actor) then return end
-    LogActionTypes()
+    Step("the E menu is for a TV")
     local ok, err = pcall(AddEntry, menu, actor)
     if not ok then LogOnce("adderr", "E menu: " .. tostring(err)) end
 end

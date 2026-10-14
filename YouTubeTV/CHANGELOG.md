@@ -2,6 +2,11 @@
 
 ---
 
+## 0.4.1 (2026-10-14)
+
+- 0.4.0 crashed the game the moment you looked at a TV, without a log line or a crash report. The first thing it did for a TV's menu was ask the engine for the action types' readable names; that's gone (not needed)
+- Until the entry has been added once, every step is logged before it's done ("E menu step: ..."), starting with the menu hook's first call for anything you look at, so a crash shows exactly where
+
 ## 0.4.0 (2026-10-14)
 
 ### TURN ON TV in the E Menu
