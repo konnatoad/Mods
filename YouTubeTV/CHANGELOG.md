@@ -2,6 +2,11 @@
 
 ---
 
+## 0.1.6 (2026-10-14)
+
+- `.tv scan` still crashed the game: going through the game's actor list also reaches actors that are already being removed, and even checking one of those crashes (inside UE4SS's object check). So it doesn't look around any more: **look at the TV**. `.tv scan` and `.tv on` trace a line from your view, like a shot, up to `scanMeters` away, and read only what it hits (the engine just found it, so it exists)
+- `.tv scan` also says which part of it you're looking at, and `.tv on` prefers that part as the screen
+
 ## 0.1.5 (2026-10-14)
 
 - `.tv scan` (and `.tv on`) crashed the game: looking for TVs walked through every object in the game, including ones the engine was still building or removing. They now go through the game's list of actors, check each one before reading it, and log how many they looked at

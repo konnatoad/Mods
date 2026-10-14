@@ -11,9 +11,9 @@
 --   .tv download     downloads the videos in config.lua (yt-dlp, a minimized
 --                    window; the game keeps running) into the videos folder
 --   .tv list         the configured videos and which are downloaded
---   .tv scan         TVs and screens near you, their materials and texture slots
+--   .tv scan         what you're looking at (a TV): its parts, materials, texture slots
 --   .tv hud          plays the first video in a panel on your screen (tests playback)
---   .tv on [n]       plays video n (default 1) on the nearest TV
+--   .tv on [n]       plays video n (default 1) on the TV you're looking at
 --   .tv next         the next video
 --   .tv off          stops it (the HUD panel too)
 --
@@ -22,7 +22,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.1.5"
+local VERSION = "0.1.6"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -266,7 +266,7 @@ local function Probe()
 end
 
 ------------------------------------------------------------
--- .tv scan: TVs and screens near you
+-- .tv scan: what you're looking at
 ------------------------------------------------------------
 local TV_WORDS = { "tv", "telev", "monitor", "screen", "display", "telly" }
 
@@ -332,60 +332,64 @@ local function Materials(comp)
     return list
 end
 
--- Actors within SCAN_METERS whose class, name or mesh looks like a TV, nearest first
-local function NearbyTvs()
-    local here = PlayerLocation()
-    if not here then return nil, "load into a world first" end
-    -- FindAllOf, not ForEachUObject: walking every object also reaches ones
-    -- the engine is still building or tearing down, and touching one of those
-    -- crashed the game (0.1.4). Each actor is checked before it's read.
-    local actors = {}
-    pcall(function() actors = FindAllOf("Actor") or {} end)
-    local found, near = {}, 0
-    for _, obj in ipairs(actors) do
-        if Valid(obj) and not NameOf(obj):find("^Default__") then
-            local root = nil
-            pcall(function() root = obj.RootComponent end)
-            if Valid(root) then
-                local ok, l = pcall(function() return obj:K2_GetActorLocation() end)
-                if ok and l then
-                    local d = Distance(here, l)
-                    if d <= SCAN_METERS then
-                        near = near + 1
-                        local tv = LooksLikeTv(ClassName(obj)) or LooksLikeTv(NameOf(obj))
-                        if not tv then
-                            for _, m in ipairs(Meshes(obj)) do
-                                if LooksLikeTv(MeshAssetName(m)) then tv = true break end
-                            end
-                        end
-                        if tv then table.insert(found, { actor = obj, dist = d }) end
-                    end
-                end
-            end
-        end
-    end
-    log(string.format("  looked at %d actors, %d within %d m", #actors, near, SCAN_METERS))
-    table.sort(found, function(a, b) return a.dist < b.dist end)
-    return found
+-- What you're looking at, up to SCAN_METERS away: a line traced from the
+-- camera, like a shot. Only the one thing it hits is read - the engine just
+-- found it, so it exists. (Going through every actor in the game crashed it
+-- twice, 0.1.4 and 0.1.5: some listed actors are already being removed.)
+-- Returns { actor, comp (the part hit), dist } or nil, why
+local function LookedAt(verbose)
+    local function step(what) if verbose then log("  " .. what) end end
+    local pc = LocalController()
+    if not pc then return nil, "load into a world first" end
+    local pawn, cam = nil, nil
+    pcall(function() pawn = pc.Pawn end)
+    pcall(function() cam = pc.PlayerCameraManager end)
+    if not Valid(pawn) or not Valid(cam) then return nil, "load into a world first" end
+    local from, rot = nil, nil
+    pcall(function() from = cam:GetCameraLocation() end)
+    pcall(function() rot = cam:GetCameraRotation() end)
+    if not from or not rot then return nil, "couldn't read the camera" end
+    local p, y = math.rad(rot.Pitch), math.rad(rot.Yaw)
+    local reach = SCAN_METERS * 100
+    local to = { X = from.X + math.cos(p) * math.cos(y) * reach, Y = from.Y + math.cos(p) * math.sin(y) * reach,
+                 Z = from.Z + math.sin(p) * reach }
+    local kismet = Find("/Script/Engine.Default__KismetSystemLibrary")
+    if not kismet then return nil, "KismetSystemLibrary not found" end
+    step("tracing from the camera")
+    local hit, result = false, {}
+    local ok, err = pcall(function()
+        local color = { R = 0, G = 0, B = 0, A = 0 }
+        -- channel 0 = Visibility, no debug lines, ignore yourself
+        hit = kismet:LineTraceSingle(pawn, { X = from.X, Y = from.Y, Z = from.Z }, to, 0, false, {}, 0, result,
+                                     true, color, color, 0.0)
+    end)
+    if not ok then return nil, "the trace failed: " .. tostring(err) end
+    if not hit then return nil, "nothing within " .. SCAN_METERS .. " m where you're looking" end
+    step("hit something")
+    local actor, comp = nil, nil
+    pcall(function() actor = result.HitObjectHandle.ReferenceObject:Get() end)
+    pcall(function() comp = result.Component:Get() end)
+    if not Valid(actor) then return nil, "hit something that isn't an object the mod can read" end
+    local dist = 0
+    pcall(function() dist = result.Distance / 100 end)
+    return { actor = actor, comp = Valid(comp) and comp or nil, dist = dist }
 end
 
 local function Scan()
-    local tvs, err = NearbyTvs()
-    if not tvs then log("Scan: " .. err) return end
-    log(string.format("Scan: %d TV-like thing(s) within %d m", #tvs, SCAN_METERS))
-    for i, t in ipairs(tvs) do
-        if i > 8 then break end
-        log(string.format("  %s (%s) %.1f m", NameOf(t.actor), ClassName(t.actor), t.dist))
-        for _, m in ipairs(Meshes(t.actor)) do
-            log("    mesh " .. NameOf(m) .. " = " .. MeshAssetName(m))
-            for _, s in ipairs(Materials(m)) do
-                local params = TextureParams(s.mat)
-                log(string.format("      slot %d: %s (%s)  textures: %s", s.slot, NameOf(s.mat), ClassName(s.mat),
-                    #params > 0 and table.concat(params, ", ") or "-"))
-            end
+    local target, err = LookedAt(true)
+    if not target then log("Scan: " .. err) return end
+    local tvLike = LooksLikeTv(ClassName(target.actor)) or LooksLikeTv(NameOf(target.actor))
+    log(string.format("Scan: looking at %s (%s), %.1f m%s", NameOf(target.actor), ClassName(target.actor), target.dist,
+        tvLike and " - looks like a TV" or ""))
+    if target.comp then log("  the part you're looking at: " .. NameOf(target.comp) .. " (" .. ClassName(target.comp) .. ")") end
+    for _, m in ipairs(Meshes(target.actor)) do
+        log("    mesh " .. NameOf(m) .. " = " .. MeshAssetName(m))
+        for _, sl in ipairs(Materials(m)) do
+            local params = TextureParams(sl.mat)
+            log(string.format("      slot %d: %s (%s)  textures: %s", sl.slot, NameOf(sl.mat), ClassName(sl.mat),
+                #params > 0 and table.concat(params, ", ") or "-"))
         end
     end
-    if #tvs == 0 then log("  Stand next to a TV and run it again (or raise scanMeters in config.lua)") end
     log("Done - send these lines")
 end
 
@@ -578,7 +582,7 @@ local function Hud(index)
 end
 
 ------------------------------------------------------------
--- .tv on: the picture on the nearest TV's screen
+-- .tv on: the picture on the screen of the TV you're looking at
 ------------------------------------------------------------
 -- The screen: the material slot whose name or texture slots look like a
 -- screen, else the TV's first slot. The video goes into a texture slot of a
@@ -595,13 +599,15 @@ local function PickParam(params)
     return params[1]
 end
 
-local function PickScreen(actor)
+-- aimed: the part you were looking at (from the trace), preferred
+local function PickScreen(actor, aimed)
     local best = nil
     for _, m in ipairs(Meshes(actor)) do
+        local isAimed = aimed ~= nil and NameOf(m) == NameOf(aimed)
         for _, s in ipairs(Materials(m)) do
             local params = TextureParams(s.mat)
             local name = NameOf(s.mat):lower()
-            local score = (#params > 0 and 1 or 0)
+            local score = (#params > 0 and 1 or 0) + (isAimed and 1 or 0)
             for _, w in ipairs(SCREEN_WORDS) do
                 if name:find(w, 1, true) then score = score + 2 break end
             end
@@ -615,12 +621,11 @@ end
 
 local function On(index)
     if tv then Stop() end
-    local tvs, err = NearbyTvs()
-    if not tvs then log(err) return end
-    if #tvs == 0 then log("No TV within " .. SCAN_METERS .. " m (.tv scan lists what's near)") return end
-    local actor = tvs[1].actor
+    local target, err = LookedAt(false)
+    if not target then log("TV on: " .. err .. " - look at the TV") return end
+    local actor = target.actor
     log("TV on: " .. NameOf(actor) .. " (" .. ClassName(actor) .. ")")
-    local screen = PickScreen(actor)
+    local screen = PickScreen(actor, target.comp)
     if not screen then log("  it has no mesh to show a picture on") return end
     log(string.format("  screen: %s slot %d, %s (%s), texture slots: %s", NameOf(screen.mesh), screen.slot,
         NameOf(screen.mat), ClassName(screen.mat), #screen.params > 0 and table.concat(screen.params, ", ") or "none"))
