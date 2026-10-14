@@ -25,7 +25,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.4.2"
+local VERSION = "0.4.3"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -932,6 +932,7 @@ local function AddEntry(menu, actor)
     pcall(function() entry.Index = index end)
     pcall(function() entry.PlayerInventory = menu.PlayerInventory end)
     ok, err = pcall(function() entry.TextBlock:SetText(FText(label)) end)
+    pcall(function() entry.TextBlock_86:SetText(FText(label)) end)   -- the other label (shown unselected)
     if not ok then LogOnce("init", "E menu: couldn't set the entry's text: " .. tostring(err)) return end
     Step("adding it to the menu")
     ok, err = pcall(function() box:AddChildToVerticalBox(entry) end)
@@ -975,6 +976,7 @@ local function OnEKey()
     local label = PlayingOn(actor) and LABEL_OFF or LABEL_ON
     pcall(function() entry.Action[E_ACTION_NAME] = FText(label) end)
     pcall(function() entry.TextBlock:SetText(FText(label)) end)
+    pcall(function() entry.TextBlock_86:SetText(FText(label)) end)
 end
 
 local function HookEMenu()

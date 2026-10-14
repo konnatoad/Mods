@@ -2,6 +2,10 @@
 
 ---
 
+## 0.4.3 (2026-10-14)
+
+- The entry read "Text Block" until you scrolled to it: an entry has two labels, one shown while it's selected and one while it isn't, and only the first was set. Both say TURN ON TV / TURN OFF TV now
+
 ## 0.4.2 (2026-10-14)
 
 - TURN ON TV showed for about a second, then disappeared. The game's InitializeEntry starts a timer on each entry (UpdateText) that asks the TV for its actions again and drops the entry if there's none at its place in the list; ours is past the end. The entry is now filled in directly (action, TV, place, text), without that timer, so it stays
