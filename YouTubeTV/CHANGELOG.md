@@ -2,6 +2,10 @@
 
 ---
 
+## 0.1.7 (2026-10-14)
+
+- `.tv on` did nothing ("it has no mesh to show a picture on") and `.tv scan` listed no materials: the game reports the part you hit (a mesh) instead of the TV it belongs to. They now go up to the part's owner, the TV, and the part you aimed at is always one of the screens tried
+
 ## 0.1.6 (2026-10-14)
 
 - `.tv scan` still crashed the game: going through the game's actor list also reaches actors that are already being removed, and even checking one of those crashes (inside UE4SS's object check). So it doesn't look around any more: **look at the TV**. `.tv scan` and `.tv on` trace a line from your view, like a shot, up to `scanMeters` away, and read only what it hits (the engine just found it, so it exists)

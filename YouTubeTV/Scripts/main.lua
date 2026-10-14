@@ -22,7 +22,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.1.6"
+local VERSION = "0.1.7"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -279,13 +279,15 @@ local function LooksLikeTv(text)
 end
 
 -- Static / skeletal mesh components of an actor
-local function Meshes(actor)
-    local list = {}
+-- extra: a part that must be in the list (the one you aimed at)
+local function Meshes(actor, extra)
+    local list, seen = {}, {}
     pcall(function()
         Each(actor:K2_GetComponentsByClass(StaticFindObject("/Script/Engine.MeshComponent")), function(c)
-            if Valid(c) then table.insert(list, c) end
+            if Valid(c) then table.insert(list, c) seen[NameOf(c)] = true end
         end)
     end)
+    if extra and Valid(extra) and not seen[NameOf(extra)] then table.insert(list, 1, extra) end
     return list
 end
 
@@ -366,13 +368,30 @@ local function LookedAt(verbose)
     if not ok then return nil, "the trace failed: " .. tostring(err) end
     if not hit then return nil, "nothing within " .. SCAN_METERS .. " m where you're looking" end
     step("hit something")
-    local actor, comp = nil, nil
-    pcall(function() actor = result.HitObjectHandle.ReferenceObject:Get() end)
+    local hitObj, comp = nil, nil
+    pcall(function() hitObj = result.HitObjectHandle.ReferenceObject:Get() end)
     pcall(function() comp = result.Component:Get() end)
-    if not Valid(actor) then return nil, "hit something that isn't an object the mod can read" end
+    if not Valid(comp) then comp = nil end
+    -- The engine may name the part hit (a mesh component) instead of the thing
+    -- it belongs to: go up to its owner, the TV
+    local actor = nil
+    local function ownerOf(c)
+        local o = nil
+        pcall(function() o = c:GetOwner() end)
+        return Valid(o) and o or nil
+    end
+    if Valid(hitObj) and ClassName(hitObj):find("Component$") then
+        comp = comp or hitObj
+        actor = ownerOf(hitObj)
+    elseif Valid(hitObj) then
+        actor = hitObj
+    end
+    if not actor and comp then actor = ownerOf(comp) end
+    if not actor then return nil, "hit something that isn't an object the mod can read" end
+    step("hit " .. NameOf(actor) .. (comp and (", part " .. NameOf(comp)) or ""))
     local dist = 0
     pcall(function() dist = result.Distance / 100 end)
-    return { actor = actor, comp = Valid(comp) and comp or nil, dist = dist }
+    return { actor = actor, comp = comp, dist = dist }
 end
 
 local function Scan()
@@ -382,7 +401,7 @@ local function Scan()
     log(string.format("Scan: looking at %s (%s), %.1f m%s", NameOf(target.actor), ClassName(target.actor), target.dist,
         tvLike and " - looks like a TV" or ""))
     if target.comp then log("  the part you're looking at: " .. NameOf(target.comp) .. " (" .. ClassName(target.comp) .. ")") end
-    for _, m in ipairs(Meshes(target.actor)) do
+    for _, m in ipairs(Meshes(target.actor, target.comp)) do
         log("    mesh " .. NameOf(m) .. " = " .. MeshAssetName(m))
         for _, sl in ipairs(Materials(m)) do
             local params = TextureParams(sl.mat)
@@ -602,7 +621,7 @@ end
 -- aimed: the part you were looking at (from the trace), preferred
 local function PickScreen(actor, aimed)
     local best = nil
-    for _, m in ipairs(Meshes(actor)) do
+    for _, m in ipairs(Meshes(actor, aimed)) do
         local isAimed = aimed ~= nil and NameOf(m) == NameOf(aimed)
         for _, s in ipairs(Materials(m)) do
             local params = TextureParams(s.mat)
