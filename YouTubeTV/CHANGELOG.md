@@ -2,6 +2,11 @@
 
 ---
 
+## 0.4.5 (2026-10-14)
+
+- Picking up a TV that was on, placing it elsewhere and looking at it crashed the game. Picking a TV up deletes it (placing makes a new one), but the mod still held the old TV, its player and the old menu entry, and checking a deleted object crashes UE4SS
+- Now nothing that can be deleted is held on to: TVs are recognised by their address (taken while they exist), E reads the selected entry and the TV you look at fresh from the menu each time, and when the game removes a build part (a TV picked up, broken) the mod lets go of it first, turning it off. A level load or respawn forgets everything
+
 ## 0.4.4 (2026-10-14)
 
 - TURN ON TV works from the E menu. But turning it off 0.3 s after turning it on crashed the game, in one of its own background threads: turning off deleted the TV's player, sound and screen while the engine's video and audio threads were still opening the video

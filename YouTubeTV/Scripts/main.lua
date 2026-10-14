@@ -25,7 +25,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.4.4"
+local VERSION = "0.4.5"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -190,6 +190,14 @@ local function Valid(obj)
     if obj == nil then return false end
     local ok, valid = pcall(function() return obj:IsValid() end)
     return ok and valid == true
+end
+
+-- An object's address, taken while it exists: compared later instead of
+-- touching an old object, which crashes once the game has deleted it
+local function AddressOf(obj)
+    local a = nil
+    pcall(function() a = obj:GetAddress() end)
+    return a
 end
 
 local function NameOf(obj)
@@ -580,7 +588,7 @@ local function Stop()
     if tv.hud and tv.hud.panel then pcall(function() tv.hud.panel:RemoveFromParent() end) end
     if Valid(tv.panel) then pcall(function() tv.panel:SetVisibility(false, false) end) end
     if tv.mesh and tv.oldMaterial then pcall(function() tv.mesh:SetMaterial(tv.slot, tv.oldMaterial) end) end
-    if tv.actor and not tv.hud then kept[NameOf(tv.actor)] = tv end   -- the HUD test's are left alone too
+    if tv.addr and not tv.hud then kept[tv.addr] = tv end   -- the HUD test's are left alone too
     tv = nil
     log("TV off")
 end
@@ -788,9 +796,10 @@ local function OnActor(actor, aimed, index)
         param or "none"))
     if not param then log("  its material has no texture slot to show the video in") return end
     -- turned on before: the same player, sound and screen again
-    local old = kept[NameOf(actor)]
-    if old and Valid(old.actor) and Valid(old.player) and Valid(old.media) then
-        kept[NameOf(actor)] = nil
+    local addr = AddressOf(actor)
+    local old = addr and kept[addr]
+    if old then
+        kept[addr] = nil
         tv = old
         tv.index = index or 1
         if Valid(tv.panel) then
@@ -804,7 +813,7 @@ local function OnActor(actor, aimed, index)
     end
     local media, player, texture = MakePlayer(actor)
     if not media then log("  no player: " .. tostring(player)) return end
-    tv = { actor = actor, media = media, player = player, texture = texture, index = index or 1 }
+    tv = { actor = actor, addr = AddressOf(actor), media = media, player = player, texture = texture, index = index or 1 }
     local panel, placed, dmi = MakePanel(actor, screen.mesh, screen.mat, param, texture)
     if panel then
         tv.panel, tv.placed, tv.dmi = panel, placed, dmi
@@ -890,7 +899,8 @@ local function IsTv(actor)
 end
 
 local function PlayingOn(actor)
-    return tv ~= nil and Valid(tv.actor) and NameOf(tv.actor) == NameOf(actor)
+    local addr = AddressOf(actor)
+    return tv ~= nil and tv.addr ~= nil and tv.addr == addr
 end
 
 -- The readable names of the game's action types, once (so the log shows what 0 is)
@@ -933,7 +943,6 @@ local function AddEntry(menu, actor)
     Step("looking for our entry")
     local has, index, existing = HasOurEntry(box)
     if has then
-        eMenu.entry, eMenu.index, eMenu.tvActor = existing, index, actor
         return
     end
     local lib, cls, pc = Find("/Script/UMG.Default__WidgetBlueprintLibrary"), Find(ENTRY_CLASS), LocalController()
@@ -958,7 +967,6 @@ local function AddEntry(menu, actor)
     ok, err = pcall(function() box:AddChildToVerticalBox(entry) end)
     if not ok then LogOnce("add", "E menu: couldn't add the entry: " .. tostring(err)) return end
     pcall(function() entry:EntrySelected(false) end)
-    eMenu.entry, eMenu.index, eMenu.tvActor = entry, index, actor
     LogOnce("added", "E menu: added '" .. label .. "' to the TV's menu (entry " .. index .. ")")
     traceSteps = false
 end
@@ -971,7 +979,6 @@ local function OnMenuBuilt(self, lookAtActor)
     pcall(function() actor = lookAtActor:get() end)
     if traceSteps and Valid(actor) then LogOnce("first:" .. NameOf(actor), "E menu step: menu for " .. NameOf(actor)) end
     eMenu.menu = menu
-    eMenu.entry, eMenu.index, eMenu.tvActor = nil, nil, nil
     if not IsTv(actor) then return end
     Step("the E menu is for a TV")
     local ok, err = pcall(AddEntry, menu, actor)
@@ -981,11 +988,19 @@ end
 -- E: if our entry is the selected one, the TV goes on / off
 local lastToggle = -100
 local function OnEKey()
-    local menu, entry, actor = eMenu.menu, eMenu.entry, eMenu.tvActor
-    if not (Valid(menu) and Valid(entry) and Valid(actor)) then return end
-    local selected = nil
+    -- read fresh from the menu: the entry selected now and what you look at now
+    -- (an entry or TV kept from earlier may have been deleted since)
+    local menu = eMenu.menu
+    if not menu then return end
+    local selected, box, actor = nil, nil, nil
     pcall(function() selected = menu.SelectedEntryIndex end)
-    if selected ~= eMenu.index then return end
+    pcall(function() box = menu.ContextVerticalBox end)
+    pcall(function() actor = menu.LastLookAtActor end)
+    if type(selected) ~= "number" or not Valid(box) or not IsTv(actor) then return end
+    local entry, name = nil, nil
+    pcall(function() entry = box:GetChildAt(selected) end)
+    pcall(function() name = entry.Action[E_ACTION_NAME]:ToString() end)
+    if name ~= LABEL_ON and name ~= LABEL_OFF then return end
     local now = os.clock()
     if now - lastToggle < 1.0 then return end   -- one toggle a second at most
     lastToggle = now
@@ -1001,6 +1016,24 @@ local function OnEKey()
     pcall(function() entry.Action[E_ACTION_NAME] = FText(label) end)
     pcall(function() entry.TextBlock:SetText(FText(label)) end)
     pcall(function() entry.TextBlock_86:SetText(FText(label)) end)
+end
+
+-- A build part is being removed (a TV picked up, broken, or the level
+-- unloading): forget everything kept for it, before the game deletes it
+local function Forget(addr)
+    if not addr then return end
+    if tv and tv.addr == addr then
+        pcall(function() tv.player:Close() end)
+        tv = nil
+        log("The TV that was on was picked up or removed - off")
+    end
+    kept[addr] = nil
+end
+
+local function ForgetAll()
+    if tv then pcall(function() tv.player:Close() end) end
+    tv, kept = nil, {}
+    eMenu.menu = nil
 end
 
 local function HookEMenu()
@@ -1233,10 +1266,27 @@ RegisterConsoleCommandHandler(".tv", function(FullCommand, Parameters)
     return true
 end)
 
+-- Build parts being removed (a TV picked up): forget what's kept for them
+local BUILD_PART = "/Game/SurvivalGameKitV2/Blueprints/BuildParts/BP_MasterBuildPart.BP_MasterBuildPart_C"
+local destroyHooked = false
+local function HookDestroyed()
+    if destroyHooked or not Find(BUILD_PART) then return end
+    destroyHooked = pcall(RegisterHook, BUILD_PART .. ":ReceiveDestroyed", function(self)
+        local addr = nil
+        pcall(function() addr = self:get():GetAddress() end)
+        if addr and (kept[addr] or (tv and tv.addr == addr)) then Forget(addr) end
+    end)
+end
+pcall(HookDestroyed)
+
 -- The TV's class exists once a level with TVs has loaded: hook its menu then
 pcall(function()
     RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
-        ExecuteInGameThread(function() pcall(HookEMenu) end)
+        ExecuteInGameThread(function()
+            ForgetAll()   -- a new level or a respawn: nothing from before is safe to touch
+            pcall(HookEMenu)
+            pcall(HookDestroyed)
+        end)
     end)
 end)
 pcall(HookEMenu)
