@@ -21,6 +21,10 @@
 -- folder; that file overrides these.
 ------------------------------------------------------------
 -- Any UE4SS key name: HOME, END, INS, DEL, PAGE_DOWN, F8 ...
+-- Its hooks on the game's Blueprint functions are undone when the mod is
+-- restarted (Mod Hub), so they can't run into the old copy: shared/GameHooks
+local RegisterHook = require("GameHooks").ForMod("RadiationShield")
+
 local toggleKey = "HOME"
 -- How much less radiation you get while the shield is on: 0.25 = 25% less
 local reduction = 0.25

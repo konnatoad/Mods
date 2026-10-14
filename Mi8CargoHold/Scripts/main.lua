@@ -10,6 +10,10 @@
 -- Players joining a host who also runs this mod get the host's hold (see
 -- client_ensure); the host's game keeps and saves the items.
 
+-- Its hooks on the game's Blueprint functions are undone when the mod is
+-- restarted (Mod Hub), so they can't run into the old copy: shared/GameHooks
+local RegisterHook = require("GameHooks").ForMod("Mi8CargoHold")
+
 local UEHelpers = require("UEHelpers")
 local CargoPersistence = require("CargoPersistence")
 

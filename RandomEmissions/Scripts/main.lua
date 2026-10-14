@@ -2,6 +2,10 @@
 -- Random Emissions Config
 ------------------------------------------------------------
 -- Minimum random time in seconds until emission
+-- Its hooks on the game's Blueprint functions are undone when the mod is
+-- restarted (Mod Hub), so they can't run into the old copy: shared/GameHooks
+local RegisterHook = require("GameHooks").ForMod("RandomEmissions")
+
 local randomMin = 1800
 -- Maximum random time in seconds until emission
 local randomMax = 3600

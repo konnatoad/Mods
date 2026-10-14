@@ -2,6 +2,10 @@
 
 ---
 
+## 1.6.8 (2026-10-14)
+
+- Restarting this mod from the Mod Hub ("Restart changed mods") could crash the game: UE4SS removes a restarted mod's hooks on engine functions, but its hooks on the game's own functions stayed, still pointing into the old copy of the mod, and the next time the game ran one UE4SS crashed. They're now written down (`hooks.txt` in the mod's folder) and removed when the mod loads again in the same game session (shared `GameHooks` module)
+
 ## 1.6.7 (2026-10-14)
 
 - Backspace closes the settings menu (`.radmenu` and its Close row still do). The key hints show it

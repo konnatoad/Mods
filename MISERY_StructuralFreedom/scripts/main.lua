@@ -1,3 +1,7 @@
+-- Its hooks on the game's Blueprint functions are undone when the mod is
+-- restarted (Mod Hub), so they can't run into the old copy: shared/GameHooks
+local RegisterHook = require("GameHooks").ForMod("MISERY_StructuralFreedom")
+
 ModName, ModVersion = "MISERY Structural Freedom", "1.0.0"
 
 -- MISERY Structural Freedom
