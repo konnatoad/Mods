@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.13 (patched for current game version)
+    MISERY Mod Menu v4.6.14 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -40,6 +40,10 @@
 -- ============================================================
 -- COMPATIBILITY LAYER - Validates APIs before use
 -- ============================================================
+
+-- Its hooks on the game's Blueprint functions are undone when the mod is
+-- restarted (Mod Hub), so they can't run into the old copy: shared/GameHooks
+local RegisterHook = require("GameHooks").ForMod("MISERYModMenu")
 
 local function Log(msg)
     local ok = pcall(function()
@@ -1268,7 +1272,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.13 ===")
+    Log("=== MISERY Mod Menu v4.6.14 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -8156,7 +8160,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.13 Loaded!")
+Log("  MISERY Mod Menu v4.6.14 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")

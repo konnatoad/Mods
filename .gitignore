@@ -32,3 +32,6 @@ ViewDebug/recording_*.csv
 ViewDebug/buffer_*.csv
 ViewDebug/dumps.txt
 ViewDebug/scan_*.txt
+
+# Ids of hooks on the game's functions, written by shared/GameHooks while the game runs
+*/hooks.txt

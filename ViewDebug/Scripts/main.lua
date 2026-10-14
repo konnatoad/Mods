@@ -30,7 +30,11 @@
 -- Only reads while recording, buffering, showing or watching, every frame
 -- on the game thread (never from a background timer).
 ------------------------------------------------------------
-local VERSION = "0.6.3"
+-- Its hooks on the game's Blueprint functions are undone when the mod is
+-- restarted (Mod Hub), so they can't run into the old copy: shared/GameHooks
+local RegisterHook = require("GameHooks").ForMod("ViewDebug")
+
+local VERSION = "0.6.4"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
