@@ -32,3 +32,6 @@ ViewDebug/recording_*.csv
 ViewDebug/buffer_*.csv
 ViewDebug/dumps.txt
 ViewDebug/scan_*.txt
+
+# YouTube TV downloads
+YouTubeTV/videos/
