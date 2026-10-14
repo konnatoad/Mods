@@ -2,6 +2,14 @@
 
 ---
 
+## 0.4.0 (2026-10-14)
+
+### TURN ON TV in the E Menu
+- Look at a TV: its E menu has **TURN ON TV** under PICK UP (**TURN OFF TV** while it plays). Scroll to it and press E
+- Built into the menu widget itself, the way the game builds its entries, after the game's own InitializeContextMenu (which Mi-8 Cargo Hold hooks safely); the TV's own functions aren't hooked (that crashed in 0.3.0). Learned from `.tv learn` and UE4SS's object dump (Ctrl+J): the menu scrolls through its entry widgets, pressing E sends the selected action's type to the TV, and the TV only reacts to PICK UP (type 2)
+- The entry carries type 0, which the TV ignores, and the mod catches E on it itself. `eMenuActionType` in `config.lua` changes it (2 is never used). The log lists the action types' names once
+- `eMenu = false` leaves the E menu alone
+
 ## 0.3.2 (2026-10-14)
 
 - Toward a TURN ON TV entry built into the E menu widget itself (the way Mi-8 Cargo Hold edits that menu, without the TV's own functions): `.tv learn` also logs the menu's and its entries' settings, what PopulateMenu, InitializeContextMenu, InitializeEntry and EntrySelected take, the game's action types (PICK UP is 2), and what the menu holds and has selected when you press E. Names and types only, and it finds the menu through its own functions, not by searching the game's objects

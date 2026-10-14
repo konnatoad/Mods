@@ -25,7 +25,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.3.2"
+local VERSION = "0.4.0"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -837,16 +837,27 @@ end
 ------------------------------------------------------------
 -- E menu: "TURN ON TV" / "TURN OFF TV" on the game's own TV
 ------------------------------------------------------------
--- The TV (BP_TV_C) answers the game's "SGK PossibleActions" with the entries
--- of its E menu (only PICK UP without power), and "SGK Interact" runs the one
--- you choose. After the game fills the list, one entry is added; when it's
--- chosen, the video starts or stops on that TV.
-local TV_CLASS = "/Game/SurvivalGameKitV2/Blueprints/BuildParts/Furniture/WorldObect/Decor/BP_TV.BP_TV_C"
+-- The game's E menu (BP_InteractionContextMenu) is built by its
+-- InitializeContextMenu: one entry widget per action the object offers (a TV
+-- without power: only PICK UP). After it runs on a TV, one more entry is added
+-- the game's way (WidgetBlueprintLibrary.Create + InitializeEntry). Scrolling
+-- picks entries by the widgets in the menu's box, so it can be selected.
+-- Pressing E sends the selected action's type to the TV, whose Interact only
+-- reacts to PICK UP (type 2); ours carries type 0, which it ignores. The mod
+-- watches E itself and turns the video on or off.
+-- (Hooking the TV's own "SGK PossibleActions" crashed UE4SS in 0.3.0: it
+-- returns a list. The menu's own functions are safe: Mi-8 Cargo Hold hooks them.)
+local WIDGETS = "/Game/SurvivalGameKitV2/Blueprints/Widgets/"
+local MENU_CLASS = WIDGETS .. "BP_InteractionContextMenu.BP_InteractionContextMenu_C"
+local ENTRY_CLASS = WIDGETS .. "BP_InteractContextMenuEntry.BP_InteractContextMenuEntry_C"
+local ACTION_ENUM = "/Game/SurvivalGameKitV2/Blueprints/Other/Enum/E_WorldActions.E_WorldActions"
 local E_ACTION_NAME = "ActionName_15_19BA14C540FCFDAA9B8F29A403079514"
 local E_ACTION_TYPE = "WorldActions_14_09EA4A134331DF405C8B59A59F4D242C"
 local E_MENU = cfg.eMenu ~= false   -- eMenu = false in config.lua: no E menu entry
+local E_TYPE = math.floor(tonumber(cfg.eMenuActionType) or 0)
+if E_TYPE == 2 then E_TYPE = 0 end   -- never PICK UP
 local LABEL_ON, LABEL_OFF = "TURN ON TV", "TURN OFF TV"
-local eMenu = { type = nil, hooked = false, logged = {} }
+local eMenu = { hooked = false, logged = {}, menu = nil, entry = nil, index = nil, tvActor = nil }
 
 local function LogOnce(key, msg)
     if eMenu.logged[key] then return end
@@ -854,130 +865,109 @@ local function LogOnce(key, msg)
     log(msg)
 end
 
--- The game's action types (an enum on the entry struct): name = value
-local function ActionTypes()
-    local types, order = {}, {}
-    pcall(function()
-        local fn = StaticFindObject(TV_CLASS .. ":SGK PossibleActions")
-        fn:ForEachProperty(function(param)
-            local inner = nil
-            pcall(function() inner = param:GetInner() end)
-            local struct = nil
-            pcall(function() struct = inner:GetStruct() end)
-            if struct then
-                struct:ForEachProperty(function(field)
-                    local enum = nil
-                    pcall(function() enum = field:GetEnum() end)
-                    if enum then
-                        enum:ForEachName(function(name, value)
-                            local n = tostring(name:ToString()):gsub("^.*::", "")
-                            types[n] = value
-                            table.insert(order, n .. "=" .. tostring(value))
-                        end)
-                    end
-                end)
-            end
-        end)
-    end)
-    return types, order
-end
-
--- The type our entry carries: one the game names like turning on or using
-local TYPE_WORDS = { "turnon", "turn_on", "poweron", "switchon", "toggle", "use", "activate", "interact" }
-local function PickActionType()
-    local types, order = ActionTypes()
-    log("E menu: the game's action types: " .. (#order > 0 and table.concat(order, ", ") or "(couldn't read them)"))
-    for _, word in ipairs(TYPE_WORDS) do
-        for name, value in pairs(types) do
-            if name:lower():gsub("[%s_]", ""):find(word:gsub("_", ""), 1, true) then
-                log("E menu: using type " .. name .. " (" .. tostring(value) .. ") for TURN ON TV")
-                return value
-            end
-        end
-    end
-    log("E menu: no action type that means turning on / using - no entry added (send these lines)")
-    return nil
-end
-
 local function IsTv(actor)
     return Valid(actor) and ClassName(actor) == "BP_TV_C"
 end
 
--- The array among a hook's parameters (the list of actions being returned)
-local function ArrayParam(...)
-    for i = 1, select("#", ...) do
-        local p = select(i, ...)
-        local v = nil
-        pcall(function() v = p:get() end)
-        local ok, n = pcall(function() return v:GetArrayNum() end)
-        if ok and type(n) == "number" then return v, n end
-    end
-    return nil
+local function PlayingOn(actor)
+    return tv ~= nil and Valid(tv.actor) and NameOf(tv.actor) == NameOf(actor)
 end
 
-local function OnPossibleActions(self, ...)
-    local actor = nil
-    pcall(function() actor = self:get() end)
-    if not IsTv(actor) or not eMenu.type then return end
-    local list, n = ArrayParam(...)
-    if not list then LogOnce("noarray", "E menu: couldn't find the TV's list of actions") return end
-    local playingHere = tv ~= nil and tv.actor ~= nil and NameOf(tv.actor) == NameOf(actor)
-    local label = playingHere and LABEL_OFF or LABEL_ON
-    local ok, err = pcall(function()
-        list[n + 1] = { [E_ACTION_NAME] = FText(label), [E_ACTION_TYPE] = eMenu.type }
-    end)
-    if not ok then
-        -- the name may be a plain name rather than text
-        ok, err = pcall(function() list[n + 1] = { [E_ACTION_NAME] = FName(label), [E_ACTION_TYPE] = eMenu.type } end)
+-- The readable names of the game's action types, once (so the log shows what 0 is)
+local function LogActionTypes()
+    local enum, lib = Find(ACTION_ENUM), Find("/Script/Engine.Default__KismetNodeHelperLibrary")
+    if not (enum and lib) then LogOnce("types", "E menu: couldn't read the action types' names") return end
+    local names = {}
+    for i = 0, 10 do
+        local n = "?"
+        pcall(function() n = tostring(lib:GetEnumeratorUserFriendlyName(enum, i):ToString()) end)
+        table.insert(names, i .. "=" .. n)
     end
-    LogOnce("added", ok and ("E menu: added '" .. label .. "' to the TV's menu") or ("E menu: couldn't add the entry: " .. tostring(err)))
+    LogOnce("types", "E menu: action types " .. table.concat(names, ", ") .. " - TURN ON TV uses " .. E_TYPE)
 end
 
--- Was the action chosen ours? Looks for the action's name among the parameters
-local function ChosenLabel(...)
-    for i = 1, select("#", ...) do
-        local p = select(i, ...)
-        local v = nil
-        pcall(function() v = p:get() end)
-        local name = nil
-        pcall(function() name = v[E_ACTION_NAME]:ToString() end)
-        if type(name) == "string" and name ~= "" then return name end
+-- Is one of the menu's entries already ours?
+local function HasOurEntry(box)
+    local count = 0
+    pcall(function() count = box:GetChildrenCount() end)
+    for i = 0, count - 1 do
+        local e, name = nil, nil
+        pcall(function() e = box:GetChildAt(i) end)
+        pcall(function() name = e.Action[E_ACTION_NAME]:ToString() end)
+        if name == LABEL_ON or name == LABEL_OFF then return true, i, e end
     end
-    return nil
+    return false, count
 end
 
-local function OnInteract(self, ...)
-    local actor = nil
-    pcall(function() actor = self:get() end)
+local function AddEntry(menu, actor)
+    local box = nil
+    pcall(function() box = menu.ContextVerticalBox end)
+    if not Valid(box) then return end
+    local label = PlayingOn(actor) and LABEL_OFF or LABEL_ON
+    local has, index, existing = HasOurEntry(box)
+    if has then
+        eMenu.entry, eMenu.index, eMenu.tvActor = existing, index, actor
+        return
+    end
+    local lib, cls, pc = Find("/Script/UMG.Default__WidgetBlueprintLibrary"), Find(ENTRY_CLASS), LocalController()
+    if not (lib and cls and pc) then LogOnce("noparts", "E menu: couldn't find what's needed to add the entry") return end
+    local entry = nil
+    local ok, err = pcall(function() entry = lib:Create(menu, cls, pc) end)
+    if not ok or not Valid(entry) then LogOnce("create", "E menu: couldn't create the entry: " .. tostring(err)) return end
+    local action = { [E_ACTION_TYPE] = E_TYPE, [E_ACTION_NAME] = FText(label) }
+    ok, err = pcall(function() entry:InitializeEntry(action, actor, index) end)
+    if not ok then LogOnce("init", "E menu: InitializeEntry failed: " .. tostring(err)) return end
+    ok, err = pcall(function() box:AddChildToVerticalBox(entry) end)
+    if not ok then LogOnce("add", "E menu: couldn't add the entry: " .. tostring(err)) return end
+    pcall(function() entry:EntrySelected(false) end)
+    eMenu.entry, eMenu.index, eMenu.tvActor = entry, index, actor
+    LogOnce("added", "E menu: added '" .. label .. "' to the TV's menu (entry " .. index .. ")")
+end
+
+local function OnMenuBuilt(self, lookAtActor)
+    local menu, actor = nil, nil
+    pcall(function() menu = self:get() end)
+    pcall(function() actor = lookAtActor:get() end)
+    if not Valid(menu) then return end
+    eMenu.menu = menu
+    eMenu.entry, eMenu.index, eMenu.tvActor = nil, nil, nil
     if not IsTv(actor) then return end
-    local label = ChosenLabel(...)
-    LogOnce("interact", "E menu: the TV's Interact ran with action '" .. tostring(label) .. "'")
-    if label ~= LABEL_ON and label ~= LABEL_OFF then return end
-    ExecuteInGameThread(function()   -- after the game's own handling
-        if label == LABEL_OFF or (tv and tv.actor and NameOf(tv.actor) == NameOf(actor)) then
-            if tv then Stop() end
-        else
-            -- the build part's main mesh is the TV body (not its lace)
-            local main = nil
-            pcall(function() main = actor.StaticMesh end)
-            OnActor(actor, Valid(main) and main or nil, 1)
-        end
-    end)
+    LogActionTypes()
+    local ok, err = pcall(AddEntry, menu, actor)
+    if not ok then LogOnce("adderr", "E menu: " .. tostring(err)) end
 end
 
--- Switched off (0.3.1): hooking the TV's "SGK PossibleActions" crashed the
--- game the moment you looked at a TV. It returns a list, and this UE4SS
--- crashes handling a hooked Blueprint function's returned list (before any of
--- this mod's code runs). The E menu entry needs another way in.
-local E_MENU_HOOKS_SAFE = false
+-- E: if our entry is the selected one, the TV goes on / off
+local function OnEKey()
+    local menu, entry, actor = eMenu.menu, eMenu.entry, eMenu.tvActor
+    if not (Valid(menu) and Valid(entry) and Valid(actor)) then return end
+    local selected = nil
+    pcall(function() selected = menu.SelectedEntryIndex end)
+    if selected ~= eMenu.index then return end
+    if PlayingOn(actor) then
+        Stop()
+    else
+        local main = nil
+        pcall(function() main = actor.StaticMesh end)   -- the TV body (not its lace)
+        OnActor(actor, Valid(main) and main or nil, 1)
+    end
+    -- the entry's label follows
+    local label = PlayingOn(actor) and LABEL_OFF or LABEL_ON
+    pcall(function() entry.Action[E_ACTION_NAME] = FText(label) end)
+    pcall(function() entry.TextBlock:SetText(FText(label)) end)
+end
+
 local function HookEMenu()
-    if not E_MENU_HOOKS_SAFE or not E_MENU or eMenu.hooked then return end
-    if not Find(TV_CLASS) then return end   -- not loaded until a level with a TV is
+    if not E_MENU or eMenu.hooked then return end
+    if not Find(MENU_CLASS) then return end   -- loaded with the HUD
     eMenu.hooked = true
-    eMenu.type = PickActionType()
-    local ok1 = pcall(RegisterHook, TV_CLASS .. ":SGK PossibleActions", OnPossibleActions)
-    local ok2 = pcall(RegisterHook, TV_CLASS .. ":SGK Interact", OnInteract)
-    log("E menu: " .. ((ok1 and ok2) and "hooked the TV's menu" or "couldn't hook the TV's menu"))
+    local ok = pcall(RegisterHook, MENU_CLASS .. ":InitializeContextMenu", OnMenuBuilt)
+    if Key and Key.E then
+        pcall(function()
+            RegisterKeyBind(Key.E, function() ExecuteInGameThread(function() pcall(OnEKey) end) end)
+        end)
+    end
+    log("E menu: " .. (ok and "TURN ON TV will be in TVs' E menu" or "couldn't hook the E menu"))
 end
 
 ------------------------------------------------------------
@@ -988,11 +978,6 @@ end
 -- the E menu, then watches those functions: open the E menu on the TV, scroll
 -- through it, press E on an entry (or close it), and the log shows what ran
 -- and what the menu held.
-local WIDGETS = "/Game/SurvivalGameKitV2/Blueprints/Widgets/"
-local MENU_CLASS = WIDGETS .. "BP_InteractionContextMenu.BP_InteractionContextMenu_C"
-local ENTRY_CLASS = WIDGETS .. "BP_InteractContextMenuEntry.BP_InteractContextMenuEntry_C"
-local ACTION_NAME_FIELD = "ActionName_15_19BA14C540FCFDAA9B8F29A403079514"
-local ACTION_TYPE_FIELD = "WorldActions_14_09EA4A134331DF405C8B59A59F4D242C"
 local SKIP_WATCH = { Tick = true, ReceiveTick = true, PreConstruct = true, Construct = true, OnPaint = true,
                      UserConstructionScript = true, ExecuteUbergraph = true }
 local learning = { watched = {}, calls = {} }
@@ -1040,8 +1025,8 @@ local function MenuEntries(menu)
         pcall(function() e = box:GetChildAt(i) end)
         if Valid(e) then
             local name, kind, text = "?", "?", ""
-            pcall(function() name = e.Action[ACTION_NAME_FIELD]:ToString() end)
-            pcall(function() kind = tostring(e.Action[ACTION_TYPE_FIELD]) end)
+            pcall(function() name = e.Action[E_ACTION_NAME]:ToString() end)
+            pcall(function() kind = tostring(e.Action[E_ACTION_TYPE]) end)
             pcall(function() text = e.TextBlock:GetText():ToString() end)
             table.insert(out, string.format("[%d] %s (type %s) '%s'", i, name, kind, text))
         end

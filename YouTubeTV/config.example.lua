@@ -36,4 +36,8 @@ return {
     -- TURN ON TV / TURN OFF TV in the game's E menu on a TV (false = off;
     -- .tv on / .tv off still work)
     eMenu = true,
+
+    -- The game action type the entry carries when you press E on it. The TV
+    -- only reacts to PICK UP (2, never used); 0 does nothing on a TV
+    eMenuActionType = 0,
 }
