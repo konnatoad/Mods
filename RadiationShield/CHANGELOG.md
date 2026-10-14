@@ -2,6 +2,11 @@
 
 ---
 
+## 1.6.5 (2026-10-14)
+
+- Below 100%, radiation built up faster with the shield on than without it (100% worked). 1.6.4 removed the radiation that gets past the shield by writing the radiation value directly, but the game keeps more radiation bookkeeping behind that value and pulled it back up, harder the bigger the gap. It now uses the game's own way of lowering radiation (DecreaseRadiation, like the mod menu), so the rest follows
+- `.radshield scan` writes every radiation-like number and function on your stats to the log, in case radiation still behaves oddly
+
 ## 1.6.4 (2026-10-14)
 
 ### Co-op: Radiation Getting Past the Shield

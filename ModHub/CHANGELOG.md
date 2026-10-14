@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.10 (2026-10-14)
+
+- Lists Radiation Shield's new `.radshield scan`
+
 ## 1.4.9 (2026-10-13)
 
 - View Debug is in the list, with its commands (`.view hud` included)

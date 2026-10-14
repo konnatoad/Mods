@@ -762,18 +762,13 @@ RebuildOthers = function()
     othersByInv, othersInvObj, othersActive = byInv, objs, active
 end
 
--- Writes the radiation stat directly (a property, not a game function: calling
--- game functions from the once-a-second timer froze the game before). On the
--- host the game sends the new value to the player it belongs to.
-local function SetRadiation(inv, value)
-    if not radiationField then return false end
-    return pcall(function() inv[radiationField] = math.max(0, value) end)
-end
-
 -- Hosting, shield hooked: some radiation reaches a player without passing the
 -- hook the shield cuts (the readout showed 100% removed, yet +4.9 /s). Each
 -- second, whatever rose beyond what the shield let through (raw * (1 - cut))
--- is cut by the same share. Returns the radiation and the rise after that.
+-- is cut by the same share, through the game's own DecreaseRadiation (like
+-- the mod menu): writing the value directly (1.6.4) left the game's other
+-- radiation bookkeeping behind, and below 100% radiation then built up faster
+-- than with no shield. Returns the radiation and the rise after that.
 local function CutBypass(inv, address, raw, cut)
     local now = ReadRadiation(inv)
     if not now then return nil, 0 end
@@ -783,8 +778,10 @@ local function CutBypass(inv, address, raw, cut)
         local extra = rose - raw * (1 - cut)
         if extra > 0.01 and cut > 0 then
             local take = extra * cut
-            if SetRadiation(inv, now - take) then
-                now, rose = math.max(0, now - take), rose - take
+            if pcall(function() inv:DecreaseRadiation(take) end) then
+                local after = ReadRadiation(inv) or math.max(0, now - take)
+                rose = rose - (now - after)
+                now = after
                 if not reportedBypass then
                     reportedBypass = true
                     log(string.format("Radiation also rises outside the shield's hook (+%.2f /s here): taking %d%% of that back too",
@@ -1464,8 +1461,58 @@ for keyName, action in pairs({ UP_ARROW = "up", DOWN_ARROW = "down", LEFT_ARROW 
     pcall(function() RegisterKeyBind(Key[keyName], function() MenuKey(action) end) end)
 end
 
+-- .radshield scan: every radiation-like number and function on your stats
+-- component, for the log. Only numbers and true/false are read: reading other
+-- kinds of values (links to objects, event lists) crashes UE4SS.
+local SCAN_SAFE = { FloatProperty = true, DoubleProperty = true, IntProperty = true, BoolProperty = true,
+                    ByteProperty = true }
+local SCAN_WORDS = { "rad", "dose", "contam", "expos", "rate", "absorb", "resist", "protect" }
+
+local function ScanWanted(name)
+    local lower = name:lower()
+    for _, w in ipairs(SCAN_WORDS) do
+        if lower:find(w, 1, true) then return true end
+    end
+    return false
+end
+
+local function Scan()
+    local inv = RefreshMyInventory()
+    if not inv then log("Scan: load into a world first") return end
+    log("Scan of your stats (" .. tostring(radiationField or "?") .. " is the radiation the shield reads):")
+    local shown = 0
+    pcall(function()
+        inv:GetClass():ForEachProperty(function(prop)
+            local name, kind = "", nil
+            pcall(function() name = prop:GetFName():ToString() end)
+            pcall(function() kind = prop:GetClass():GetFName():ToString() end)
+            if name ~= "" and kind and SCAN_SAFE[kind] and ScanWanted(name) then
+                local value = nil
+                pcall(function() value = inv[name] end)
+                shown = shown + 1
+                log("  " .. name .. " = " .. tostring(value))
+            end
+        end)
+    end)
+    if shown == 0 then log("  (no radiation-like numbers found)") end
+    local functions = {}
+    pcall(function()
+        inv:GetClass():ForEachFunction(function(fn)
+            local name = ""
+            pcall(function() name = fn:GetFName():ToString() end)
+            if name:lower():find("rad", 1, true) then table.insert(functions, name) end
+        end)
+    end)
+    log("  Functions: " .. (#functions > 0 and table.concat(functions, ", ") or "(none found)"))
+    log("Done - send these lines")
+end
+
 RegisterConsoleCommandHandler(".radshield", function(FullCommand, Parameters)
     local arg = string.lower((Parameters and Parameters[1]) or "")
+    if arg == "scan" then
+        ExecuteInGameThread(Scan)
+        return true
+    end
     local percent = tonumber((arg:gsub("%%", "")))
     if percent then
         if percent < 1 or percent > 100 then
