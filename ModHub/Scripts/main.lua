@@ -811,9 +811,9 @@ local function RemoveLeftovers()
 end
 
 local HINTS = {
-    list = { { "UP / DOWN", "select" }, { "RIGHT / ENTER", "open" }, { "LEFT", "back" }, { ".mods", "close" } },
-    changelog = { { "UP / DOWN", "scroll" }, { "LEFT / RIGHT", "version" }, { "ENTER", "back" }, { ".mods", "close" } },
-    settings = { { "UP / DOWN", "select" }, { "LEFT / RIGHT", "change" }, { "ENTER", "switch / default" }, { ".mods", "close" } },
+    list = { { "UP / DOWN", "select" }, { "RIGHT / ENTER", "open" }, { "LEFT / BACKSPACE", "back" } },
+    changelog = { { "UP / DOWN", "scroll" }, { "LEFT / RIGHT", "version" }, { "BACKSPACE", "back" } },
+    settings = { { "UP / DOWN", "select" }, { "LEFT / RIGHT", "change" }, { "ENTER", "switch / default" }, { "BACKSPACE", "back" } },
 }
 
 local function SetHints(tree, p, which)
@@ -1253,6 +1253,19 @@ local function MenuKey(action)
     if os.clock() - hub.openedAt < 0.35 then return end
     ExecuteInGameThread(function()
         if not hub.open or not ui.rows then return end
+        -- Backspace: one level back (changelog / settings -> mod page -> list), closes from the list
+        if action == "backspace" then
+            if hub.view == "changelog" or hub.view == "settings" then
+                hub.view, hub.sel, hub.status = "mod", hub.modSel or 1, nil
+                Render()
+            elseif hub.view == "mod" then
+                hub.view, hub.sel, hub.status = "list", 1, nil
+                Render()
+            else
+                Close()
+            end
+            return
+        end
         if hub.view == "changelog" then
             -- Up/Down scroll, Right older version, Left newer (or back), Enter back
             if action == "up" then
@@ -1309,7 +1322,7 @@ local function MenuKey(action)
 end
 
 for keyName, action in pairs({ UP_ARROW = "up", DOWN_ARROW = "down", RIGHT_ARROW = "right",
-                               RETURN = "enter", LEFT_ARROW = "back" }) do
+                               RETURN = "enter", LEFT_ARROW = "back", BACKSPACE = "backspace" }) do
     pcall(function() RegisterKeyBind(Key[keyName], function() MenuKey(action) end) end)
 end
 

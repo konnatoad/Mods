@@ -2,6 +2,10 @@
 
 ---
 
+## 1.6.7 (2026-10-14)
+
+- Backspace closes the settings menu (`.radmenu` and its Close row still do). The key hints show it
+
 ## 1.6.6 (2026-10-14)
 
 - Below 100%, the shield still made radiation build up faster than with no shield. The real cause: this game adds radiation in whole numbers (each hit is exactly 3, radiation is always a whole number), and the shield handed it fractions like 0.75, which the game doesn't add as 0.75. (1.6.5's guess, a hidden second radiation value, was wrong: `.radshield scan` shows the game keeps only one)

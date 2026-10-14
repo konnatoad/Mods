@@ -1356,7 +1356,7 @@ local function BuildMenu(hud)
     Middle(Pad(statusRow:AddChildToHorizontalBox(m.status), 8, 0, 0, 0))
     local hints = Construct("HorizontalBox", tree)
     Pad(column:AddChildToVerticalBox(hints), 4, 10, 4, 0)
-    for _, hint in ipairs({ { "UP / DOWN", "select" }, { "LEFT / RIGHT", "change" }, { ".radmenu", "close" } }) do
+    for _, hint in ipairs({ { "UP / DOWN", "select" }, { "LEFT / RIGHT", "change" }, { "BACKSPACE", "close" } }) do
         local cap = Round(Fill(tree, BUTTON), 4, HAIRLINE)
         pcall(function() cap:SetPadding({ Left = 6, Top = 2, Right = 6, Bottom = 2 }) end)
         local capText = Text(tree, 9, PALE_GREY, 60)
@@ -1458,6 +1458,7 @@ local function MenuKey(action)
     if not menuOpen then return end
     ExecuteInGameThread(function()
         if not menuOpen then return end
+        if action == "backspace" then CloseMenu() return end   -- one level only: Backspace closes it
         local order = ui.menu and ui.menu.order or VisibleRows()
         if action == "up" then selected = (selected - 2) % #order + 1
         elseif action == "down" then selected = selected % #order + 1
@@ -1481,7 +1482,8 @@ local okKey = pcall(function()
 end)
 if not okKey then log("Key '" .. tostring(boundKey) .. "' could not be bound; use .radshield instead") end
 -- Arrow keys only do something while the menu is open
-for keyName, action in pairs({ UP_ARROW = "up", DOWN_ARROW = "down", LEFT_ARROW = "left", RIGHT_ARROW = "right" }) do
+for keyName, action in pairs({ UP_ARROW = "up", DOWN_ARROW = "down", LEFT_ARROW = "left", RIGHT_ARROW = "right",
+                               BACKSPACE = "backspace" }) do
     pcall(function() RegisterKeyBind(Key[keyName], function() MenuKey(action) end) end)
 end
 

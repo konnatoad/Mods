@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.12
+
+- Backspace closes the cheat menu (PageUp still opens and closes it). It has no levels to go back through. Backspace does nothing while you're typing in one of the menu's text boxes, where it deletes as usual
+
+---
+
 ## Version 4.6.11
 
 - `.season` back to 4.6.9's defaults (speed 1.0, duration 0): the game's own values (4.6.10) froze the game. Those defaults make the seasons cycle, so don't use `.season` for now

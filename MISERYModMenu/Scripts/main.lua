@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.11 (patched for current game version)
+    MISERY Mod Menu v4.6.12 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -1018,6 +1018,37 @@ else
     table.insert(InitErrors, "PageUp key not available - cannot bind menu toggle")
 end
 
+-- Backspace closes the cheat menu (it has one level, nothing to go back to).
+-- Not while you're typing in one of its text boxes: there Backspace deletes.
+-- The text boxes are looked up only when Backspace is pressed with the menu
+-- open (FindAllOf walks every object in the game).
+local function TypingInTextBox()
+    local typing = false
+    pcall(function()
+        for _, className in ipairs({ "EditableTextBox", "EditableText", "MultiLineEditableTextBox" }) do
+            for _, box in ipairs(FindAllOf(className) or {}) do
+                if Coop.Valid(box) and box:HasKeyboardFocus() then typing = true return end
+            end
+        end
+    end)
+    return typing
+end
+
+local backspaceKey = KeyMap["backspace"]
+if backspaceKey then
+    SafeRegisterKeyBind(backspaceKey, {}, function()
+        if not cheatMenuVisible then return end
+        SafeExecuteInGameThread(function()
+            if not cheatMenuVisible or TypingInTextBox() then return end
+            local cheatMenu = GetCheatMenuWidget()
+            cheatMenuVisible = false
+            if cheatMenu then pcall(function() cheatMenu["SetVisibility"](cheatMenu, 1) end) end -- Collapsed
+            SetCursorVisible(false)
+            Log("Cheat Menu: HIDDEN (Backspace)")
+        end)
+    end, "Backspace")
+end
+
 -- Hotkeys - using safe registration with fallback
 local hotkeys = {
     {key = "6", name = "6", func = function() ModifyStat("Health +100", "IncreaseHealth", 100, 1) end},
@@ -1272,7 +1303,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.11 ===")
+    Log("=== MISERY Mod Menu v4.6.12 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -8162,7 +8193,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.11 Loaded!")
+Log("  MISERY Mod Menu v4.6.12 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")

@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.11 (2026-10-14)
+
+- Backspace goes back one level: from a changelog or settings page to the mod's page, from a mod's page to the list, and closes the menu from the list. The key hints show it (`.mods` still opens and closes it)
+
 ## 1.4.10 (2026-10-14)
 
 - Lists Radiation Shield's new `.radshield scan`
