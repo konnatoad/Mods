@@ -23,7 +23,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.2.0"
+local VERSION = "0.2.1"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -46,6 +46,8 @@ local cfg = UserConfig()
 local VOLUME = math.max(0, math.min(1, tonumber(cfg.volume) or 0.8))
 local MAX_HEIGHT = math.floor(tonumber(cfg.maxHeight) or 720)
 local SCAN_METERS = tonumber(cfg.scanMeters) or 8
+local HEAR_M = math.max(2, tonumber(cfg.hearDistance) or 15)              -- the TV is heard this far
+local FULL_VOLUME_M = math.max(0, math.min(HEAR_M - 1, tonumber(cfg.fullVolumeDistance) or 1.5))
 -- YouTube often refuses anonymous downloads ("confirm you're not a bot", age
 -- checks). yt-dlp can use your browser's YouTube login instead:
 -- "firefox", or "firefox:<profile folder>" for a Firefox-based browser like
@@ -421,16 +423,24 @@ local tv = nil
 
 -- Adds a component of the given class to an actor, registered (so it gets
 -- set up like one made in the editor)
-local function AddComponent(actor, classPath)
+local IDENTITY = { Rotation = { X = 0, Y = 0, Z = 0, W = 1 }, Translation = { X = 0, Y = 0, Z = 0 },
+                   Scale3D = { X = 1, Y = 1, Z = 1 } }
+
+-- setup(comp): runs before the component starts (deferred), for settings it
+-- only reads when it starts, like a sound's
+local function AddComponent(actor, classPath, setup)
     local cls = Find(classPath)
     if not cls then return nil, classPath .. " isn't in this game" end
     local comp = nil
     local ok, err = pcall(function()
-        comp = actor:AddComponentByClass(cls, false, {
-            Rotation = { X = 0, Y = 0, Z = 0, W = 1 }, Translation = { X = 0, Y = 0, Z = 0 },
-            Scale3D = { X = 1, Y = 1, Z = 1 } }, false)
+        comp = actor:AddComponentByClass(cls, false, IDENTITY, setup ~= nil)
     end)
     if not ok or not Valid(comp) then return nil, "AddComponentByClass failed: " .. tostring(err) end
+    if setup then
+        pcall(setup, comp)
+        local okFinish, e = pcall(function() actor:FinishAddComponent(comp, false, IDENTITY) end)
+        if not okFinish then log("  FinishAddComponent failed: " .. tostring(e)) end
+    end
     return comp
 end
 
@@ -521,12 +531,38 @@ local function Status()
     log("Done - send these lines")
 end
 
-local function AttachSound(actor, player)
-    local sound, err = AddComponent(actor, "/Script/MediaAssets.MediaSoundComponent")
+-- inWorld: the sound comes from the actor (positioned, fading with distance);
+-- otherwise it plays straight to you (the .tv hud test)
+local function AttachSound(actor, player, inWorld)
+    local function setup(sound)
+        if not inWorld then return end
+        -- one channel: a stereo sound can't come from one point
+        pcall(function() sound.Channels = 0 end)                       -- EMediaSoundChannels::Mono
+        pcall(function() sound.bAllowSpatialization = true end)
+        pcall(function() sound.bOverrideAttenuation = true end)
+        pcall(function()
+            local a = sound.AttenuationOverrides
+            a.bAttenuate = true
+            a.bSpatialize = true
+            a.AttenuationShape = 0                                   -- sphere
+            a.AttenuationShapeExtents = { X = FULL_VOLUME_M * 100, Y = 0, Z = 0 }
+            a.FalloffDistance = math.max(100, (HEAR_M - FULL_VOLUME_M) * 100)
+            a.DistanceAlgorithm = 1                                  -- logarithmic: like a real speaker
+        end)
+    end
+    local sound, err = AddComponent(actor, "/Script/MediaAssets.MediaSoundComponent", setup)
     if not sound then log("  no sound: " .. err) return nil end
     pcall(function() sound:SetMediaPlayer(player) end)
     pcall(function() sound:SetVolumeMultiplier(VOLUME) end)
-    log("  sound attached")
+    if inWorld then
+        local spatial, mono = nil, nil
+        pcall(function() spatial = sound.bAllowSpatialization and sound.AttenuationOverrides.bSpatialize end)
+        pcall(function() mono = sound.Channels end)
+        log(string.format("  sound from the TV: heard up to %d m (positioned: %s, channels: %s)", HEAR_M,
+            tostring(spatial), tostring(mono)))
+    else
+        log("  sound attached (straight to you)")
+    end
     return sound
 end
 
@@ -593,7 +629,7 @@ local function Hud(index)
     local media, player, texture = MakePlayer(pawn)
     if not media then log("  no player: " .. tostring(player)) return end
     tv = { actor = pawn, media = media, player = player, texture = texture, index = index or 1 }
-    tv.sound = AttachSound(pawn, player)
+    tv.sound = AttachSound(pawn, player, false)
     local hud, err = HudPanel(texture)
     if hud then tv.hud = hud log("  panel shown top right") else log("  no panel: " .. err) end
     local ok, why = OpenVideo(player, tv.index)
@@ -758,7 +794,7 @@ local function On(index)
     else
         log("  no screen panel: " .. tostring(placed))
     end
-    tv.sound = AttachSound(actor, player)
+    tv.sound = AttachSound(actor, player, true)
     local ok, why = OpenVideo(player, tv.index)
     if not ok then log("  " .. why) end
     log("Done - send these lines if the TV stays dark or silent (.tv off stops it)")

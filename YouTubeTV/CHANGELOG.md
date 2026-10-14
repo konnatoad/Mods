@@ -2,6 +2,11 @@
 
 ---
 
+## 0.2.1 (2026-10-14)
+
+- The TV's sound comes from the TV instead of straight into your headphones: it's positioned (left / right as you turn) and fades with distance, full volume within `fullVolumeDistance` (1.5 m) and silent past `hearDistance` (15 m). It's mixed to one channel, since a stereo sound can't come from one point, and set up before the sound starts (it reads these settings only then)
+- `.tv hud` still plays straight to you (its panel isn't anywhere in the world)
+
 ## 0.2.0 (2026-10-14)
 
 ### A Screen on the TV

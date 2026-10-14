@@ -9,6 +9,11 @@ return {
     -- TV volume, 0 to 1
     volume = 0.8,
 
+    -- The TV's sound comes from the TV: full volume within fullVolumeDistance,
+    -- fading out until hearDistance (metres)
+    hearDistance = 15,
+    fullVolumeDistance = 1.5,
+
     -- YouTube often refuses anonymous downloads ("Sign in to confirm you're not
     -- a bot", age checks). Set your browser here and yt-dlp uses your YouTube
     -- login from it: "firefox", "edge", "chrome", "brave", ... ("" = off).
