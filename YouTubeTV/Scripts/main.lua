@@ -25,7 +25,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.3.0"
+local VERSION = "0.3.1"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -965,8 +965,13 @@ local function OnInteract(self, ...)
     end)
 end
 
+-- Switched off (0.3.1): hooking the TV's "SGK PossibleActions" crashed the
+-- game the moment you looked at a TV. It returns a list, and this UE4SS
+-- crashes handling a hooked Blueprint function's returned list (before any of
+-- this mod's code runs). The E menu entry needs another way in.
+local E_MENU_HOOKS_SAFE = false
 local function HookEMenu()
-    if not E_MENU or eMenu.hooked then return end
+    if not E_MENU_HOOKS_SAFE or not E_MENU or eMenu.hooked then return end
     if not Find(TV_CLASS) then return end   -- not loaded until a level with a TV is
     eMenu.hooked = true
     eMenu.type = PickActionType()
@@ -1079,7 +1084,7 @@ local function Learn()
         local fns = {}
         EachFunction(cls, function(name)
             table.insert(fns, name)
-            if not SKIP_WATCH[name] then Watch(path .. ":" .. name, NameOf(cls) .. ":" .. name, false) end
+            -- not watched: some of these return lists, and hooking those crashes UE4SS (0.3.0)
         end)
         log("    functions: " .. (#fns > 0 and table.concat(fns, ", ") or "-"))
         local props = PropertyList(cls)

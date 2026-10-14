@@ -2,6 +2,11 @@
 
 ---
 
+## 0.3.1 (2026-10-14)
+
+- 0.3.0 crashed the game as soon as you looked at a TV: the game asks the TV for its E menu entries ("SGK PossibleActions") every time you look at it, and that function returns a list. This UE4SS crashes handling a hooked Blueprint function's returned list, before any of the mod's code runs. Those hooks are switched off, so there's no TURN ON TV entry for now; `.tv on` / `.tv off` work as before
+- `.tv learn` no longer watches the TV's own functions (same reason), only the E menu's
+
 ## 0.3.0 (2026-10-14)
 
 ### Turn It On With E
