@@ -2,6 +2,13 @@
 
 ---
 
+## Version 4.6.13
+
+- PageUp no longer opens the cheat menu: it opens the Mod Hub now. Open the cheat menu with `.menu`, or from the Mod Menu's page in the Mod Hub ("Open the spawn menu"). Backspace closes it, and its header says so
+- Help texts, `.diag` and the README no longer mention PageUp for the cheat menu
+
+---
+
 ## Version 4.6.12
 
 - Backspace closes the cheat menu (PageUp still opens and closes it). It has no levels to go back through. Backspace does nothing while you're typing in one of the menu's text boxes, where it deletes as usual

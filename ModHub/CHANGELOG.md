@@ -2,6 +2,11 @@
 
 ---
 
+## 1.4.12 (2026-10-14)
+
+- PageUp opens and closes the hub, like `.mods` (the Mod Menu used to take PageUp for its cheat menu; open that with `.menu`, or from the Mod Menu's page here)
+- The Mod Menu's page no longer lists PageUp; the Mod Hub's own page lists PageUp and Backspace
+
 ## 1.4.11 (2026-10-14)
 
 - Backspace goes back one level: from a changelog or settings page to the mod's page, from a mod's page to the list, and closes the menu from the list. The key hints show it (`.mods` still opens and closes it)

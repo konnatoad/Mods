@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.12 (patched for current game version)
+    MISERY Mod Menu v4.6.13 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -32,7 +32,7 @@
       .unbind <key>
       .binds
 
-    HOTKEYS: PageUp (menu), F1-F7 (quick stats)
+    HOTKEYS: F1-F7 (quick stats); .menu opens the cheat menu
 
     Type .help or .cheats for full command list
 ]]
@@ -165,7 +165,7 @@ end
 do
     local WORLD = "it changes the host's world, ask the host"
     local MOVE = "the host's game moves your character"
-    local ITEMS = "use the PageUp menu's Spawn (the host's Mod Menu adds the item)"
+    local ITEMS = "use the .menu cheat menu's Spawn (the host's Mod Menu adds the item)"
     for _, c in ipairs({ ".time", ".ctset", ".weather", ".season", ".slomo", ".freeze", ".enemy", ".summon",
                          ".forcespawn", ".destroyall", ".destroypawns", ".damage_target", ".restartlevel" }) do
         Coop.HOST_ONLY[c] = WORLD
@@ -966,7 +966,7 @@ end
 
 -- Get cheat menu widget via InventoryHUD property (WD_CheatMenu_C no longer standalone)
 -- The HUD is kept while valid: finding it walks every object in the game,
--- which every PageUp did. A level load makes a new HUD; the next call looks again.
+-- which every opening did. A level load makes a new HUD; the next call looks again.
 local function GetCheatMenuWidget()
     local cheatMenu = nil
     pcall(function()
@@ -980,43 +980,8 @@ local function GetCheatMenuWidget()
     return cheatMenu
 end
 
--- Toggle cheat menu with PageUp - using safe registration
-local pageUpKey = KeyMap["pageup"]
-if pageUpKey then
-    SafeRegisterKeyBind(pageUpKey, {}, function()
-        SafeExecuteInGameThread(function()
-            local cheatMenu = GetCheatMenuWidget()
-
-            if cheatMenu then
-                cheatMenuVisible = not cheatMenuVisible
-                if cheatMenuVisible then
-                    pcall(function() cheatMenu["SetVisibility"](cheatMenu, 0) end) -- Visible
-                    pcall(function() cheatMenu["SetIsEnabled"](cheatMenu, true) end)
-
-                    -- Apply screen scaling for different resolutions
-                    local scaled, scaleFactor = ScaleWidgetForScreen(cheatMenu)
-                    if scaled then
-                        Log("Cheat Menu: SHOWN (scale: " .. string.format("%.2f", scaleFactor) .. ")")
-                    else
-                        Log("Cheat Menu: SHOWN")
-                    end
-
-                    SetCursorVisible(true)
-                    OnCheatMenuShown()
-                else
-                    pcall(function() cheatMenu["SetVisibility"](cheatMenu, 1) end) -- Collapsed
-                    SetCursorVisible(false)
-                    Log("Cheat Menu: HIDDEN")
-                end
-            else
-                Log("Cheat menu not found! Make sure you're in-game.")
-                Log("Try: Press ~ for console, type .cheat")
-            end
-        end)
-    end, "PageUp")
-else
-    table.insert(InitErrors, "PageUp key not available - cannot bind menu toggle")
-end
+-- The cheat menu opens with .menu, or from the Mod Menu's page in the Mod Hub
+-- (PageUp opens the Mod Hub now; the Mod Menu no longer binds it).
 
 -- Backspace closes the cheat menu (it has one level, nothing to go back to).
 -- Not while you're typing in one of its text boxes: there Backspace deletes.
@@ -1303,7 +1268,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.12 ===")
+    Log("=== MISERY Mod Menu v4.6.13 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -1327,7 +1292,7 @@ SafeRegisterCommand(".help", function(FullCommand, Parameters)
     Log("SPAWN:")
     Log("  .enemy <type>    - spawn enemies")
     Log("  .summon <class>  - spawn by class")
-    Log("  PageUp or .menu  - DEV MENU (items)")
+    Log("  .menu            - DEV MENU (items)")
     Log("  .find <name>     - search the menu's item list")
     Log("  .spawnmode       - how the Spawn button adds items")
     Log("")
@@ -1339,7 +1304,6 @@ SafeRegisterCommand(".help", function(FullCommand, Parameters)
     Log("")
     Log("TROUBLESHOOTING:")
     Log("  .diag  - Show diagnostics")
-    Log("  .menu  - Open menu (if PageUp fails)")
     Log("")
     Log("More: .cheats .enemy")
     return true
@@ -3799,7 +3763,7 @@ end)
 -- widgets (not copies: their clicks, hooks and values stay the game's) are
 -- moved into a tidy panel like the Radiation Shield menu:
 --
---   Mod Menu                         (PageUp closes)
+--   Mod Menu                      (Backspace closes)
 --   SPAWN ITEM    [ item list                       ]
 --                 [ 1 ][ Search...       ][ Spawn ]
 --   SPAWN ENEMY   [ enemy list          ][ Spawn ]
@@ -3995,7 +3959,7 @@ function MenuLayout.Build(cm, p, attach)
     local titles = MlNew(tree, "VerticalBox")
     MlMiddle(MlFill(MlPad(head:AddChildToHorizontalBox(titles), 12, 0, 0, 0)))
     titles:AddChildToVerticalBox(MlText(tree, "MOD MENU", 17, { R = 1, G = 1, B = 1, A = 1 }, true, 120))
-    titles:AddChildToVerticalBox(MlText(tree, "PAGE UP TO CLOSE", 9, MS_HEADING, true, 200))
+    titles:AddChildToVerticalBox(MlText(tree, "BACKSPACE TO CLOSE", 9, MS_HEADING, true, 200))
 
     local card
     local function Section(title)
@@ -4406,7 +4370,7 @@ RegisterConsoleCommandHandler(".find", function(FullCommand, Parameters)
     ExecuteInGameThread(function()
         local combo = ItemMenu.FindCombo()
         if not combo then
-            Log("[find] Item list not found - open the menu (PageUp) in-game first")
+            Log("[find] Item list not found - open the menu (.menu) in-game first")
             return
         end
         ItemMenu.EnsureLabels(combo)
@@ -6394,7 +6358,7 @@ local function DoSpawnItem(itemID, amount)
             Log("Spawned! Check around you")
         else
             Log("Item spawn not available for: " .. itemID)
-            Log("Use PageUp for dev cheat menu item spawning")
+            Log("Use .menu for dev cheat menu item spawning")
         end
     end)
 end
@@ -6545,7 +6509,7 @@ RegisterConsoleCommandHandler(".cheatfuncs", function(FullCommand, Parameters)
             end)
             Log("Total: " .. count .. " functions")
         else
-            Log("Cheat menu not found - press PageUp first?")
+            Log("Cheat menu not found - open it with .menu first?")
         end
     end)
     return true
@@ -7784,7 +7748,7 @@ RegisterConsoleCommandHandler(".cheats", function(FullCommand, Parameters)
     Log("SPAWN:")
     Log("  .enemy <type> [n]  - spawn enemies")
     Log("  .summon <class>    - spawn by class")
-    Log("  PageUp             - DEV MENU for items")
+    Log("  .menu              - DEV MENU for items")
     Log("")
     Log("COMBAT:")
     Log("  .damage_target [n] - hurt target")
@@ -7951,7 +7915,6 @@ SafeRegisterCommand(".diag", function(FullCommand, Parameters)
     Log("  Key enum available: " .. (KeysAvailable and "YES" or "NO"))
     Log("  Keys mapped: " .. keyCount)
     Log("  Hotkeys bound: " .. boundHotkeys .. "/7")
-    Log("  PageUp available: " .. (KeyMap["pageup"] and "YES" or "NO"))
     Log("")
 
     -- Screen info
@@ -7988,7 +7951,7 @@ SafeRegisterCommand(".diag", function(FullCommand, Parameters)
     return true
 end)
 
--- Alternative key command for menu toggle (backup if PageUp doesn't work)
+-- .menu: opens / closes the cheat menu (also from the Mod Hub)
 SafeRegisterCommand(".menu", function(FullCommand, Parameters)
     SafeExecuteInGameThread(function()
         local cheatMenu = GetCheatMenuWidget()
@@ -8193,7 +8156,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.12 Loaded!")
+Log("  MISERY Mod Menu v4.6.13 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")
@@ -8207,17 +8170,13 @@ else
         Log("  (Some keys unavailable)")
     end
 end
-Log("  PageUp - Toggle Dev Cheat Menu")
-if not KeyMap["pageup"] then
-    Log("    ^ PageUp unavailable! Use .menu")
-end
 Log("  F1-F7 - Quick stat adjustments")
 Log("")
 Log("QUICK START:")
 Log("  .instaheal - God mode (auto-heal)")
 Log("  .infstam   - Infinite stamina")
 Log("  .time 12   - Set noon")
-Log("  .menu      - Toggle menu (if PageUp fails)")
+Log("  .menu      - Toggle the cheat menu (or from the Mod Hub: PageUp)")
 Log("")
 
 -- Show any initialization errors

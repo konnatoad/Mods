@@ -53,8 +53,8 @@ Every mod has a `CHANGELOG.md`; in game, `.mods` → pick a mod → **Changelog*
 
 | Mod | What it does | In co-op |
 |---|---|---|
-| **ModHub** *(new)* | `.mods` opens a menu of the loaded mods: their hotkeys, console commands, settings and changelogs, a button for mods with their own menu, and restarting mods you've changed | Only your game |
-| **MISERYModMenu** | The PageUp menu, restyled (dark navy, in sections), with in-game item names, a search box, single spawn and many console cheats | The host's menu gives joined players their items and stats; time, weather and enemies are the host's |
+| **ModHub** *(new)* | PageUp (or `.mods`) opens a menu of the loaded mods: their hotkeys, console commands, settings and changelogs, a button for mods with their own menu, and restarting mods you've changed | Only your game |
+| **MISERYModMenu** | The cheat menu (`.menu`, or from its page in the Mod Hub), restyled (dark navy, in sections), with in-game item names, a search box, single spawn and many console cheats | The host's menu gives joined players their items and stats; time, weather and enemies are the host's |
 | **RadiationShield** *(new)* | HOME switches on less radiation (for bunker hot spots), with an on-screen badge; `.radmenu` for settings and a live radiation readout | Each player's own shield, if the host allows it, at the host's strength |
 | **Mi8CargoHold** | The Mi-8 wreck becomes a 1,000-slot storage container | Everyone uses the host's hold; the host's save keeps it |
 | **WorldTweaks** *(new)* | Day/night length (22 / 4), season and darker nights. Replaces DayLengthTweaks and the Darker Nights pak | The host's day length and season; your own darker nights |
@@ -141,7 +141,7 @@ Press `~` in game to open the console. `.mods` shows every mod's commands too.
 
 | Command | Effect |
 |---|---|
-| `.mods` | Mod Hub: the loaded mods, their keys, commands and changelogs; opens their menus |
+| `.mods` | Mod Hub (or PageUp): the loaded mods, their keys, commands and changelogs; opens their menus |
 | `.reloadmods` | Restarts the mods whose `main.lua` changed since they loaded (or `.reloadmods <Name>` for one mod) |
 | `.radshield [on\|off]` | Radiation Shield on / off (same as HOME) |
 | `.radshield 75` | 75% less radiation, and switches it on (saved) |
@@ -158,9 +158,9 @@ Press `~` in game to open the console. `.mods` shows every mod's commands too.
 | `.weightreport` | If the weight fix can't find the weight value: empty the backpack, then run it |
 | `.worldinfo` | Shows the day/night settings |
 | `.weatherdump` | Writes the weather presets to a file |
-| `.find <name>` | Searches the PageUp menu's item list (`.find` alone clears it) |
+| `.find <name>` | Searches the cheat menu's item list (`.find` alone clears it) |
 | `.spawnmode game\|mod` | Who adds items when you press Spawn (not chosen: in co-op the host's menu adds them) |
-| `.menudump` | Writes the PageUp menu's widgets to the log (for reporting layout problems) |
+| `.menudump` | Writes the cheat menu's widgets to the log (for reporting layout problems) |
 | `.help` | Every Mod Menu command |
 
 ## Radiation Shield menu

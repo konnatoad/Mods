@@ -27,7 +27,7 @@ local INFO = {
     { name = "MISERYModMenu", title = "Mod Menu",
       about = "Spawn items and enemies, set the time and weather, trigger events, and cheats. In co-op the host's menu gives you items and stats; time, weather and enemies are the host's.",
       menu = { "Open the spawn menu", ".menu" },
-      keys = { { "PAGE UP", "Spawn menu" }, { "6 / 7", "Health +100 / Stamina +100" },
+      keys = { { "6 / 7", "Health +100 / Stamina +100" },
                { "8 / 9", "Hunger +50 / Thirst +50" }, { "0", "Radiation -50" },
                { "- / =", "Insanity -50 / Health -25" } },
       commands = { { ".menu", "Spawn menu" }, { ".find <name>", "Search the item list" },
@@ -96,6 +96,7 @@ local INFO = {
       about = "Softer camera shake when you're hit." },
     { name = "ModHub", title = "Mod Hub",
       about = "This menu: the loaded mods, their keys, commands, settings and changelogs, and restarting mods you've changed.",
+      keys = { { "PAGE UP", "Open / close this menu" }, { "BACKSPACE", "Back / close" } },
       commands = { { ".mods", "Open / close this menu" }, { ".reloadmods", "Restart the mods you've changed" },
                    { ".reloadmods <Name>", "Restart one mod" } } },
     -- UE4SS's own: shown, never restarted from here
@@ -1325,6 +1326,15 @@ for keyName, action in pairs({ UP_ARROW = "up", DOWN_ARROW = "down", RIGHT_ARROW
                                RETURN = "enter", LEFT_ARROW = "back", BACKSPACE = "backspace" }) do
     pcall(function() RegisterKeyBind(Key[keyName], function() MenuKey(action) end) end)
 end
+
+-- PageUp opens / closes the hub, like .mods (the Mod Menu used to bind it)
+pcall(function()
+    RegisterKeyBind(Key.PAGE_UP, function()
+        ExecuteInGameThread(function()
+            if hub.open then Close() else Open() end
+        end)
+    end)
+end)
 
 RegisterConsoleCommandHandler(".mods", function()
     ExecuteInGameThread(function()

@@ -16,7 +16,7 @@ A cheat/mod menu for MISERY using UE4SS. Includes god mode, stat manipulation, w
 
 | Action | How |
 |--------|-----|
-| Open Dev Menu | Press `PageUp` or type `.menu` in console |
+| Open Dev Menu | Type `.menu` in console, or PageUp (Mod Hub) → Mod Menu → Open the spawn menu. Backspace closes it |
 | Find an item | Type in the search box next to the amount field, or `.find <name>` in console |
 | God Mode | Type `.instaheal` in console |
 | Infinite Stamina | Type `.infstam` in console |
@@ -28,7 +28,6 @@ A cheat/mod menu for MISERY using UE4SS. Includes god mode, stat manipulation, w
 
 | Key | Effect |
 |-----|--------|
-| `PageUp` | Toggle Dev Cheat Menu |
 | `6` | Health +100 |
 | `7` | Stamina +100 |
 | `8` | Hunger +50 |
@@ -124,14 +123,13 @@ handed the real item ID). If a game update ever stops that from working,
 |---------|-------------|
 | `.help` | Show help |
 | `.cheats` | Show all cheat commands |
-| `.menu` | Toggle dev menu (backup for PageUp) |
+| `.menu` | Open / close the dev menu |
 | `.diag` | Show diagnostics (for troubleshooting) |
 
 ## Troubleshooting
 
-### PageUp doesn't open the menu
-- **Solution:** Type `.menu` in the console instead
-- Run `.diag` to check if PageUp key was successfully bound
+### Where did PageUp go?
+- PageUp now opens the Mod Hub. Open the dev menu with `.menu`, or from the Mod Menu's page in the Mod Hub
 
 ### Stat hotkeys (`6` `7` `8` `9` `0` `-` `=`) don't work
 - Some keyboards/systems have different key codes
