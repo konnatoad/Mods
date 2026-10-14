@@ -2,6 +2,12 @@
 
 ---
 
+## 0.1.1 (2026-10-14)
+
+- `.tv download` failed silently: YouTube refused the videos ("Sign in to confirm you're not a bot", and an age check), in a window that closed at once. `.tv list` now shows why each failed, from a log yt-dlp writes for each video (`videos\<id>.log`)
+- New `cookiesFromBrowser` setting (off by default): yt-dlp uses your YouTube login from that browser (firefox, edge, chrome, ...), which gets past those checks. Only real browser names are accepted
+- Downloads run from a small `download.cmd` the mod writes (one minimized window, the videos one after another) and use yt-dlp's full path, in case the game doesn't see your PATH
+
 ## 0.1.0 (2026-10-14)
 
 ### First Version: Finding Out What Works (experimental)

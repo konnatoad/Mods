@@ -9,6 +9,12 @@ return {
     -- TV volume, 0 to 1
     volume = 0.8,
 
+    -- YouTube often refuses anonymous downloads ("Sign in to confirm you're not
+    -- a bot", age checks). Set your browser here and yt-dlp uses your YouTube
+    -- login from it: "firefox", "edge", "chrome", "brave", ... ("" = off).
+    -- Firefox works best; Chrome and Edge may need to be closed while it runs.
+    cookiesFromBrowser = "",
+
     -- Highest video quality downloaded (480, 720, 1080)
     maxHeight = 720,
 

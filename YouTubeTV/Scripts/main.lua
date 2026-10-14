@@ -22,7 +22,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.1.0"
+local VERSION = "0.1.1"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -45,6 +45,16 @@ local cfg = UserConfig()
 local VOLUME = math.max(0, math.min(1, tonumber(cfg.volume) or 0.8))
 local MAX_HEIGHT = math.floor(tonumber(cfg.maxHeight) or 720)
 local SCAN_METERS = tonumber(cfg.scanMeters) or 8
+-- YouTube often refuses anonymous downloads ("confirm you're not a bot", age
+-- checks). yt-dlp can use your browser's YouTube login instead. Only these
+-- names are accepted, so nothing else can get into the command.
+local BROWSERS = { firefox = true, chrome = true, edge = true, brave = true, opera = true, vivaldi = true,
+                   chromium = true, whale = true }
+local COOKIES = tostring(cfg.cookiesFromBrowser or ""):lower()
+if COOKIES ~= "" and not BROWSERS[COOKIES] then
+    print("[YouTubeTV] cookiesFromBrowser '" .. COOKIES .. "' isn't a browser yt-dlp knows; ignored\n")
+    COOKIES = ""
+end
 
 ------------------------------------------------------------
 -- Videos
@@ -76,29 +86,75 @@ local function Downloaded(id)
     return size and size > 0
 end
 
--- yt-dlp in a minimized window, one per missing video (start returns at once)
+-- yt-dlp: the WinGet install if it's there (the game may not see your PATH), else PATH
+local function YtDlp()
+    local localAppData = os.getenv("LOCALAPPDATA")
+    if localAppData then
+        local path = localAppData .. "\\Microsoft\\WinGet\\Links\\yt-dlp.exe"
+        local f = io.open(path, "rb")
+        if f then f:close() return '"' .. path .. '"' end
+    end
+    return "yt-dlp"
+end
+
+-- Writes download.cmd (one minimized window downloads every missing video in
+-- turn, each with a log in videos\<id>.log) and starts it; the game keeps running
 local function Download()
     if #videos == 0 then log("No videos in config.lua (videos = { \"https://www.youtube.com/watch?v=...\" })") return end
-    local started = 0
+    local missing = {}
     for _, v in ipairs(videos) do
-        if not Downloaded(v.id) then
-            local format = string.format(
-                "bv*[vcodec^=avc1][height<=%d]+ba[ext=m4a]/b[ext=mp4][height<=%d]/b[ext=mp4]", MAX_HEIGHT, MAX_HEIGHT)
-            local cmd = string.format(
-                'start "YouTubeTV %s" /min cmd /c yt-dlp -f "%s" --merge-output-format mp4 --no-playlist -o "%s%s.%%(ext)s" "https://www.youtube.com/watch?v=%s"',
-                v.id, format, VIDEO_DIR, v.id, v.id)
-            local ok = pcall(os.execute, cmd)
-            if ok then started = started + 1 end
+        if not Downloaded(v.id) then table.insert(missing, v.id) end
+    end
+    if #missing == 0 then log("All " .. #videos .. " videos are already downloaded") return end
+    local format = string.format(
+        "bv*[vcodec^=avc1][height<=%d]+ba[ext=m4a]/b[ext=mp4][height<=%d]/b[ext=mp4]", MAX_HEIGHT, MAX_HEIGHT)
+    local cookies = COOKIES ~= "" and (" --cookies-from-browser " .. COOKIES) or ""
+    local lines = { "@echo off", "cd /d \"%~dp0\"", "if not exist videos mkdir videos" }
+    for _, id in ipairs(missing) do   -- ids are 11 checked characters: letters, digits, - and _
+        table.insert(lines, string.format("echo Downloading %s ...", id))
+        table.insert(lines, string.format(
+            '%s -f "%s" --merge-output-format mp4 --no-playlist%s -o "videos\\%s.%%%%(ext)s" "https://www.youtube.com/watch?v=%s" > "videos\\%s.log" 2>&1',
+            YtDlp(), format, cookies, id, id, id))
+    end
+    local script = io.open(MOD_DIR .. "download.cmd", "wb")
+    if not script then log("Couldn't write download.cmd in the mod's folder") return end
+    script:write(table.concat(lines, "\r\n") .. "\r\n")
+    script:close()
+    local ok, result = pcall(os.execute, 'start "YouTubeTV download" /min "ue4ss\\Mods\\YouTubeTV\\download.cmd"')
+    if not ok then log("Couldn't start the download: " .. tostring(result)) return end
+    log("Downloading " .. #missing .. " video(s) in a minimized window" .. (cookies ~= "" and (" (with your " .. COOKIES .. " login)") or "")
+        .. ". .tv list shows which are done, or why one failed")
+end
+
+-- Why a download failed: the last ERROR line yt-dlp wrote to videos\<id>.log
+local function FailReason(id)
+    local f = io.open("./" .. VIDEO_DIR .. id .. ".log", "r")
+    if not f then return nil end
+    local reason = nil
+    for line in f:lines() do
+        local e = line:match("ERROR:%s*(.+)")
+        if e then reason = e end
+    end
+    f:close()
+    if reason then
+        -- (the log is in the Windows codepage: "you're" has a curly apostrophe)
+        reason = reason:gsub("[\128-\255]+", "'"):gsub("%[youtube%]%s*[%w_%-]+:%s*", ""):gsub("%. Use %-%-cookies.*$", "")
+        if reason:lower():find("sign in", 1, true) and COOKIES == "" then
+            reason = reason .. " (set cookiesFromBrowser in config.lua)"
         end
     end
-    if started == 0 then log("All " .. #videos .. " videos are already downloaded")
-    else log("Downloading " .. started .. " video(s) in minimized windows (yt-dlp). .tv list shows which are done") end
+    return reason
 end
 
 local function List()
     if #videos == 0 then log("No videos in config.lua") return end
     for i, v in ipairs(videos) do
-        log(string.format("  %d  %s  %s", i, v.id, Downloaded(v.id) and "downloaded" or "not downloaded (.tv download)"))
+        local state = "downloaded"
+        if not Downloaded(v.id) then
+            local why = FailReason(v.id)
+            state = why and ("failed: " .. why) or "not downloaded (.tv download)"
+        end
+        log(string.format("  %d  %s  %s", i, v.id, state))
     end
 end
 
