@@ -179,7 +179,6 @@ KEY STATUS:
   Key enum available: YES
   Keys mapped: 52
   Hotkeys bound: 7/7
-  PageUp available: YES
 
 SCREEN:
   Resolution: 1920x1080
