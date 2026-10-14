@@ -2,6 +2,11 @@
 
 ---
 
+## 0.1.4 (2026-10-14)
+
+- `.tv hud` opened the video (the game said yes) but nothing showed or played. `.tv status` asks the player what it's doing: which decoder it picked, ready / preparing / playing, the video's length and time, its tracks and size, the picture's size, and whether the sound is on. If it's ready but not playing, it tells it to play
+- "Play once opened" is switched on before a video opens, in case the engine component's player has it off
+
 ## 0.1.3 (2026-10-14)
 
 - Downloads went to the download folder set in your own yt-dlp config (e.g. `Downloads\videos`) instead of the mod's `videos` folder. The mod's folder is now given to yt-dlp as a full path (`-P`), which overrides that; the rest of your yt-dlp config still applies

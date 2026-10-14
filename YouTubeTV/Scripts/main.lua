@@ -22,7 +22,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.1.3"
+local VERSION = "0.1.4"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -431,11 +431,58 @@ local function OpenVideo(player, index)
     local v = videos[index]
     if not v then return false, "no video " .. tostring(index) end
     if not Downloaded(v.id) then return false, v.id .. " isn't downloaded yet (.tv download, then .tv list)" end
+    -- starts by itself once opened (a component's player may have it off)
+    pcall(function() player.PlayOnOpen = true end)
     local ok, opened = pcall(function() return player:OpenFile(FileOf(v.id)) end)
     if not ok then return false, "OpenFile failed: " .. tostring(opened) end
     pcall(function() player:SetLooping(false) end)
     log(string.format("  opening video %d (%s): %s", index, v.id, tostring(opened)))
     return true
+end
+
+-- .tv status: what the player says about itself now. If it's ready but not
+-- playing, it's told to play.
+local function Status()
+    if not tv then log("Nothing playing - .tv hud or .tv on first") return end
+    local p, t = tv.player, tv.texture
+    local function get(label, fn)
+        local ok, v = pcall(fn)
+        local text
+        if not ok then text = "(error: " .. tostring(v) .. ")"
+        elseif type(v) == "userdata" or type(v) == "table" then
+            local parts = {}
+            for _, k in ipairs({ "X", "Y", "Ticks" }) do
+                local okk, kv = pcall(function() return v[k] end)
+                if okk and kv ~= nil then table.insert(parts, k .. "=" .. tostring(kv)) end
+            end
+            if #parts == 0 then pcall(function() table.insert(parts, v:ToString()) end) end
+            text = #parts > 0 and table.concat(parts, " ") or tostring(v)
+        else text = tostring(v) end
+        log(string.format("  %-22s %s", label, text))
+        return ok and v or nil
+    end
+    log("Status of video " .. tostring(tv.index) .. ":")
+    get("decoder", function() return p:GetPlayerName() end)
+    get("url", function() return p:GetUrl() end)
+    get("play on open", function() return p.PlayOnOpen end)
+    local ready = get("ready", function() return p:IsReady() end)
+    get("preparing", function() return p:IsPreparing() end)
+    local playing = get("playing", function() return p:IsPlaying() end)
+    get("paused", function() return p:IsPaused() end)
+    get("closed", function() return p:IsClosed() end)
+    get("length", function() return p:GetDuration() end)
+    get("time", function() return p:GetTime() end)
+    get("rate", function() return p:GetRate() end)
+    get("video tracks", function() return p:GetNumTracks(1) end)   -- 1 = video
+    get("audio tracks", function() return p:GetNumTracks(0) end)   -- 0 = audio
+    get("video size", function() return p:GetVideoTrackDimensions(-1, -1) end)
+    get("texture size", function() return string.format("%sx%s", tostring(t:GetWidth()), tostring(t:GetHeight())) end)
+    get("sound active", function() return tv.sound and tv.sound:IsActive() end)
+    if ready == true and playing ~= true then
+        local ok, played = pcall(function() return p:Play() end)
+        log("  ready but not playing - told it to play: " .. tostring(ok and played))
+    end
+    log("Done - send these lines")
 end
 
 local function AttachSound(actor, player)
@@ -612,8 +659,9 @@ RegisterConsoleCommandHandler(".tv", function(FullCommand, Parameters)
             elseif a == "hud" then Hud(n)
             elseif a == "on" then On(n)
             elseif a == "next" then Next()
+            elseif a == "status" then Status()
             elseif a == "off" then Stop()
-            else log(".tv probe | download | list | scan | hud [n] | on [n] | next | off") end
+            else log(".tv probe | download | list | scan | hud [n] | on [n] | status | next | off") end
         end)
         if not ok then log("Error: " .. tostring(err)) end
     end)
