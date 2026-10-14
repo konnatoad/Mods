@@ -32,4 +32,8 @@ return {
     -- The screen's size, as a share of the TV's front (width, height)
     screenWidth = 0.8,
     screenHeight = 0.75,
+
+    -- TURN ON TV / TURN OFF TV in the game's E menu on a TV (false = off;
+    -- .tv on / .tv off still work)
+    eMenu = true,
 }

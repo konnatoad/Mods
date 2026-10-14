@@ -17,6 +17,7 @@
 --   .tv next         the next video
 --   .tv turn / .tv mirror / .tv size 1.1   fix the picture on the TV's screen
 --   .tv off          stops it (the HUD panel too)
+--   E menu on a TV   TURN ON TV / TURN OFF TV (eMenu = false in config.lua: off)
 --   .tv learn        look at a TV: how the game's E menu works on it (for turning it on with E)
 --
 -- Videos are downloaded with yt-dlp (+ ffmpeg) as H.264/AAC .mp4, which the
@@ -24,7 +25,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.2.2"
+local VERSION = "0.3.0"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -771,13 +772,11 @@ local function PickScreen(actor, aimed)
     return best
 end
 
-local function On(index)
+-- Turns a TV on: actor is the TV, aimed the part you looked at (or nil)
+local function OnActor(actor, aimed, index)
     if tv then Stop() end
-    local target, err = LookedAt(false)
-    if not target then log("TV on: " .. err .. " - look at the TV") return end
-    local actor = target.actor
     log("TV on: " .. NameOf(actor) .. " (" .. ClassName(actor) .. ")")
-    local screen = PickScreen(actor, target.comp)
+    local screen = PickScreen(actor, aimed)
     if not screen then log("  it has no mesh to show a picture on") return end
     local param = PickParam(screen.params)
     log(string.format("  TV mesh: %s, material %s, texture slot: %s", NameOf(screen.mesh), NameOf(screen.mat),
@@ -799,6 +798,12 @@ local function On(index)
     local ok, why = OpenVideo(player, tv.index)
     if not ok then log("  " .. why) end
     log("Done - send these lines if the TV stays dark or silent (.tv off stops it)")
+end
+
+local function On(index)
+    local target, err = LookedAt(false)
+    if not target then log("TV on: " .. err .. " - look at the TV") return end
+    OnActor(target.actor, target.comp, index)
 end
 
 -- .tv turn / .tv mirror / .tv size <factor>: fix the picture if it's sideways,
@@ -827,6 +832,147 @@ local function Next()
     tv.index = tv.index % #videos + 1
     local ok, why = OpenVideo(tv.player, tv.index)
     if not ok then log(why) end
+end
+
+------------------------------------------------------------
+-- E menu: "TURN ON TV" / "TURN OFF TV" on the game's own TV
+------------------------------------------------------------
+-- The TV (BP_TV_C) answers the game's "SGK PossibleActions" with the entries
+-- of its E menu (only PICK UP without power), and "SGK Interact" runs the one
+-- you choose. After the game fills the list, one entry is added; when it's
+-- chosen, the video starts or stops on that TV.
+local TV_CLASS = "/Game/SurvivalGameKitV2/Blueprints/BuildParts/Furniture/WorldObect/Decor/BP_TV.BP_TV_C"
+local E_ACTION_NAME = "ActionName_15_19BA14C540FCFDAA9B8F29A403079514"
+local E_ACTION_TYPE = "WorldActions_14_09EA4A134331DF405C8B59A59F4D242C"
+local E_MENU = cfg.eMenu ~= false   -- eMenu = false in config.lua: no E menu entry
+local LABEL_ON, LABEL_OFF = "TURN ON TV", "TURN OFF TV"
+local eMenu = { type = nil, hooked = false, logged = {} }
+
+local function LogOnce(key, msg)
+    if eMenu.logged[key] then return end
+    eMenu.logged[key] = true
+    log(msg)
+end
+
+-- The game's action types (an enum on the entry struct): name = value
+local function ActionTypes()
+    local types, order = {}, {}
+    pcall(function()
+        local fn = StaticFindObject(TV_CLASS .. ":SGK PossibleActions")
+        fn:ForEachProperty(function(param)
+            local inner = nil
+            pcall(function() inner = param:GetInner() end)
+            local struct = nil
+            pcall(function() struct = inner:GetStruct() end)
+            if struct then
+                struct:ForEachProperty(function(field)
+                    local enum = nil
+                    pcall(function() enum = field:GetEnum() end)
+                    if enum then
+                        enum:ForEachName(function(name, value)
+                            local n = tostring(name:ToString()):gsub("^.*::", "")
+                            types[n] = value
+                            table.insert(order, n .. "=" .. tostring(value))
+                        end)
+                    end
+                end)
+            end
+        end)
+    end)
+    return types, order
+end
+
+-- The type our entry carries: one the game names like turning on or using
+local TYPE_WORDS = { "turnon", "turn_on", "poweron", "switchon", "toggle", "use", "activate", "interact" }
+local function PickActionType()
+    local types, order = ActionTypes()
+    log("E menu: the game's action types: " .. (#order > 0 and table.concat(order, ", ") or "(couldn't read them)"))
+    for _, word in ipairs(TYPE_WORDS) do
+        for name, value in pairs(types) do
+            if name:lower():gsub("[%s_]", ""):find(word:gsub("_", ""), 1, true) then
+                log("E menu: using type " .. name .. " (" .. tostring(value) .. ") for TURN ON TV")
+                return value
+            end
+        end
+    end
+    log("E menu: no action type that means turning on / using - no entry added (send these lines)")
+    return nil
+end
+
+local function IsTv(actor)
+    return Valid(actor) and ClassName(actor) == "BP_TV_C"
+end
+
+-- The array among a hook's parameters (the list of actions being returned)
+local function ArrayParam(...)
+    for i = 1, select("#", ...) do
+        local p = select(i, ...)
+        local v = nil
+        pcall(function() v = p:get() end)
+        local ok, n = pcall(function() return v:GetArrayNum() end)
+        if ok and type(n) == "number" then return v, n end
+    end
+    return nil
+end
+
+local function OnPossibleActions(self, ...)
+    local actor = nil
+    pcall(function() actor = self:get() end)
+    if not IsTv(actor) or not eMenu.type then return end
+    local list, n = ArrayParam(...)
+    if not list then LogOnce("noarray", "E menu: couldn't find the TV's list of actions") return end
+    local playingHere = tv ~= nil and tv.actor ~= nil and NameOf(tv.actor) == NameOf(actor)
+    local label = playingHere and LABEL_OFF or LABEL_ON
+    local ok, err = pcall(function()
+        list[n + 1] = { [E_ACTION_NAME] = FText(label), [E_ACTION_TYPE] = eMenu.type }
+    end)
+    if not ok then
+        -- the name may be a plain name rather than text
+        ok, err = pcall(function() list[n + 1] = { [E_ACTION_NAME] = FName(label), [E_ACTION_TYPE] = eMenu.type } end)
+    end
+    LogOnce("added", ok and ("E menu: added '" .. label .. "' to the TV's menu") or ("E menu: couldn't add the entry: " .. tostring(err)))
+end
+
+-- Was the action chosen ours? Looks for the action's name among the parameters
+local function ChosenLabel(...)
+    for i = 1, select("#", ...) do
+        local p = select(i, ...)
+        local v = nil
+        pcall(function() v = p:get() end)
+        local name = nil
+        pcall(function() name = v[E_ACTION_NAME]:ToString() end)
+        if type(name) == "string" and name ~= "" then return name end
+    end
+    return nil
+end
+
+local function OnInteract(self, ...)
+    local actor = nil
+    pcall(function() actor = self:get() end)
+    if not IsTv(actor) then return end
+    local label = ChosenLabel(...)
+    LogOnce("interact", "E menu: the TV's Interact ran with action '" .. tostring(label) .. "'")
+    if label ~= LABEL_ON and label ~= LABEL_OFF then return end
+    ExecuteInGameThread(function()   -- after the game's own handling
+        if label == LABEL_OFF or (tv and tv.actor and NameOf(tv.actor) == NameOf(actor)) then
+            if tv then Stop() end
+        else
+            -- the build part's main mesh is the TV body (not its lace)
+            local main = nil
+            pcall(function() main = actor.StaticMesh end)
+            OnActor(actor, Valid(main) and main or nil, 1)
+        end
+    end)
+end
+
+local function HookEMenu()
+    if not E_MENU or eMenu.hooked then return end
+    if not Find(TV_CLASS) then return end   -- not loaded until a level with a TV is
+    eMenu.hooked = true
+    eMenu.type = PickActionType()
+    local ok1 = pcall(RegisterHook, TV_CLASS .. ":SGK PossibleActions", OnPossibleActions)
+    local ok2 = pcall(RegisterHook, TV_CLASS .. ":SGK Interact", OnInteract)
+    log("E menu: " .. ((ok1 and ok2) and "hooked the TV's menu" or "couldn't hook the TV's menu"))
 end
 
 ------------------------------------------------------------
@@ -987,5 +1133,13 @@ RegisterConsoleCommandHandler(".tv", function(FullCommand, Parameters)
     end)
     return true
 end)
+
+-- The TV's class exists once a level with TVs has loaded: hook its menu then
+pcall(function()
+    RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
+        ExecuteInGameThread(function() pcall(HookEMenu) end)
+    end)
+end)
+pcall(HookEMenu)
 
 log("Loaded v" .. VERSION .. " (experimental): " .. #videos .. " video(s) in config.lua. .tv probe to start")

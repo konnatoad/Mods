@@ -2,6 +2,13 @@
 
 ---
 
+## 0.3.0 (2026-10-14)
+
+### Turn It On With E
+- Walk up to a TV and press E: the game's own E menu has **TURN ON TV** (and **TURN OFF TV** while it plays), next to PICK UP. Choosing it starts the first video on that TV, with its screen and sound; no `.tv on` needed
+- How: `.tv learn` showed the TV answers the game's "SGK PossibleActions" (the menu's entries) and "SGK Interact" (the one chosen). The mod adds its entry to that list and catches it when it's chosen. The entry uses the game's own "use / turn on" action type, read from the game (the log lists them all); if there's none, no entry is added rather than risk one like PICK UP
+- `eMenu = false` in `config.lua` leaves the E menu alone
+
 ## 0.2.2 (2026-10-14)
 
 - Toward turning the TV on with E from the game's own menu: `.tv learn` (look at a TV) logs the functions and settings of the TV's class, its parent classes and the E menu (names and types only, nothing is read), and watches them: open the E menu on the TV, scroll, press E on an entry, and the log shows what ran and what the menu held. That shows where a "Turn on" entry can go and how to catch it
