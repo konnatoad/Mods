@@ -2,6 +2,10 @@
 
 ---
 
+## 0.2.2 (2026-10-14)
+
+- Toward turning the TV on with E from the game's own menu: `.tv learn` (look at a TV) logs the functions and settings of the TV's class, its parent classes and the E menu (names and types only, nothing is read), and watches them: open the E menu on the TV, scroll, press E on an entry, and the log shows what ran and what the menu held. That shows where a "Turn on" entry can go and how to catch it
+
 ## 0.2.1 (2026-10-14)
 
 - The TV's sound comes from the TV instead of straight into your headphones: it's positioned (left / right as you turn) and fades with distance, full volume within `fullVolumeDistance` (1.5 m) and silent past `hearDistance` (15 m). It's mixed to one channel, since a stereo sound can't come from one point, and set up before the sound starts (it reads these settings only then)

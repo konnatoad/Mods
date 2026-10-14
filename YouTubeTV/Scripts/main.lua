@@ -17,13 +17,14 @@
 --   .tv next         the next video
 --   .tv turn / .tv mirror / .tv size 1.1   fix the picture on the TV's screen
 --   .tv off          stops it (the HUD panel too)
+--   .tv learn        look at a TV: how the game's E menu works on it (for turning it on with E)
 --
 -- Videos are downloaded with yt-dlp (+ ffmpeg) as H.264/AAC .mp4, which the
 -- game's Windows video player (WMF) plays. Only the 11-character video ID is
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.2.1"
+local VERSION = "0.2.2"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -829,6 +830,139 @@ local function Next()
 end
 
 ------------------------------------------------------------
+-- .tv learn: how the game's E menu works on a TV (for turning it on with E)
+------------------------------------------------------------
+-- Look at a TV and run it. It logs the functions and settings (names and
+-- types only, nothing is read) of the TV's class and its parent classes and of
+-- the E menu, then watches those functions: open the E menu on the TV, scroll
+-- through it, press E on an entry (or close it), and the log shows what ran
+-- and what the menu held.
+local WIDGETS = "/Game/SurvivalGameKitV2/Blueprints/Widgets/"
+local MENU_CLASS = WIDGETS .. "BP_InteractionContextMenu.BP_InteractionContextMenu_C"
+local ENTRY_CLASS = WIDGETS .. "BP_InteractContextMenuEntry.BP_InteractContextMenuEntry_C"
+local ACTION_NAME_FIELD = "ActionName_15_19BA14C540FCFDAA9B8F29A403079514"
+local ACTION_TYPE_FIELD = "WorldActions_14_09EA4A134331DF405C8B59A59F4D242C"
+local SKIP_WATCH = { Tick = true, ReceiveTick = true, PreConstruct = true, Construct = true, OnPaint = true,
+                     UserConstructionScript = true, ExecuteUbergraph = true }
+local learning = { watched = {}, calls = {} }
+
+local function ClassPathOf(cls)
+    local full = ""
+    pcall(function() full = cls:GetFullName() end)
+    return full:match("^%S+%s+(/.+)$") or ""
+end
+
+-- fn(name) for each function the class itself declares
+local function EachFunction(cls, fn)
+    pcall(function()
+        cls:ForEachFunction(function(f)
+            local name = ""
+            pcall(function() name = f:GetFName():ToString() end)
+            if name ~= "" then fn(name) end
+        end)
+    end)
+end
+
+local function PropertyList(cls)
+    local list = {}
+    pcall(function()
+        cls:ForEachProperty(function(prop)
+            local name, kind = "?", "?"
+            pcall(function() name = prop:GetFName():ToString() end)
+            pcall(function() kind = prop:GetClass():GetFName():ToString() end)
+            table.insert(list, name .. ":" .. kind:gsub("Property$", ""))
+        end)
+    end)
+    return list
+end
+
+-- What the E menu holds (entries in its vertical box)
+local function MenuEntries(menu)
+    local out = {}
+    local box = nil
+    pcall(function() box = menu.ContextVerticalBox end)
+    if not Valid(box) then return "no entry box" end
+    local count = 0
+    pcall(function() count = box:GetChildrenCount() end)
+    for i = 0, count - 1 do
+        local e = nil
+        pcall(function() e = box:GetChildAt(i) end)
+        if Valid(e) then
+            local name, kind, text = "?", "?", ""
+            pcall(function() name = e.Action[ACTION_NAME_FIELD]:ToString() end)
+            pcall(function() kind = tostring(e.Action[ACTION_TYPE_FIELD]) end)
+            pcall(function() text = e.TextBlock:GetText():ToString() end)
+            table.insert(out, string.format("[%d] %s (type %s) '%s'", i, name, kind, text))
+        end
+    end
+    local sel = "?"
+    pcall(function() sel = tostring(menu.SelectedEntryIndex) end)
+    return table.concat(out, ", ") .. "  selected " .. sel
+end
+
+local function Watch(path, label, isMenu)
+    if learning.watched[path] then return end
+    learning.watched[path] = true
+    local ok = pcall(RegisterHook, path, function(self)
+        local n = (learning.calls[path] or 0) + 1
+        learning.calls[path] = n
+        if n > 4 then return end   -- the first few calls are enough
+        local extra = ""
+        if isMenu then
+            local menu = nil
+            pcall(function() menu = self:get() end)
+            if Valid(menu) then extra = "  menu: " .. MenuEntries(menu) end
+        end
+        log("learn: " .. label .. extra)
+    end)
+    if not ok then log("  couldn't watch " .. label) end
+end
+
+local function Learn()
+    local target, err = LookedAt(false)
+    if not target then log("Learn: " .. err .. " - look at the TV") return end
+    log("Learn: " .. NameOf(target.actor) .. " (" .. ClassName(target.actor) .. ")")
+    -- the TV's class and its parents (game classes only)
+    local cls = nil
+    pcall(function() cls = target.actor:GetClass() end)
+    local depth = 0
+    while Valid(cls) and depth < 6 do
+        local path = ClassPathOf(cls)
+        if not path:find("^/Game/") then break end
+        log("  class " .. path)
+        local fns = {}
+        EachFunction(cls, function(name)
+            table.insert(fns, name)
+            if not SKIP_WATCH[name] then Watch(path .. ":" .. name, NameOf(cls) .. ":" .. name, false) end
+        end)
+        log("    functions: " .. (#fns > 0 and table.concat(fns, ", ") or "-"))
+        local props = PropertyList(cls)
+        log("    settings: " .. (#props > 0 and table.concat(props, ", ") or "-"))
+        local super = nil
+        pcall(function() super = cls:GetSuperStruct() end)
+        cls = super
+        depth = depth + 1
+    end
+    -- the E menu and its entries
+    for _, path in ipairs({ MENU_CLASS, ENTRY_CLASS }) do
+        local c = Find(path)
+        if c then
+            local fns = {}
+            EachFunction(c, function(name)
+                table.insert(fns, name)
+                if not SKIP_WATCH[name] and not name:find("^Get") and not name:find("^Is") then
+                    Watch(path .. ":" .. name, path:match("%.([%w_]+)$") .. ":" .. name, path == MENU_CLASS)
+                end
+            end)
+            log("  " .. path:match("%.([%w_]+)$") .. " functions: " .. table.concat(fns, ", "))
+        else
+            log("  " .. path .. " not loaded yet - open the E menu once, then run .tv learn again")
+        end
+    end
+    log("Now open the E menu on the TV, scroll through it, press E on an entry (or close it). Then send the log")
+end
+
+------------------------------------------------------------
 -- Commands
 ------------------------------------------------------------
 RegisterConsoleCommandHandler(".tv", function(FullCommand, Parameters)
@@ -844,9 +978,10 @@ RegisterConsoleCommandHandler(".tv", function(FullCommand, Parameters)
             elseif a == "on" then On(n)
             elseif a == "next" then Next()
             elseif a == "status" then Status()
+            elseif a == "learn" then Learn()
             elseif a == "turn" or a == "mirror" or a == "size" then Adjust(a, Parameters and Parameters[2])
             elseif a == "off" then Stop()
-            else log(".tv probe | download | list | scan | hud [n] | on [n] | status | next | turn | mirror | size <x> | off") end
+            else log(".tv probe | download | list | scan | hud [n] | on [n] | status | next | turn | mirror | size <x> | off | learn") end
         end)
         if not ok then log("Error: " .. tostring(err)) end
     end)
