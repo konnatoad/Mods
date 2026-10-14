@@ -2,6 +2,10 @@
 
 ---
 
+## 0.4.8 (2026-10-14)
+
+- The hook clean-up from 0.4.7 now comes from the shared `GameHooks` module (the other mods use it too), which also fixes a flaw in it: `hooks.txt` survives closing the game, and on the next game start its old ids could belong to other mods' hooks, which would have been removed. A `hooks.txt` from an earlier game session is now ignored
+
 ## 0.4.7 (2026-10-14)
 
 - Restarting this mod from the Mod Hub ("Restart changed mods") could crash the game: UE4SS removes a restarted mod's hooks on engine functions, but its hooks on the game's own functions (the E menu, TVs being removed, `.tv learn`'s) stayed, pointing into the old copy of the mod, and the next time the game ran one, UE4SS crashed. Every such hook is now written to `hooks.txt`, and on load the previous copy's hooks are removed first

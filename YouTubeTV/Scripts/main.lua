@@ -25,7 +25,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.4.7"
+local VERSION = "0.4.8"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -33,41 +33,9 @@ local function log(msg)
     print("[YouTubeTV] " .. tostring(msg) .. "\n")
 end
 
-------------------------------------------------------------
--- Hooks on the game's Blueprint functions, undone on the next load
-------------------------------------------------------------
--- Restarting this mod (Mod Hub's "Restart changed mods") removes its hooks on
--- engine functions, but its hooks on the game's Blueprint functions stayed,
--- pointing into the old copy of the mod: the next time the game ran one (the
--- E menu being built), UE4SS crashed. So every such hook's ids are written to
--- hooks.txt, and on load the previous copy's hooks are removed first.
-local HOOKS_FILE = MOD_DIR .. "hooks.txt"
-
-do
-    local file = io.open(HOOKS_FILE, "r")
-    if file then
-        local removed = 0
-        for line in file:lines() do
-            local path, pre, post = line:match("^(.-)|(%-?%d+)|(%-?%d+)%s*$")
-            if path and pcall(UnregisterHook, path, tonumber(pre), tonumber(post)) then removed = removed + 1 end
-        end
-        file:close()
-        if removed > 0 then log("Removed " .. removed .. " hook(s) left by the previous copy of this mod") end
-    end
-    local clear = io.open(HOOKS_FILE, "w")
-    if clear then clear:close() end
-end
-
--- RegisterHook for a game (Blueprint) function, remembered for the next load
-local function GameHook(path, fn)
-    local pre, post = RegisterHook(path, fn)
-    local file = io.open(HOOKS_FILE, "a")
-    if file then
-        file:write(string.format("%s|%s|%s\n", path, tostring(pre), tostring(post)))
-        file:close()
-    end
-    return pre, post
-end
+-- Hooks on the game's Blueprint functions are undone when the mod is
+-- restarted (Mod Hub), so they can't run into the old copy: shared/GameHooks
+local GameHook = require("GameHooks").ForMod("YouTubeTV")
 
 local function UserConfig()
     local path = MOD_DIR .. "config.lua"
