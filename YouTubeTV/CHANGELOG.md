@@ -2,6 +2,10 @@
 
 ---
 
+## 0.4.2 (2026-10-14)
+
+- TURN ON TV showed for about a second, then disappeared. The game's InitializeEntry starts a timer on each entry (UpdateText) that asks the TV for its actions again and drops the entry if there's none at its place in the list; ours is past the end. The entry is now filled in directly (action, TV, place, text), without that timer, so it stays
+
 ## 0.4.1 (2026-10-14)
 
 - 0.4.0 crashed the game the moment you looked at a TV, without a log line or a crash report. The first thing it did for a TV's menu was ask the engine for the action types' readable names; that's gone (not needed)

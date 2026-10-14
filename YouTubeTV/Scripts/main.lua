@@ -25,7 +25,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.4.1"
+local VERSION = "0.4.2"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -923,9 +923,16 @@ local function AddEntry(menu, actor)
     local ok, err = pcall(function() entry = lib:Create(menu, cls, pc) end)
     if not ok or not Valid(entry) then LogOnce("create", "E menu: couldn't create the entry: " .. tostring(err)) return end
     local action = { [E_ACTION_TYPE] = E_TYPE, [E_ACTION_NAME] = FText(label) }
-    Step("filling it in (InitializeEntry)")
-    ok, err = pcall(function() entry:InitializeEntry(action, actor, index) end)
-    if not ok then LogOnce("init", "E menu: InitializeEntry failed: " .. tostring(err)) return end
+    -- Filled in directly, not with InitializeEntry: that starts the entry's
+    -- UpdateText timer, which asks the TV for its actions again, finds none at
+    -- our index and removes the entry about a second later (0.4.1)
+    Step("filling it in")
+    pcall(function() entry.Action = action end)
+    pcall(function() entry.Actor = actor end)
+    pcall(function() entry.Index = index end)
+    pcall(function() entry.PlayerInventory = menu.PlayerInventory end)
+    ok, err = pcall(function() entry.TextBlock:SetText(FText(label)) end)
+    if not ok then LogOnce("init", "E menu: couldn't set the entry's text: " .. tostring(err)) return end
     Step("adding it to the menu")
     ok, err = pcall(function() box:AddChildToVerticalBox(entry) end)
     if not ok then LogOnce("add", "E menu: couldn't add the entry: " .. tostring(err)) return end
