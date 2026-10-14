@@ -2,6 +2,14 @@
 
 ---
 
+## 0.2.0 (2026-10-14)
+
+### A Screen on the TV
+- First picture on a TV: the video played and was heard, but covered the whole TV. MISERY's TV is one mesh with one texture for the casing and the screen together, so swapping that texture paints everything
+- The TV is now left alone and gets its own screen: a thin panel on the side facing you (you look at the screen when you turn it on), 80% of the front's width and 75% of its height (`screenWidth` / `screenHeight` in `config.lua`). It shows the video through a copy of the TV's material, so it's lit like the TV; you walk and shoot through it
+- If the picture is sideways, mirrored or the wrong size: `.tv turn` (90 degrees), `.tv mirror`, `.tv size 1.1` (10% bigger; 0.9 smaller)
+- `.tv off` removes the panel
+
 ## 0.1.7 (2026-10-14)
 
 - `.tv on` did nothing ("it has no mesh to show a picture on") and `.tv scan` listed no materials: the game reports the part you hit (a mesh) instead of the TV it belongs to. They now go up to the part's owner, the TV, and the part you aimed at is always one of the screens tried

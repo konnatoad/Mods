@@ -15,6 +15,7 @@
 --   .tv hud          plays the first video in a panel on your screen (tests playback)
 --   .tv on [n]       plays video n (default 1) on the TV you're looking at
 --   .tv next         the next video
+--   .tv turn / .tv mirror / .tv size 1.1   fix the picture on the TV's screen
 --   .tv off          stops it (the HUD panel too)
 --
 -- Videos are downloaded with yt-dlp (+ ffmpeg) as H.264/AAC .mp4, which the
@@ -22,7 +23,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.1.7"
+local VERSION = "0.2.0"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -533,7 +534,7 @@ local function Stop()
     if not tv then log("Nothing playing") return end
     pcall(function() tv.player:Close() end)
     if tv.hud and tv.hud.panel then pcall(function() tv.hud.panel:RemoveFromParent() end) end
-    for _, c in ipairs({ tv.sound, tv.media }) do
+    for _, c in ipairs({ tv.sound, tv.media, tv.panel }) do
         if Valid(c) then pcall(function() c:K2_DestroyComponent(c) end) end
     end
     if tv.mesh and tv.oldMaterial then pcall(function() tv.mesh:SetMaterial(tv.slot, tv.oldMaterial) end) end
@@ -601,6 +602,101 @@ local function Hud(index)
 end
 
 ------------------------------------------------------------
+-- The TV's own screen: a thin panel on the TV's front
+------------------------------------------------------------
+-- A TV like MISERY's (one mesh, one texture for the casing and the screen
+-- together) can't have just its screen swapped: the video would cover the
+-- whole TV. So the TV is left alone and gets a thin panel (the engine's cube,
+-- flattened) on the side facing you, showing the video.
+local CUBE = "/Engine/BasicShapes/Cube.Cube"
+local SCREEN_WIDTH = math.max(0.2, math.min(1.2, tonumber(cfg.screenWidth) or 0.8))     -- of the TV's front
+local SCREEN_HEIGHT = math.max(0.2, math.min(1.2, tonumber(cfg.screenHeight) or 0.75))
+
+local function LoadObject(path)
+    local obj = Find(path)
+    if obj then return obj end
+    pcall(function() LoadAsset(path) end)
+    return Find(path)
+end
+
+-- Turns a local offset (x, y, z) by a yaw in degrees
+local function Turn(x, y, yawDeg)
+    local a = math.rad(yawDeg)
+    return x * math.cos(a) - y * math.sin(a), x * math.sin(a) + y * math.cos(a)
+end
+
+-- Where the panel goes: the face of the TV mesh's box that points at you
+-- (you look at the screen when you turn it on). Returns location, rotation,
+-- width and height in cm.
+local function FrontOf(mesh)
+    local box, loc, rot, scale = nil, nil, nil, nil
+    pcall(function() box = mesh.StaticMesh:GetBoundingBox() end)
+    pcall(function() loc = mesh:K2_GetComponentLocation() end)
+    pcall(function() rot = mesh:K2_GetComponentRotation() end)
+    pcall(function() scale = mesh:K2_GetComponentScale() end)
+    if not (box and loc and rot and scale) then return nil, "couldn't read the TV's size" end
+    local min, max = box.Min, box.Max
+    local sx, sy, sz = scale.X, scale.Y, scale.Z
+    local cx, cy, cz = (min.X + max.X) / 2 * sx, (min.Y + max.Y) / 2 * sy, (min.Z + max.Z) / 2 * sz
+    local hx, hy, hz = (max.X - min.X) / 2 * math.abs(sx), (max.Y - min.Y) / 2 * math.abs(sy), (max.Z - min.Z) / 2 * math.abs(sz)
+    -- you, in the TV's own directions
+    local here = PlayerLocation()
+    if not here then return nil, "load into a world first" end
+    local lx, ly = Turn(here.X - loc.X, here.Y - loc.Y, -rot.Yaw)
+    -- the side facing you: along the TV's X or Y, whichever points at you more
+    local faceYaw, out, across
+    if math.abs(lx) >= math.abs(ly) then
+        faceYaw = lx >= 0 and 0 or 180
+        out, across = hx, hy
+        cx = cx + (lx >= 0 and 1 or -1) * (hx + 0.5)
+    else
+        faceYaw = ly >= 0 and 90 or -90
+        out, across = hy, hx
+        cy = cy + (ly >= 0 and 1 or -1) * (hy + 0.5)
+    end
+    local wx, wy = Turn(cx, cy, rot.Yaw)
+    return { X = loc.X + wx, Y = loc.Y + wy, Z = loc.Z + cz },
+           { Pitch = 0, Yaw = rot.Yaw + faceYaw, Roll = 0 },
+           across * 2 * SCREEN_WIDTH, hz * 2 * SCREEN_HEIGHT
+end
+
+-- Builds the panel on the actor showing texture through material's param.
+-- Returns the panel or nil, why
+local function MakePanel(actor, mesh, material, param, texture)
+    local cube = LoadObject(CUBE)
+    if not cube then return nil, "the engine's cube shape isn't in this game (" .. CUBE .. ")" end
+    local where, rot, width, height = FrontOf(mesh)
+    if not where then return nil, rot end
+    local panel, err = AddComponent(actor, "/Script/Engine.StaticMeshComponent")
+    if not panel then return nil, err end
+    pcall(function() panel:SetCollisionEnabled(0) end)   -- you walk and shoot through it
+    pcall(function() panel:SetStaticMesh(cube) end)
+    local dmi = nil
+    pcall(function() dmi = panel:CreateDynamicMaterialInstance(0, material, FName("YouTubeTVScreen")) end)
+    if not Valid(dmi) then
+        pcall(function() panel:K2_DestroyComponent(panel) end)
+        return nil, "couldn't make the screen's material"
+    end
+    local ok, e = pcall(function() dmi:SetTextureParameterValue(FName(param), texture) end)
+    if not ok then
+        pcall(function() panel:K2_DestroyComponent(panel) end)
+        return nil, "SetTextureParameterValue failed: " .. tostring(e)
+    end
+    local placed = { where = where, rot = rot, width = width, height = height, turn = 0, mirror = false }
+    return panel, placed, dmi
+end
+
+-- Puts the panel where placed says (also after .tv turn / mirror / size)
+local function PlacePanel(panel, placed)
+    local rot = { Pitch = placed.rot.Pitch, Yaw = placed.rot.Yaw, Roll = placed.turn }
+    pcall(function() panel:K2_SetWorldLocationAndRotation(placed.where, rot, false, {}, false) end)
+    -- the cube is 100 cm: thin along X (towards you), the screen's size across
+    local w, h = placed.width / 100, placed.height / 100
+    if placed.turn % 180 ~= 0 then w, h = h, w end
+    pcall(function() panel:SetWorldScale3D({ X = 0.004, Y = placed.mirror and -w or w, Z = h }) end)
+end
+
+------------------------------------------------------------
 -- .tv on: the picture on the screen of the TV you're looking at
 ------------------------------------------------------------
 -- The screen: the material slot whose name or texture slots look like a
@@ -646,30 +742,46 @@ local function On(index)
     log("TV on: " .. NameOf(actor) .. " (" .. ClassName(actor) .. ")")
     local screen = PickScreen(actor, target.comp)
     if not screen then log("  it has no mesh to show a picture on") return end
-    log(string.format("  screen: %s slot %d, %s (%s), texture slots: %s", NameOf(screen.mesh), screen.slot,
-        NameOf(screen.mat), ClassName(screen.mat), #screen.params > 0 and table.concat(screen.params, ", ") or "none"))
+    local param = PickParam(screen.params)
+    log(string.format("  TV mesh: %s, material %s, texture slot: %s", NameOf(screen.mesh), NameOf(screen.mat),
+        param or "none"))
+    if not param then log("  its material has no texture slot to show the video in") return end
     local media, player, texture = MakePlayer(actor)
     if not media then log("  no player: " .. tostring(player)) return end
-    tv = { actor = actor, media = media, player = player, texture = texture, index = index or 1,
-           mesh = screen.mesh, slot = screen.slot, oldMaterial = screen.mat }
-    local param = PickParam(screen.params)
-    if param then
-        local dmi = nil
-        pcall(function() dmi = screen.mesh:CreateDynamicMaterialInstance(screen.slot, screen.mat, FName("YouTubeTV")) end)
-        if Valid(dmi) then
-            local ok, e = pcall(function() dmi:SetTextureParameterValue(FName(param), texture) end)
-            log(ok and ("  video shown through texture slot '" .. param .. "'") or ("  SetTextureParameterValue failed: " .. tostring(e)))
-            tv.dmi = dmi
-        else
-            log("  couldn't copy the screen material")
-        end
+    tv = { actor = actor, media = media, player = player, texture = texture, index = index or 1 }
+    local panel, placed, dmi = MakePanel(actor, screen.mesh, screen.mat, param, texture)
+    if panel then
+        tv.panel, tv.placed, tv.dmi = panel, placed, dmi
+        PlacePanel(panel, placed)
+        log(string.format("  screen panel on the front, %.0f x %.0f cm (.tv turn / .tv mirror / .tv size if it's off)",
+            placed.width, placed.height))
     else
-        log("  the screen material has no texture slot to show the video in (sound only for now)")
+        log("  no screen panel: " .. tostring(placed))
     end
     tv.sound = AttachSound(actor, player)
     local ok, why = OpenVideo(player, tv.index)
     if not ok then log("  " .. why) end
     log("Done - send these lines if the TV stays dark or silent (.tv off stops it)")
+end
+
+-- .tv turn / .tv mirror / .tv size <factor>: fix the picture if it's sideways,
+-- mirrored, or the wrong size for the TV
+local function Adjust(what, value)
+    if not (tv and tv.panel and tv.placed) then log("No TV screen on - .tv on first") return end
+    local p = tv.placed
+    if what == "turn" then
+        p.turn = (p.turn + 90) % 360
+        log("Picture turned to " .. p.turn .. " degrees")
+    elseif what == "mirror" then
+        p.mirror = not p.mirror
+        log("Picture " .. (p.mirror and "mirrored" or "not mirrored"))
+    elseif what == "size" then
+        local f = tonumber(value)
+        if not f or f < 0.2 or f > 3 then log(".tv size 1.1 = 10% bigger, .tv size 0.9 = 10% smaller") return end
+        p.width, p.height = p.width * f, p.height * f
+        log(string.format("Screen now %.0f x %.0f cm", p.width, p.height))
+    end
+    PlacePanel(tv.panel, p)
 end
 
 local function Next()
@@ -696,8 +808,9 @@ RegisterConsoleCommandHandler(".tv", function(FullCommand, Parameters)
             elseif a == "on" then On(n)
             elseif a == "next" then Next()
             elseif a == "status" then Status()
+            elseif a == "turn" or a == "mirror" or a == "size" then Adjust(a, Parameters and Parameters[2])
             elseif a == "off" then Stop()
-            else log(".tv probe | download | list | scan | hud [n] | on [n] | status | next | off") end
+            else log(".tv probe | download | list | scan | hud [n] | on [n] | status | next | turn | mirror | size <x> | off") end
         end)
         if not ok then log("Error: " .. tostring(err)) end
     end)

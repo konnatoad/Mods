@@ -86,6 +86,7 @@ local INFO = {
                    { ".tv list", "Which videos are downloaded" }, { ".tv scan", "What you look at: parts, materials" },
                    { ".tv hud [n]", "Play a video in a panel on screen" }, { ".tv on [n]", "Play on the TV you look at" },
                    { ".tv status", "What the player is doing" }, { ".tv next", "Next video" },
+                   { ".tv turn / mirror", "Fix a sideways or mirrored picture" }, { ".tv size 1.1", "Bigger (0.9 smaller)" },
                    { ".tv off", "Stop" } } },
     { name = "ViewDebug", title = "View Debug",
       about = "Work in progress: for the weapon and arms getting stuck at an angle after slow mouse moves. Records your view's angles; changes nothing.",

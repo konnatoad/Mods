@@ -23,4 +23,8 @@ return {
 
     -- How far .tv scan and .tv on look for a TV, in metres
     scanMeters = 8,
+
+    -- The screen's size, as a share of the TV's front (width, height)
+    screenWidth = 0.8,
+    screenHeight = 0.75,
 }
