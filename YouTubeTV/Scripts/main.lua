@@ -22,7 +22,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.1.1"
+local VERSION = "0.1.2"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -46,15 +46,31 @@ local VOLUME = math.max(0, math.min(1, tonumber(cfg.volume) or 0.8))
 local MAX_HEIGHT = math.floor(tonumber(cfg.maxHeight) or 720)
 local SCAN_METERS = tonumber(cfg.scanMeters) or 8
 -- YouTube often refuses anonymous downloads ("confirm you're not a bot", age
--- checks). yt-dlp can use your browser's YouTube login instead. Only these
--- names are accepted, so nothing else can get into the command.
+-- checks). yt-dlp can use your browser's YouTube login instead:
+-- "firefox", or "firefox:<profile folder>" for a Firefox-based browser like
+-- Zen. Only known browser names and plain path characters are accepted, so
+-- nothing else can get into the command.
 local BROWSERS = { firefox = true, chrome = true, edge = true, brave = true, opera = true, vivaldi = true,
-                   chromium = true, whale = true }
-local COOKIES = tostring(cfg.cookiesFromBrowser or ""):lower()
-if COOKIES ~= "" and not BROWSERS[COOKIES] then
-    print("[YouTubeTV] cookiesFromBrowser '" .. COOKIES .. "' isn't a browser yt-dlp knows; ignored\n")
-    COOKIES = ""
+                   chromium = true, whale = true, safari = true }
+local function CookiesArg(value)
+    value = tostring(value or "")
+    if value == "" then return "" end
+    local browser, profile = value:match("^(%a+):(.+)$")
+    browser = (browser or value):lower()
+    if not BROWSERS[browser] then
+        print("[YouTubeTV] cookiesFromBrowser: '" .. browser .. "' isn't a browser yt-dlp knows; ignored\n")
+        return ""
+    end
+    if profile then
+        if not profile:match("^[%w%s:\\/%._%-%(%)]+$") then
+            print("[YouTubeTV] cookiesFromBrowser: the profile folder has characters that aren't allowed; ignored\n")
+            return ""
+        end
+        return browser .. ":" .. profile
+    end
+    return browser
 end
+local COOKIES = CookiesArg(cfg.cookiesFromBrowser)
 
 ------------------------------------------------------------
 -- Videos
@@ -107,13 +123,15 @@ local function Download()
     end
     if #missing == 0 then log("All " .. #videos .. " videos are already downloaded") return end
     local format = string.format(
-        "bv*[vcodec^=avc1][height<=%d]+ba[ext=m4a]/b[ext=mp4][height<=%d]/b[ext=mp4]", MAX_HEIGHT, MAX_HEIGHT)
-    local cookies = COOKIES ~= "" and (" --cookies-from-browser " .. COOKIES) or ""
+        "bv*[vcodec^=avc1][height<=%d]+ba[ext=m4a]/b[ext=mp4][height<=%d]/b[ext=mp4]/bv*[height<=%d]+ba/b",
+        MAX_HEIGHT, MAX_HEIGHT, MAX_HEIGHT)
+    -- quoted: a profile folder can have spaces ("xzqhbajk.Default (release)")
+    local cookies = COOKIES ~= "" and (' --cookies-from-browser "' .. COOKIES .. '"') or ""
     local lines = { "@echo off", "cd /d \"%~dp0\"", "if not exist videos mkdir videos" }
     for _, id in ipairs(missing) do   -- ids are 11 checked characters: letters, digits, - and _
         table.insert(lines, string.format("echo Downloading %s ...", id))
         table.insert(lines, string.format(
-            '%s -f "%s" --merge-output-format mp4 --no-playlist%s -o "videos\\%s.%%%%(ext)s" "https://www.youtube.com/watch?v=%s" > "videos\\%s.log" 2>&1',
+            '%s -f "%s" --merge-output-format mp4 --recode-video mp4 --no-playlist%s -o "videos\\%s.%%%%(ext)s" "https://www.youtube.com/watch?v=%s" > "videos\\%s.log" 2>&1',
             YtDlp(), format, cookies, id, id, id))
     end
     local script = io.open(MOD_DIR .. "download.cmd", "wb")
@@ -122,7 +140,7 @@ local function Download()
     script:close()
     local ok, result = pcall(os.execute, 'start "YouTubeTV download" /min "ue4ss\\Mods\\YouTubeTV\\download.cmd"')
     if not ok then log("Couldn't start the download: " .. tostring(result)) return end
-    log("Downloading " .. #missing .. " video(s) in a minimized window" .. (cookies ~= "" and (" (with your " .. COOKIES .. " login)") or "")
+    log("Downloading " .. #missing .. " video(s) in a minimized window" .. (cookies ~= "" and (" (with your " .. COOKIES:match("^%a+") .. " login)") or "")
         .. ". .tv list shows which are done, or why one failed")
 end
 
