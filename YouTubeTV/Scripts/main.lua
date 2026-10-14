@@ -25,12 +25,48 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.4.6"
+local VERSION = "0.4.7"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
 local function log(msg)
     print("[YouTubeTV] " .. tostring(msg) .. "\n")
+end
+
+------------------------------------------------------------
+-- Hooks on the game's Blueprint functions, undone on the next load
+------------------------------------------------------------
+-- Restarting this mod (Mod Hub's "Restart changed mods") removes its hooks on
+-- engine functions, but its hooks on the game's Blueprint functions stayed,
+-- pointing into the old copy of the mod: the next time the game ran one (the
+-- E menu being built), UE4SS crashed. So every such hook's ids are written to
+-- hooks.txt, and on load the previous copy's hooks are removed first.
+local HOOKS_FILE = MOD_DIR .. "hooks.txt"
+
+do
+    local file = io.open(HOOKS_FILE, "r")
+    if file then
+        local removed = 0
+        for line in file:lines() do
+            local path, pre, post = line:match("^(.-)|(%-?%d+)|(%-?%d+)%s*$")
+            if path and pcall(UnregisterHook, path, tonumber(pre), tonumber(post)) then removed = removed + 1 end
+        end
+        file:close()
+        if removed > 0 then log("Removed " .. removed .. " hook(s) left by the previous copy of this mod") end
+    end
+    local clear = io.open(HOOKS_FILE, "w")
+    if clear then clear:close() end
+end
+
+-- RegisterHook for a game (Blueprint) function, remembered for the next load
+local function GameHook(path, fn)
+    local pre, post = RegisterHook(path, fn)
+    local file = io.open(HOOKS_FILE, "a")
+    if file then
+        file:write(string.format("%s|%s|%s\n", path, tostring(pre), tostring(post)))
+        file:close()
+    end
+    return pre, post
 end
 
 local function UserConfig()
@@ -1051,7 +1087,7 @@ local function HookEMenu()
     if not E_MENU or eMenu.hooked then return end
     if not Find(MENU_CLASS) then return end   -- loaded with the HUD
     eMenu.hooked = true
-    local ok = pcall(RegisterHook, MENU_CLASS .. ":InitializeContextMenu", OnMenuBuilt)
+    local ok = pcall(GameHook, MENU_CLASS .. ":InitializeContextMenu", OnMenuBuilt)
     if Key and Key.E then
         pcall(function()
             RegisterKeyBind(Key.E, function() ExecuteInGameThread(function() pcall(OnEKey) end) end)
@@ -1129,7 +1165,7 @@ end
 local function Watch(path, label, isMenu)
     if learning.watched[path] then return end
     learning.watched[path] = true
-    local ok = pcall(RegisterHook, path, function(self)
+    local ok = pcall(GameHook, path, function(self)
         local menu = nil
         if isMenu then
             pcall(function() menu = self:get() end)
@@ -1282,7 +1318,7 @@ local BUILD_PART = "/Game/SurvivalGameKitV2/Blueprints/BuildParts/BP_MasterBuild
 local destroyHooked = false
 local function HookDestroyed()
     if destroyHooked or not Find(BUILD_PART) then return end
-    destroyHooked = pcall(RegisterHook, BUILD_PART .. ":ReceiveDestroyed", function(self)
+    destroyHooked = pcall(GameHook, BUILD_PART .. ":ReceiveDestroyed", function(self)
         local addr = nil
         pcall(function() addr = self:get():GetAddress() end)
         if addr and (kept[addr] or (tv and tv.addr == addr)) then Forget(addr) end

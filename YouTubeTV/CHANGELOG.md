@@ -2,6 +2,11 @@
 
 ---
 
+## 0.4.7 (2026-10-14)
+
+- Restarting this mod from the Mod Hub ("Restart changed mods") could crash the game: UE4SS removes a restarted mod's hooks on engine functions, but its hooks on the game's own functions (the E menu, TVs being removed, `.tv learn`'s) stayed, pointing into the old copy of the mod, and the next time the game ran one, UE4SS crashed. Every such hook is now written to `hooks.txt`, and on load the previous copy's hooks are removed first
+- Restart the game once after updating: hooks made by older versions aren't in that list
+
 ## 0.4.6 (2026-10-14)
 
 - 0.4.5's E did nothing: it took the TV from the menu's "last looked at" field, which doesn't hold it when E is pressed. It now takes the TV from the entry itself (made for that TV, and in the menu at that moment), then the menu's fields. If E on TURN ON TV still does nothing, the log says why once ("E menu: E pressed, but ...")

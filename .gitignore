@@ -36,3 +36,4 @@ ViewDebug/scan_*.txt
 # YouTube TV downloads
 YouTubeTV/videos/
 YouTubeTV/download.cmd
+YouTubeTV/hooks.txt
