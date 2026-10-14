@@ -2,6 +2,17 @@
 
 ---
 
+## 1.6.4 (2026-10-14)
+
+### Co-op: Radiation Getting Past the Shield
+- Some radiation reached players without passing the point where the shield cuts it. The host's readout showed the shield removing all of the incoming radiation, yet radiation still rose (+4.9 /s); a joined player with the shield on rose +14.5 /s
+- Now, once a second, the host checks every player whose shield is on (the host's own and joined players'): whatever rose beyond what the shield let through is cut by the same percentage, so at 100% none of it stays, however the game added it. The log says once when this happens ("Radiation also rises outside the shield's hook ...")
+- It writes the radiation value directly instead of calling a game function every second (game functions called from a timer froze the game before)
+- Radiation going down (anti-rad drugs) is never touched, and nothing changes while the shield is off
+
+### Joined Player's Readout
+- A joined player's game never sees radiation come in (the host adds it), so the readout showed "Incoming: +0.00 /s" and "Shield removes: -0.00 /s" while radiation rose. It now says "Incoming: counted by the host" and "Shield: on, the host applies it", next to the actual change
+
 ## 1.6.3 (2026-10-13)
 
 - Its timer is a 1 s background tick again: the game-thread timer (LoopInGameThreadWithDelay) of the previous version, used by several mods at once, froze the game during normal play

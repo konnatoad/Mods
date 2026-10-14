@@ -127,6 +127,12 @@ local hostAnswer = nil
 -- others[controller address] = { pc = controller } (they get the host's strength)
 local others = {}
 local othersByInv = {}     -- [inventory address] = reduction, for the hook
+local othersInvObj = {}    -- [inventory address] = that player's inventory
+local othersRaw = {}       -- [inventory address] = radiation the game sent them this second
+-- Hosting: each shielded player's radiation a second ago, to catch radiation
+-- that reaches them without passing the shield's hook ([address] = value)
+local lastRadiation = {}
+local reportedBypass = false
 local othersActive = false
 local intake, lastSample = 0, nil   -- shield check: radiation the game added since the last second
 local rawSecond, hitsSecond = 0, 0  -- what the game sent this second, before the shield
@@ -240,7 +246,8 @@ local function OnIncreaseRadiation(selfParam, amountParam)
     local amount = nil
     pcall(function() amount = amountParam:get() end)
     if type(amount) ~= "number" or amount <= 0 then return end
-    if mine then rawSecond, hitsSecond = rawSecond + amount, hitsSecond + 1 end
+    if mine then rawSecond, hitsSecond = rawSecond + amount, hitsSecond + 1
+    elseif cut then othersRaw[address] = (othersRaw[address] or 0) + amount end
     if not cut then return end
     if mine then intake = intake + amount end
     if mode == "shrink" or not amHost then
@@ -660,10 +667,16 @@ local function UpdateReadout()
     local now, max = live.now, live.max
     SetText(p.lines[1], "Radiation:  " .. (now and string.format("%.1f", now) or "?")
         .. (max and string.format(" / %.0f", max) or ""))
-    SetText(p.lines[2], string.format("Incoming:  +%.2f /s", live.raw))
-    if isOn then
+    if Joined() then
+        -- the host adds (and shields) a joined player's radiation: this game never sees it come in
+        SetText(p.lines[2], "Incoming:  counted by the host")
+        SetText(p.lines[3], (isOn and hostAnswer == "allowed")
+            and string.format("Shield:  on, the host applies it  (%d%%)", Percent(reduction)) or "Shield:  off")
+    elseif isOn then
+        SetText(p.lines[2], string.format("Incoming:  +%.2f /s", live.raw))
         SetText(p.lines[3], string.format("Shield removes:  -%.2f /s  (%d%%)", live.raw * reduction, Percent(reduction)))
     else
+        SetText(p.lines[2], string.format("Incoming:  +%.2f /s", live.raw))
         SetText(p.lines[3], "Shield:  off")
     end
     SetText(p.lines[4], string.format("Actual change:  %+.2f /s", live.rose))
@@ -731,7 +744,7 @@ end
 
 -- Hosting: map each shielded player's current inventory to the host's strength
 RebuildOthers = function()
-    local byInv, active = {}, false
+    local byInv, objs, active = {}, {}, false
     for key, o in pairs(others) do
         local inv = nil
         local okPc = pcall(function()
@@ -743,10 +756,45 @@ RebuildOthers = function()
             others[key] = nil   -- left the game
         elseif Valid(inv) then
             local address = AddressOf(inv)
-            if address then byInv[address] = reduction; active = true end
+            if address then byInv[address] = reduction; objs[address] = inv; active = true end
         end
     end
-    othersByInv, othersActive = byInv, active
+    othersByInv, othersInvObj, othersActive = byInv, objs, active
+end
+
+-- Writes the radiation stat directly (a property, not a game function: calling
+-- game functions from the once-a-second timer froze the game before). On the
+-- host the game sends the new value to the player it belongs to.
+local function SetRadiation(inv, value)
+    if not radiationField then return false end
+    return pcall(function() inv[radiationField] = math.max(0, value) end)
+end
+
+-- Hosting, shield hooked: some radiation reaches a player without passing the
+-- hook the shield cuts (the readout showed 100% removed, yet +4.9 /s). Each
+-- second, whatever rose beyond what the shield let through (raw * (1 - cut))
+-- is cut by the same share. Returns the radiation and the rise after that.
+local function CutBypass(inv, address, raw, cut)
+    local now = ReadRadiation(inv)
+    if not now then return nil, 0 end
+    local last = lastRadiation[address]
+    local rose = last and (now - last) or 0
+    if last then
+        local extra = rose - raw * (1 - cut)
+        if extra > 0.01 and cut > 0 then
+            local take = extra * cut
+            if SetRadiation(inv, now - take) then
+                now, rose = math.max(0, now - take), rose - take
+                if not reportedBypass then
+                    reportedBypass = true
+                    log(string.format("Radiation also rises outside the shield's hook (+%.2f /s here): taking %d%% of that back too",
+                        extra, Percent(cut)))
+                end
+            end
+        end
+    end
+    lastRadiation[address] = now
+    return now, rose
 end
 
 -- Hosting: tell every player who joined (permission changed)
@@ -801,7 +849,19 @@ local function StartLoop()
         do
             local raw, hits = rawSecond, hitsSecond
             rawSecond, hitsSecond = 0, 0
+            local rawOthers = othersRaw
+            othersRaw = {}
             if next(others) then RebuildOthers() end   -- respawns give players new inventories
+            -- hosting: joined players with their shield on get the same bypass check
+            local seen = {}
+            if amHost and isHooked then
+                for address, inv in pairs(othersInvObj) do
+                    if Valid(inv) then
+                        seen[address] = true
+                        CutBypass(inv, address, rawOthers[address] or 0, othersByInv[address] or 0)
+                    end
+                end
+            end
             -- not in a world (main menu, loading): search only every 5 s,
             -- each search walks every object in the game
             local inv = nil
@@ -817,7 +877,7 @@ local function StartLoop()
             end
             local now = ReadRadiation(inv)
             local max = ReadMax(inv)
-            local rose = 0
+            local rose, switched = 0, false
             if now and lastSample then
                 rose = now - lastSample
                 if isOn and amHost then
@@ -826,11 +886,20 @@ local function StartLoop()
                         now = now - rose * reduction
                         rose = rose * (1 - reduction)
                     elseif mode == "shrink" and intake > 1 and rose >= intake * 0.85 then
-                        mode = "takeback"
+                        mode, switched = "takeback", true
                         log("The game ignored the smaller radiation amount; taking back "
                             .. Percent(reduction) .. "% after it's added instead")
                     end
                 end
+            end
+            if isOn and amHost and isHooked and myAddress and not switched then
+                lastRadiation[myAddress] = lastRadiation[myAddress] or lastSample
+                local fixedNow, fixedRose = CutBypass(inv, myAddress, raw, reduction)
+                if fixedNow and lastSample then now, rose = fixedNow, fixedRose end
+                seen[myAddress] = true
+            end
+            for address in pairs(lastRadiation) do
+                if not seen[address] then lastRadiation[address] = nil end   -- shield off, left, respawned
             end
             intake, lastSample = 0, now
             if meterOn and meter then MeterSecond(raw, hits, now, max, rose) end
