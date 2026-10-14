@@ -25,7 +25,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.4.3"
+local VERSION = "0.4.4"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -568,14 +568,19 @@ local function AttachSound(actor, player, inWorld)
     return sound
 end
 
+-- A TV's player, sound and screen, kept after it's turned off and used again
+-- when it's turned back on: [actor name] = { actor, media, player, texture,
+-- sound, panel, placed, dmi }. Deleting them while the engine's video and
+-- audio threads still used them (off right after on) crashed the game (0.4.3).
+local kept = {}
+
 local function Stop()
     if not tv then log("Nothing playing") return end
     pcall(function() tv.player:Close() end)
     if tv.hud and tv.hud.panel then pcall(function() tv.hud.panel:RemoveFromParent() end) end
-    for _, c in ipairs({ tv.sound, tv.media, tv.panel }) do
-        if Valid(c) then pcall(function() c:K2_DestroyComponent(c) end) end
-    end
+    if Valid(tv.panel) then pcall(function() tv.panel:SetVisibility(false, false) end) end
     if tv.mesh and tv.oldMaterial then pcall(function() tv.mesh:SetMaterial(tv.slot, tv.oldMaterial) end) end
+    if tv.actor and not tv.hud then kept[NameOf(tv.actor)] = tv end   -- the HUD test's are left alone too
     tv = nil
     log("TV off")
 end
@@ -782,6 +787,21 @@ local function OnActor(actor, aimed, index)
     log(string.format("  TV mesh: %s, material %s, texture slot: %s", NameOf(screen.mesh), NameOf(screen.mat),
         param or "none"))
     if not param then log("  its material has no texture slot to show the video in") return end
+    -- turned on before: the same player, sound and screen again
+    local old = kept[NameOf(actor)]
+    if old and Valid(old.actor) and Valid(old.player) and Valid(old.media) then
+        kept[NameOf(actor)] = nil
+        tv = old
+        tv.index = index or 1
+        if Valid(tv.panel) then
+            pcall(function() tv.panel:SetVisibility(true, false) end)
+            PlacePanel(tv.panel, tv.placed)
+        end
+        local ok, why = OpenVideo(tv.player, tv.index)
+        if not ok then log("  " .. why) end
+        log("  (the same player, sound and screen as before)")
+        return
+    end
     local media, player, texture = MakePlayer(actor)
     if not media then log("  no player: " .. tostring(player)) return end
     tv = { actor = actor, media = media, player = player, texture = texture, index = index or 1 }
@@ -959,12 +979,16 @@ local function OnMenuBuilt(self, lookAtActor)
 end
 
 -- E: if our entry is the selected one, the TV goes on / off
+local lastToggle = -100
 local function OnEKey()
     local menu, entry, actor = eMenu.menu, eMenu.entry, eMenu.tvActor
     if not (Valid(menu) and Valid(entry) and Valid(actor)) then return end
     local selected = nil
     pcall(function() selected = menu.SelectedEntryIndex end)
     if selected ~= eMenu.index then return end
+    local now = os.clock()
+    if now - lastToggle < 1.0 then return end   -- one toggle a second at most
+    lastToggle = now
     if PlayingOn(actor) then
         Stop()
     else

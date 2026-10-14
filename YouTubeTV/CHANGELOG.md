@@ -2,6 +2,12 @@
 
 ---
 
+## 0.4.4 (2026-10-14)
+
+- TURN ON TV works from the E menu. But turning it off 0.3 s after turning it on crashed the game, in one of its own background threads: turning off deleted the TV's player, sound and screen while the engine's video and audio threads were still opening the video
+- Turning off now only stops the video and hides the screen; the player, sound and screen stay on the TV and are used again next time it's turned on. Nothing is deleted while the engine may still be using it
+- E toggles a TV at most once a second (a double press, or a held key, toggled it twice in 0.3 s)
+
 ## 0.4.3 (2026-10-14)
 
 - The entry read "Text Block" until you scrolled to it: an entry has two labels, one shown while it's selected and one while it isn't, and only the first was set. Both say TURN ON TV / TURN OFF TV now
