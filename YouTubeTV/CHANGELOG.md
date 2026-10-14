@@ -2,6 +2,10 @@
 
 ---
 
+## 0.1.3 (2026-10-14)
+
+- Downloads went to the download folder set in your own yt-dlp config (e.g. `Downloads\videos`) instead of the mod's `videos` folder. The mod's folder is now given to yt-dlp as a full path (`-P`), which overrides that; the rest of your yt-dlp config still applies
+
 ## 0.1.2 (2026-10-14)
 
 - `cookiesFromBrowser` takes a profile folder too, for Firefox-based browsers like Zen: `[[firefox:C:\...\Profiles\xzqhbajk.Default (release)]]`, like yt-dlp's own `--cookies-from-browser "firefox:<folder>"`. The folder may only have letters, digits, spaces and `: \ / . _ - ( )`

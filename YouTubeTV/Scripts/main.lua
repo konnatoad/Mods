@@ -22,7 +22,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.1.2"
+local VERSION = "0.1.3"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -130,8 +130,10 @@ local function Download()
     local lines = { "@echo off", "cd /d \"%~dp0\"", "if not exist videos mkdir videos" }
     for _, id in ipairs(missing) do   -- ids are 11 checked characters: letters, digits, - and _
         table.insert(lines, string.format("echo Downloading %s ...", id))
+        -- -P: the folder as a full path, so a download folder set in your own
+        -- yt-dlp config (e.g. Downloads) doesn't move the videos there
         table.insert(lines, string.format(
-            '%s -f "%s" --merge-output-format mp4 --recode-video mp4 --no-playlist%s -o "videos\\%s.%%%%(ext)s" "https://www.youtube.com/watch?v=%s" > "videos\\%s.log" 2>&1',
+            '%s -f "%s" --merge-output-format mp4 --recode-video mp4 --no-playlist%s -P "%%~dp0videos" -o "%s.%%%%(ext)s" "https://www.youtube.com/watch?v=%s" > "videos\\%s.log" 2>&1',
             YtDlp(), format, cookies, id, id, id))
     end
     local script = io.open(MOD_DIR .. "download.cmd", "wb")
