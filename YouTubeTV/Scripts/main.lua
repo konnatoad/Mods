@@ -25,7 +25,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.4.5"
+local VERSION = "0.4.6"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -991,16 +991,27 @@ local function OnEKey()
     -- read fresh from the menu: the entry selected now and what you look at now
     -- (an entry or TV kept from earlier may have been deleted since)
     local menu = eMenu.menu
-    if not menu then return end
-    local selected, box, actor = nil, nil, nil
+    if not menu then LogOnce("e-nomenu", "E menu: E pressed, but no menu seen yet") return end
+    local selected, box = nil, nil
     pcall(function() selected = menu.SelectedEntryIndex end)
     pcall(function() box = menu.ContextVerticalBox end)
-    pcall(function() actor = menu.LastLookAtActor end)
-    if type(selected) ~= "number" or not Valid(box) or not IsTv(actor) then return end
+    if type(selected) ~= "number" or not Valid(box) then
+        LogOnce("e-nobox", "E menu: E pressed, but couldn't read the menu's selection (" .. tostring(selected) .. ")")
+        return
+    end
     local entry, name = nil, nil
     pcall(function() entry = box:GetChildAt(selected) end)
     pcall(function() name = entry.Action[E_ACTION_NAME]:ToString() end)
-    if name ~= LABEL_ON and name ~= LABEL_OFF then return end
+    if name ~= LABEL_ON and name ~= LABEL_OFF then return end   -- another entry: not ours
+    -- the TV: the one our entry was made for (the entry is in the menu now, so
+    -- it exists), else what the menu says you look at
+    local actor = nil
+    for _, field in ipairs({ "Actor", "LastLookAtActor", "LastActor" }) do
+        local obj = nil
+        pcall(function() obj = (field == "Actor" and entry or menu)[field] end)
+        if IsTv(obj) then actor = obj break end
+    end
+    if not actor then LogOnce("e-notv", "E menu: E on " .. name .. ", but couldn't tell which TV") return end
     local now = os.clock()
     if now - lastToggle < 1.0 then return end   -- one toggle a second at most
     lastToggle = now

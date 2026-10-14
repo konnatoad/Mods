@@ -2,6 +2,10 @@
 
 ---
 
+## 0.4.6 (2026-10-14)
+
+- 0.4.5's E did nothing: it took the TV from the menu's "last looked at" field, which doesn't hold it when E is pressed. It now takes the TV from the entry itself (made for that TV, and in the menu at that moment), then the menu's fields. If E on TURN ON TV still does nothing, the log says why once ("E menu: E pressed, but ...")
+
 ## 0.4.5 (2026-10-14)
 
 - Picking up a TV that was on, placing it elsewhere and looking at it crashed the game. Picking a TV up deletes it (placing makes a new one), but the mod still held the old TV, its player and the old menu entry, and checking a deleted object crashes UE4SS
