@@ -2,6 +2,13 @@
 
 ---
 
+## 1.6.6 (2026-10-14)
+
+- Below 100%, the shield still made radiation build up faster than with no shield. The real cause: this game adds radiation in whole numbers (each hit is exactly 3, radiation is always a whole number), and the shield handed it fractions like 0.75, which the game doesn't add as 0.75. (1.6.5's guess, a hidden second radiation value, was wrong: `.radshield scan` shows the game keeps only one)
+- Whole hits are now shrunk to whole numbers, carrying the leftover to the next hit: hits of 3 at 75% less become 1, 1, 1, 0, ... (0.75 each on average), so the cut is exact over time. 100% (always 0) works as before; hits that aren't whole numbers stay exact
+- The once-a-second check for radiation that gets past the shield now compares with exactly what the shield let through, so whole-number rounding can't set it off
+- `.radshield scan` also lists IncreaseRadiation's and DecreaseRadiation's values and their types
+
 ## 1.6.5 (2026-10-14)
 
 - Below 100%, radiation built up faster with the shield on than without it (100% worked). 1.6.4 removed the radiation that gets past the shield by writing the radiation value directly, but the game keeps more radiation bookkeeping behind that value and pulled it back up, harder the bigger the gap. It now uses the game's own way of lowering radiation (DecreaseRadiation, like the mod menu), so the rest follows

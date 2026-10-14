@@ -228,6 +228,23 @@ end
 -- Called for every bit of radiation the game adds (many times a second in a
 -- radiation zone, for every player on the host), before the game applies it
 -- - so this must stay cheap: no object searches, no widgets.
+-- The game adds radiation in whole numbers (hits of exactly 3.0, radiation
+-- always N.0): a shrunk hit like 0.75 isn't added as 0.75, and below 100%
+-- radiation built up faster than with no shield at all. Whole hits are shrunk
+-- to whole numbers, carrying the remainder to the next hit: 3 at 75% less ->
+-- 1, 1, 1, 0, ... = 0.75 on average. [inventory address] = remainder
+local carry = {}
+-- what the shield let through this second, per inventory ([address] = sum)
+local passed = {}
+local function Shrunk(address, amount, cut)
+    local want = amount * (1 - cut)
+    if amount ~= math.floor(amount) then return want end   -- fractional hits stay exact
+    want = want + (carry[address] or 0)
+    local whole = math.floor(want + 1e-9)
+    carry[address] = want - whole
+    return whole
+end
+
 local function OnIncreaseRadiation(selfParam, amountParam)
     if not (isOn or othersActive or Measuring()) then return end
     local inv = nil
@@ -251,10 +268,13 @@ local function OnIncreaseRadiation(selfParam, amountParam)
     if not cut then return end
     if mine then intake = intake + amount end
     if mode == "shrink" or not amHost then
-        pcall(function() amountParam:set(amount * (1 - cut)) end)
+        local shrunk = Shrunk(address, amount, cut)
+        pcall(function() amountParam:set(shrunk) end)
+        passed[address] = (passed[address] or 0) + shrunk
         if mine and not reportedWorking then
             reportedWorking = true
-            log(string.format("Working: radiation hit %.3f reduced to %.3f", amount, amount * (1 - cut)))
+            log(string.format("Working: radiation hit %.3f reduced to %.3f%s", amount, shrunk,
+                amount == math.floor(amount) and string.format(" (whole numbers, %.2f on average)", amount * (1 - cut)) or ""))
         end
     else
         local take = amount * cut
@@ -769,13 +789,13 @@ end
 -- the mod menu): writing the value directly (1.6.4) left the game's other
 -- radiation bookkeeping behind, and below 100% radiation then built up faster
 -- than with no shield. Returns the radiation and the rise after that.
-local function CutBypass(inv, address, raw, cut)
+local function CutBypass(inv, address, raw, cut, through)
     local now = ReadRadiation(inv)
     if not now then return nil, 0 end
     local last = lastRadiation[address]
     local rose = last and (now - last) or 0
     if last then
-        local extra = rose - raw * (1 - cut)
+        local extra = rose - (through or raw * (1 - cut))
         if extra > 0.01 and cut > 0 then
             local take = extra * cut
             if pcall(function() inv:DecreaseRadiation(take) end) then
@@ -848,6 +868,8 @@ local function StartLoop()
             rawSecond, hitsSecond = 0, 0
             local rawOthers = othersRaw
             othersRaw = {}
+            local through = passed
+            passed = {}
             if next(others) then RebuildOthers() end   -- respawns give players new inventories
             -- hosting: joined players with their shield on get the same bypass check
             local seen = {}
@@ -855,7 +877,8 @@ local function StartLoop()
                 for address, inv in pairs(othersInvObj) do
                     if Valid(inv) then
                         seen[address] = true
-                        CutBypass(inv, address, rawOthers[address] or 0, othersByInv[address] or 0)
+                        CutBypass(inv, address, rawOthers[address] or 0, othersByInv[address] or 0,
+                            mode == "shrink" and (through[address] or 0) or nil)
                     end
                 end
             end
@@ -891,7 +914,8 @@ local function StartLoop()
             end
             if isOn and amHost and isHooked and myAddress and not switched then
                 lastRadiation[myAddress] = lastRadiation[myAddress] or lastSample
-                local fixedNow, fixedRose = CutBypass(inv, myAddress, raw, reduction)
+                local fixedNow, fixedRose = CutBypass(inv, myAddress, raw, reduction,
+                    mode == "shrink" and (through[myAddress] or 0) or nil)
                 if fixedNow and lastSample then now, rose = fixedNow, fixedRose end
                 seen[myAddress] = true
             end
@@ -1504,6 +1528,20 @@ local function Scan()
         end)
     end)
     log("  Functions: " .. (#functions > 0 and table.concat(functions, ", ") or "(none found)"))
+    for _, fnName in ipairs({ "IncreaseRadiation", "DecreaseRadiation" }) do
+        local params = {}
+        pcall(function()
+            local fn = StaticFindObject(INVENTORY_CLASS .. ":" .. fnName)
+            if not Valid(fn) then return end
+            fn:ForEachProperty(function(prop)
+                local name, kind = "?", "?"
+                pcall(function() name = prop:GetFName():ToString() end)
+                pcall(function() kind = prop:GetClass():GetFName():ToString() end)
+                table.insert(params, name .. " (" .. kind .. ")")
+            end)
+        end)
+        log("  " .. fnName .. ": " .. (#params > 0 and table.concat(params, ", ") or "(couldn't list)"))
+    end
     log("Done - send these lines")
 end
 
