@@ -2,6 +2,10 @@
 
 ---
 
+## 0.3.2 (2026-10-14)
+
+- Toward a TURN ON TV entry built into the E menu widget itself (the way Mi-8 Cargo Hold edits that menu, without the TV's own functions): `.tv learn` also logs the menu's and its entries' settings, what PopulateMenu, InitializeContextMenu, InitializeEntry and EntrySelected take, the game's action types (PICK UP is 2), and what the menu holds and has selected when you press E. Names and types only, and it finds the menu through its own functions, not by searching the game's objects
+
 ## 0.3.1 (2026-10-14)
 
 - 0.3.0 crashed the game as soon as you looked at a TV: the game asks the TV for its E menu entries ("SGK PossibleActions") every time you look at it, and that function returns a list. This UE4SS crashes handling a hooked Blueprint function's returned list, before any of the mod's code runs. Those hooks are switched off, so there's no TURN ON TV entry for now; `.tv on` / `.tv off` work as before

@@ -25,7 +25,7 @@
 -- taken from each link; the command is built from it, never from the link.
 -- Co-op (the host's list for everyone, in sync) comes later.
 ------------------------------------------------------------
-local VERSION = "0.3.1"
+local VERSION = "0.3.2"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -1055,18 +1055,72 @@ local function Watch(path, label, isMenu)
     if learning.watched[path] then return end
     learning.watched[path] = true
     local ok = pcall(RegisterHook, path, function(self)
+        local menu = nil
+        if isMenu then
+            pcall(function() menu = self:get() end)
+            if Valid(menu) then learning.menu = menu end   -- the E key reads it (no object search)
+        end
         local n = (learning.calls[path] or 0) + 1
         learning.calls[path] = n
         if n > 4 then return end   -- the first few calls are enough
         local extra = ""
-        if isMenu then
-            local menu = nil
-            pcall(function() menu = self:get() end)
-            if Valid(menu) then extra = "  menu: " .. MenuEntries(menu) end
-        end
+        if Valid(menu) then extra = "  menu: " .. MenuEntries(menu) end
         log("learn: " .. label .. extra)
     end)
     if not ok then log("  couldn't watch " .. label) end
+end
+
+-- The game's action types (PICK UP is 2): the enum on the entry's Action.
+-- Tries the few ways this UE4SS might expose it; logs which one worked.
+local function LearnActionTypes()
+    local entryClass = Find(ENTRY_CLASS)
+    if not entryClass then return end
+    local found = false
+    pcall(function()
+        entryClass:ForEachProperty(function(prop)
+            local name = ""
+            pcall(function() name = prop:GetFName():ToString() end)
+            if name ~= "Action" then return end
+            local struct = nil
+            for _, getter in ipairs({ "GetStruct", "GetScriptStruct" }) do
+                if not struct then pcall(function() struct = prop[getter](prop) end) end
+            end
+            if not struct then log("  action types: couldn't reach the Action struct") return end
+            struct:ForEachProperty(function(field)
+                local enum = nil
+                for _, getter in ipairs({ "GetEnum", "GetEnumProperty" }) do
+                    if not enum then pcall(function() enum = field[getter](field) end) end
+                end
+                if enum then
+                    local names = {}
+                    local ok = pcall(function()
+                        enum:ForEachName(function(n, v) table.insert(names, tostring(n:ToString()) .. "=" .. tostring(v)) end)
+                    end)
+                    log("  action types (" .. NameOf(enum) .. "): " .. (ok and table.concat(names, ", ") or "couldn't list them"))
+                    found = true
+                end
+            end)
+        end)
+    end)
+    if not found then log("  action types: no enum found on the entry's Action") end
+end
+
+-- E pressed: what the open menu holds and which entry is selected (only logged)
+local eKeyWatched = false
+local function LearnEKey()
+    if eKeyWatched or not (Key and Key.E) then return end
+    eKeyWatched = true
+    pcall(function()
+        RegisterKeyBind(Key.E, function()
+            ExecuteInGameThread(function()
+                local menu = learning.menu
+                if not Valid(menu) then log("learn: E pressed - no menu seen yet") return end
+                local vis = "?"
+                pcall(function() vis = tostring(menu:GetVisibility()) end)
+                log("learn: E pressed - menu visibility " .. vis .. ", " .. MenuEntries(menu))
+            end)
+        end)
+    end)
 end
 
 local function Learn()
@@ -1106,11 +1160,20 @@ local function Learn()
                 end
             end)
             log("  " .. path:match("%.([%w_]+)$") .. " functions: " .. table.concat(fns, ", "))
+            log("    settings: " .. table.concat(PropertyList(c), ", "))
+            -- what the functions that build entries take (names and types)
+            for _, fname in ipairs({ "PopulateMenu", "InitializeContextMenu", "InitializeEntry", "EntrySelected" }) do
+                local fn = Find(path .. ":" .. fname)
+                if fn then log("    " .. fname .. "(" .. table.concat(PropertyList(fn), ", ") .. ")") end
+            end
         else
             log("  " .. path .. " not loaded yet - open the E menu once, then run .tv learn again")
         end
     end
-    log("Now open the E menu on the TV, scroll through it, press E on an entry (or close it). Then send the log")
+    LearnActionTypes()
+    LearnEKey()
+    log("Now: look away and back at the TV, open its E menu and scroll it (don't press E on PICK UP).")
+    log("Then open the E menu on something harmless (a cabinet's OPEN) and press E there. Then send the log")
 end
 
 ------------------------------------------------------------
