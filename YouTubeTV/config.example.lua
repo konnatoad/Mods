@@ -13,6 +13,9 @@ return {
     -- a bot", age checks). Set your browser here and yt-dlp uses your YouTube
     -- login from it: "firefox", "edge", "chrome", "brave", ... ("" = off).
     -- Firefox works best; Chrome and Edge may need to be closed while it runs.
+    -- A Firefox-based browser (Zen, LibreWolf...): "firefox:" and its profile
+    -- folder, between [[ ]] so the backslashes stay as they are, e.g.
+    --   cookiesFromBrowser = [[firefox:C:\Users\you\AppData\Roaming\zen\Profiles\abcd1234.Default (release)]],
     cookiesFromBrowser = "",
 
     -- Highest video quality downloaded (480, 720, 1080)
