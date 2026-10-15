@@ -2,6 +2,10 @@
 
 ---
 
+## 0.5.5 (2026-10-15)
+
+- Media Plate plays now (0.5.4's fix: it only opens a video while its mesh is visible, and the screen panel is its mesh), so a TV starts somewhere in the middle of a video. But it stretched its mesh to the video's shape, turning the thin screen into a block on top of the TV. Its automatic aspect ratio and letterboxing are off now, and 2 s after each video opens the screen is put back to its own size and place in case it changed anyway
+
 ## 0.5.4 (2026-10-15)
 
 - Media Plate marked itself as playing but its player never got the video (no URL). Two changes to find out why and maybe fix it: Media Plate gets the TV's screen panel as its mesh (it may only open media while its mesh is visible), and if it still doesn't start, the log line also shows the file path it was given, whether that file is there, and what its media source says (URL, valid). TVs still fall back to playing from the start

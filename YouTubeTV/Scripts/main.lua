@@ -33,7 +33,7 @@
 -- of the file (nothing is streamed through the game), jumping to the host's
 -- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.5.4"
+local VERSION = "0.5.5"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -592,6 +592,7 @@ end
 local plateWorks = nil
 local CheckPlate   -- (below OpenAt)
 local Broadcast    -- (co-op, below)
+local PlacePanel   -- (the screen, below)
 
 -- Opens a downloaded video on a TV (entry = tv: its media component, player
 -- and whether it's a Media Plate) at seconds in. Returns the point it starts
@@ -609,13 +610,17 @@ local function OpenAt(entry, id, at, label)
             entry.platePath = FullPath(id)
             if list:AddFile(entry.platePath) == false then error("its playlist refused the file", 0) end
             plate.PlaylistIndex = list:Num() - 1
-            -- it may only open media while its mesh is visible: the screen panel is its mesh
+            -- it only opens media while its mesh is visible (0.5.3 stayed dark): the
+            -- screen panel is its mesh. It mustn't reshape it: by default it
+            -- stretches its mesh to the video's shape (0.5.4 made the screen a block)
+            pcall(function() plate:SetIsAspectRatioAuto(false) end)
+            pcall(function() plate:SetLetterboxAspectRatio(0) end)
             if Valid(entry.panel) then pcall(function() plate.StaticMeshComponent = entry.panel end) end
             plate.StartTime = at
             plate:Open()
         end)
         if not ok then return nil, "Media Plate couldn't open it: " .. tostring(err) end
-        if plateWorks == nil then CheckPlate(entry, id, label) end
+        CheckPlate(entry, id, label)
     else
         at = 0
         -- starts by itself once opened (a component's player may have it off)
@@ -649,7 +654,10 @@ CheckPlate = function(entry, id, label)
         ExecuteInGameThread(function()
             if done then return end
             done = true
-            if tv ~= entry or entry.id ~= id or plateWorks ~= nil then return end
+            if tv ~= entry or entry.id ~= id then return end
+            -- the screen's own size and place again, in case Media Plate changed them
+            if Valid(entry.panel) and entry.placed then PlacePanel(entry.panel, entry.placed) end
+            if plateWorks ~= nil then return end
             local playing = false
             pcall(function() playing = entry.player:IsPlaying() or entry.player:IsPreparing() end)
             if playing then
@@ -947,7 +955,7 @@ local function MakePanel(actor, mesh, material, param, texture, face)
 end
 
 -- Puts the panel where placed says (also after .tv turn / mirror / size)
-local function PlacePanel(panel, placed)
+PlacePanel = function(panel, placed)
     local rot = { Pitch = placed.rot.Pitch, Yaw = placed.rot.Yaw, Roll = placed.turn }
     pcall(function() panel:K2_SetWorldLocationAndRotation(placed.where, rot, false, {}, false) end)
     -- the cube is 100 cm: thin along X (towards you), the screen's size across
