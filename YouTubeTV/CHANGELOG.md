@@ -2,6 +2,13 @@
 
 ---
 
+## 0.5.1 (2026-10-15)
+
+### Like a Real TV
+- Turning a TV on plays a random video from `config.lua` (downloaded ones first), from a random point in it, as if the TV had been on all along. `.tv next` (another channel) does the same and never repeats the video that's on
+- In co-op every player sees the same random video at the same point: joined players are told once the host's TV has picked it
+- `shuffle = false` / `randomStart = false` in `config.lua` bring back the list in order, from the start. `.tv on 2` still plays video 2 from the start
+
 ## 0.5.0 (2026-10-15)
 
 ### Co-op

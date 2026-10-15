@@ -13,8 +13,9 @@
 --   .tv list         the configured videos and which are downloaded
 --   .tv scan         what you're looking at (a TV): its parts, materials, texture slots
 --   .tv hud          plays the first video in a panel on your screen (tests playback)
---   .tv on [n]       plays video n (default 1) on the TV you're looking at
---   .tv next         the next video
+--   .tv on [n]       turns on the TV you're looking at: a random video from a
+--                    random point, like a real TV (n: video n from the start)
+--   .tv next         another video
 --   .tv turn / .tv mirror / .tv size 1.1   fix the picture on the TV's screen
 --   .tv off          stops it (the HUD panel too)
 --   E menu on a TV   TURN ON TV / TURN OFF TV (eMenu = false in config.lua: off)
@@ -32,7 +33,7 @@
 -- of the file (nothing is streamed through the game), jumping to the host's
 -- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.5.0"
+local VERSION = "0.5.1"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -59,6 +60,9 @@ local cfg = UserConfig()
 local VOLUME = math.max(0, math.min(1, tonumber(cfg.volume) or 0.8))
 local MAX_HEIGHT = math.floor(tonumber(cfg.maxHeight) or 720)
 local SCAN_METERS = tonumber(cfg.scanMeters) or 8
+-- Like a real TV: a random video, already somewhere in the middle
+local SHUFFLE = cfg.shuffle ~= false
+local RANDOM_START = cfg.randomStart ~= false
 local HEAR_M = math.max(2, tonumber(cfg.hearDistance) or 15)              -- the TV is heard this far
 local FULL_VOLUME_M = math.max(0, math.min(HEAR_M - 1, tonumber(cfg.fullVolumeDistance) or 1.5))
 -- YouTube often refuses anonymous downloads ("confirm you're not a bot", age
@@ -865,10 +869,12 @@ local function SamePos(a, b)
     return a ~= nil and b ~= nil and math.abs(a.X - b.X) + math.abs(a.Y - b.Y) + math.abs(a.Z - b.Z) < 60
 end
 
--- After a video opens: jump to where the host's is (startClock: os.clock()
--- when the host's video was at 0:00). Asks the player twice a second, up to
--- 20 s, whether it's ready; only that one cheap call goes to the game thread
-local function SeekWhenReady(startClock)
+local Broadcast   -- (co-op, below)
+
+-- After a video opens: runs onReady once the player is ready. Asks the player
+-- twice a second, up to 20 s; only that one cheap call goes to the game
+-- thread. onFail runs if it never gets ready. A newer video or off cancels it.
+local function WhenReady(onReady, onFail)
     seekGen = seekGen + 1
     local gen, tries, done = seekGen, 0, false
     LoopAsync(500, function()
@@ -880,28 +886,86 @@ local function SeekWhenReady(startClock)
             local ready = false
             pcall(function() ready = tv.player:IsReady() end)
             if not ready then
-                if try >= 40 then log("  the video didn't get ready in 20 s - it plays from the start") end
+                if try >= 40 then
+                    done = true
+                    log("  the video didn't get ready in 20 s - it plays from the start")
+                    if onFail then pcall(onFail) end
+                end
                 return
             end
             done = true
-            local target = os.clock() - startClock + 0.3   -- (jumping takes a moment)
-            if target < 2 then return end
-            local ok, why = SeekTo(tv.player, target)
-            log(string.format("  jumped to %s, where the host's video is: %s", Clock(target),
-                ok and "ok (.tv status shows the time)" or ("failed, " .. tostring(why))))
+            pcall(onReady)
         end)
         return false
     end)
 end
 
+-- Jump to where the host's video is (startClock: os.clock() when it was at
+-- 0:00). force: also when that's near the start (the host restarted it)
+local function SeekWhenReady(startClock, force)
+    WhenReady(function()
+        local target = math.max(0, os.clock() - startClock + 0.3)   -- (jumping takes a moment)
+        if target < 2 and not force then return end
+        local ok, why = SeekTo(tv.player, target)
+        log(string.format("  jumped to %s, where the host's video is: %s", Clock(target),
+            ok and "ok (.tv status shows the time)" or ("failed, " .. tostring(why))))
+    end)
+end
+
+local function LengthOf(player)
+    local s = nil
+    pcall(function() s = Find(KMATH):GetTotalSeconds(player:GetDuration()) end)
+    return type(s) == "number" and s or nil
+end
+
+-- Like a real TV: the video has already been on for a while. A random point
+-- in its first 85%; then every player who joined is told (they wait for it)
+local function RandomStartWhenReady()
+    tv.pendingStart = true
+    local function Done()
+        if tv then tv.pendingStart = nil end
+        if Broadcast then Broadcast() end
+    end
+    WhenReady(function()
+        local length = LengthOf(tv.player)
+        if not length or length < 30 then
+            log("  plays from the start (" .. (length and "a short video" or "couldn't read its length") .. ")")
+        else
+            local at = math.random() * length * 0.85
+            local ok, why = SeekTo(tv.player, at)
+            if ok then tv.startClock = os.clock() - at end
+            log(string.format("  started at %s of %s: %s", Clock(at), Clock(length), ok and "ok" or ("failed, " .. tostring(why))))
+        end
+        Done()
+    end, Done)
+end
+
+-- Which of config.lua's videos plays next: a random one (shuffle), preferring
+-- downloaded ones and not the one on now; else the next in the list
+local function PickIndex(current)
+    if #videos == 0 then return nil end
+    if not SHUFFLE then return (current or 0) % #videos + 1 end
+    local ready, any = {}, {}
+    for i, v in ipairs(videos) do
+        if i ~= current or #videos == 1 then
+            table.insert(any, i)
+            if Downloaded(v.id) then table.insert(ready, i) end
+        end
+    end
+    local from = #ready > 0 and ready or any
+    return from[math.random(#from)]
+end
+
 -- Turns a TV on: actor is the TV, aimed the part you looked at (or nil).
 -- play: index = which of config.lua's videos, or id = a video's ID (the
--- host's); face = the screen's side (nil: the one facing you); startClock =
--- jump to where the host's video is. Returns true, or false, why
+-- host's), or neither: a random one from a random point (shuffle,
+-- randomStart); face = the screen's side (nil: the one facing you);
+-- startClock = jump to where the host's video is. Returns true, or false, why
 local function OnActor(actor, aimed, play)
     play = play or {}
     if tv then Stop() end
-    local index = play.index or (play.id == nil and 1 or nil)
+    local random = play.index == nil and play.id == nil
+    local index = play.index or (random and PickIndex(nil) or nil)
     local id = play.id or (videos[index] and videos[index].id)
     if not id then log("TV on: no video " .. tostring(index) .. " in config.lua") return false, "no video " .. tostring(index) end
     log("TV on: " .. NameOf(actor) .. " (" .. ClassName(actor) .. ")")
@@ -920,7 +984,8 @@ local function OnActor(actor, aimed, play)
             Stop()
             return false, why
         end
-        if play.startClock then SeekWhenReady(play.startClock) end
+        if play.startClock then SeekWhenReady(play.startClock)
+        elseif random and RANDOM_START then RandomStartWhenReady() end
         return true
     end
     -- turned on before: the same player, sound and screen again
@@ -987,16 +1052,18 @@ local function Adjust(what, value)
     PlacePanel(tv.panel, p)
 end
 
--- The next video in config.lua's list on the TV that's on. Returns true when it opened
+-- Another video on the TV that's on (a random one from a random point, or
+-- the next in the list: shuffle, randomStart). Returns true when it opened
 local function Next()
     if not tv then log("Nothing playing - .tv on") return false end
     if #videos == 0 then log("No videos in config.lua") return false end
-    tv.index = (tv.index or 0) % #videos + 1
-    tv.id, tv.startClock = videos[tv.index].id, os.clock()
+    tv.index = PickIndex(tv.index)
+    tv.id, tv.startClock, tv.pendingStart = videos[tv.index].id, os.clock(), nil
     seekGen = seekGen + 1
     local ok, why = OpenVideo(tv.player, tv.index)
-    if not ok then log(why) end
-    return ok
+    if not ok then log(why) return false end
+    if RANDOM_START then RandomStartWhenReady() end
+    return true
 end
 
 ------------------------------------------------------------
@@ -1095,9 +1162,10 @@ local function PlayMessage()
         os.clock() - (tv.startClock or os.clock())), "The host's TV plays " .. tv.id
 end
 
--- Hosting: tell every player who joined what plays (or that it's off)
-local function Broadcast()
-    if Joined() then return end
+-- Hosting: tell every player who joined what plays (or that it's off). Not
+-- while a random start is being picked: they're told when it's picked
+Broadcast = function()
+    if Joined() or (tv and tv.pendingStart) then return end
     local tag, text = PlayMessage()
     if tag == "none" then tag, text = "off", "The host's TV is off" end
     TellEveryone(tag, text)
@@ -1169,7 +1237,7 @@ StartRemote = function()
         -- already on: only a restart (the host's next, same video) jumps
         if math.abs((tv.startClock or 0) - r.startClock) > 3 then
             tv.startClock = r.startClock
-            SeekTo(tv.player, math.max(0, os.clock() - r.startClock))
+            SeekWhenReady(r.startClock, true)
         end
         return
     end
@@ -1200,16 +1268,20 @@ local function OnHostMessage(selfParam, msgParam)
         if not x then return end
         local actor = FindTvAt({ X = tonumber(x), Y = tonumber(y), Z = tonumber(z) })
         if not actor then Tell(pc, "err", "The host's game couldn't find that TV") return end
-        local index = tonumber(n) or 1
-        if index < 1 or index > #videos then index = 1 end
+        local index = tonumber(n)   -- 0: a random one
+        if index and (index < 1 or index > #videos) then index = nil end
         log(who .. " turned a TV on")
         local ok, why = OnActor(actor, MainMesh(actor), { index = index, face = tonumber(face) })
-        if ok then Broadcast() else Tell(pc, "err", "The host's TV couldn't play: " .. tostring(why)) end
+        if not ok then Tell(pc, "err", "The host's TV couldn't play: " .. tostring(why))
+        elseif tv and tv.pendingStart then Tell(pc, "wait", "The host's TV is turning on")
+        else Broadcast() end
     elseif cmd == "OFF" then
         if tv then log(who .. " turned the TV off") Stop() end
         Broadcast()
     elseif cmd == "NEXT" then
-        if tv and Next() then Broadcast() else Tell(pc, "err", "Nothing is playing on the host's TV") end
+        if not (tv and Next()) then Tell(pc, "err", "Nothing is playing on the host's TV")
+        elseif tv.pendingStart then Tell(pc, "wait", "The host's TV changes the video")
+        else Broadcast() end
     elseif cmd == "SYNC" then
         Tell(pc, PlayMessage())
     end
@@ -1254,7 +1326,7 @@ local function TurnOn(actor, aimed, index)
     if not pos then log("TV on: couldn't read where the TV is") return end
     local face = FaceToward(actor, aimed)
     log("Asking the host to turn the TV on (the host's videos play)")
-    AskHost(string.format("ON_%d_%d_%d_%d_%d", pos.X, pos.Y, pos.Z, face, index or 1), function()
+    AskHost(string.format("ON_%d_%d_%d_%d_%d", pos.X, pos.Y, pos.Z, face, index or 0), function()
         local a = FindTvAt(pos)
         if a then OnActor(a, MainMesh(a), { index = index, face = face }) end
     end)
@@ -1462,7 +1534,7 @@ local function OnEKey()
     if PlayingOn(actor) then
         TurnOff()
     else
-        TurnOn(actor, MainMesh(actor), 1)
+        TurnOn(actor, MainMesh(actor), nil)
     end
     -- the entry's label follows
     local label = PlayingOn(actor) and LABEL_OFF or LABEL_ON

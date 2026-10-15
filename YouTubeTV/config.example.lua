@@ -6,6 +6,12 @@ return {
         "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
     },
 
+    -- Like a real TV: turning a TV on plays a random video (shuffle) from a
+    -- random point in it (randomStart), as if it had been on all along.
+    -- false: the list in order, from the start. .tv on 2 plays video 2 from the start
+    shuffle = true,
+    randomStart = true,
+
     -- TV volume, 0 to 1
     volume = 0.8,
 
