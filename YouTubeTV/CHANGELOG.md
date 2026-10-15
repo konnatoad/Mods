@@ -2,6 +2,19 @@
 
 ---
 
+## 0.5.0 (2026-10-15)
+
+### Co-op
+- The host's game decides what TVs play in the host's world, and every player sees and hears the same video at the same point. Everyone needs this version
+- A joined player turning a TV on or off (E menu, `.tv on`, `.tv off`, `.tv next`) asks the host; the host plays a video from the host's `config.lua` list and tells every player which TV, which video and how far in
+- Each player's game plays its own copy of the video file and jumps to the host's point; nothing is sent through the game. A joined player who doesn't have the video gets it downloaded in a minimized window (yt-dlp needed on every PC), and it starts at the host's point when it's done
+- Joining while a TV plays, or respawning, catches up by itself (3 s after you're in the world); `.tv sync` asks again
+- A TV the host turns on that isn't loaded in your game yet starts when you look at it
+- If the host doesn't have this version, a joined player's TV says "No answer from the host" after 3 s and plays only for them
+- The screen goes on the side of the TV the player who turned it on was facing, on every PC
+- `.tv seek <seconds>` jumps in the video that plays: test it on your own first; if it doesn't jump, co-op players start from the beginning instead of the host's point
+- `.tv status` shows how far into the video the player is
+
 ## 0.4.8 (2026-10-14)
 
 - The hook clean-up from 0.4.7 now comes from the shared `GameHooks` module (the other mods use it too), which also fixes a flaw in it: `hooks.txt` survives closing the game, and on the next game start its old ids could belong to other mods' hooks, which would have been removed. A `hooks.txt` from an earlier game session is now ignored

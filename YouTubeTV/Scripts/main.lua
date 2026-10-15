@@ -19,13 +19,20 @@
 --   .tv off          stops it (the HUD panel too)
 --   E menu on a TV   TURN ON TV / TURN OFF TV (eMenu = false in config.lua: off)
 --   .tv learn        look at a TV: how the game's E menu works on it (for turning it on with E)
+--   .tv seek <s>     jumps to s seconds into the video (tests what co-op needs)
+--   .tv sync         joined someone: asks the host what's playing
 --
 -- Videos are downloaded with yt-dlp (+ ffmpeg) as H.264/AAC .mp4, which the
 -- game's Windows video player (WMF) plays. Only the 11-character video ID is
 -- taken from each link; the command is built from it, never from the link.
--- Co-op (the host's list for everyone, in sync) comes later.
+--
+-- Co-op: the host's game decides. A joined player turning a TV on or off
+-- asks the host; the host plays the video and tells every player which TV,
+-- which video (its ID) and how far in. Each player's game plays its own copy
+-- of the file (nothing is streamed through the game), jumping to the host's
+-- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.4.8"
+local VERSION = "0.5.0"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -122,6 +129,35 @@ local function YtDlp()
     return "yt-dlp"
 end
 
+-- The yt-dlp command for one video (id: 11 checked characters: letters,
+-- digits, - and _), run from the mod's folder
+local function DownloadLine(id)
+    local format = string.format(
+        "bv*[vcodec^=avc1][height<=%d]+ba[ext=m4a]/b[ext=mp4][height<=%d]/b[ext=mp4]/bv*[height<=%d]+ba/b",
+        MAX_HEIGHT, MAX_HEIGHT, MAX_HEIGHT)
+    -- quoted: a profile folder can have spaces ("xzqhbajk.Default (release)")
+    local cookies = COOKIES ~= "" and (' --cookies-from-browser "' .. COOKIES .. '"') or ""
+    -- -P: the folder as a full path, so a download folder set in your own
+    -- yt-dlp config (e.g. Downloads) doesn't move the videos there
+    return string.format(
+        '%s -f "%s" --merge-output-format mp4 --recode-video mp4 --no-playlist%s -P "%%~dp0videos" -o "%s.%%%%(ext)s" "https://www.youtube.com/watch?v=%s" > "videos\\%s.log" 2>&1',
+        YtDlp(), format, cookies, id, id, id)
+end
+
+-- Writes a .cmd in the mod's folder and starts it in a minimized window (the
+-- game keeps running). Returns true or nil, why
+local function RunScript(name, lines)
+    local all = { "@echo off", "cd /d \"%~dp0\"", "if not exist videos mkdir videos" }
+    for _, l in ipairs(lines) do table.insert(all, l) end
+    local script = io.open(MOD_DIR .. name, "wb")
+    if not script then return nil, "couldn't write " .. name .. " in the mod's folder" end
+    script:write(table.concat(all, "\r\n") .. "\r\n")
+    script:close()
+    local ok, result = pcall(os.execute, 'start "YouTubeTV download" /min "ue4ss\\Mods\\YouTubeTV\\' .. name .. '"')
+    if not ok then return nil, "couldn't start it: " .. tostring(result) end
+    return true
+end
+
 -- Writes download.cmd (one minimized window downloads every missing video in
 -- turn, each with a log in videos\<id>.log) and starts it; the game keeps running
 local function Download()
@@ -131,27 +167,14 @@ local function Download()
         if not Downloaded(v.id) then table.insert(missing, v.id) end
     end
     if #missing == 0 then log("All " .. #videos .. " videos are already downloaded") return end
-    local format = string.format(
-        "bv*[vcodec^=avc1][height<=%d]+ba[ext=m4a]/b[ext=mp4][height<=%d]/b[ext=mp4]/bv*[height<=%d]+ba/b",
-        MAX_HEIGHT, MAX_HEIGHT, MAX_HEIGHT)
-    -- quoted: a profile folder can have spaces ("xzqhbajk.Default (release)")
-    local cookies = COOKIES ~= "" and (' --cookies-from-browser "' .. COOKIES .. '"') or ""
-    local lines = { "@echo off", "cd /d \"%~dp0\"", "if not exist videos mkdir videos" }
-    for _, id in ipairs(missing) do   -- ids are 11 checked characters: letters, digits, - and _
+    local lines = {}
+    for _, id in ipairs(missing) do
         table.insert(lines, string.format("echo Downloading %s ...", id))
-        -- -P: the folder as a full path, so a download folder set in your own
-        -- yt-dlp config (e.g. Downloads) doesn't move the videos there
-        table.insert(lines, string.format(
-            '%s -f "%s" --merge-output-format mp4 --recode-video mp4 --no-playlist%s -P "%%~dp0videos" -o "%s.%%%%(ext)s" "https://www.youtube.com/watch?v=%s" > "videos\\%s.log" 2>&1',
-            YtDlp(), format, cookies, id, id, id))
+        table.insert(lines, DownloadLine(id))
     end
-    local script = io.open(MOD_DIR .. "download.cmd", "wb")
-    if not script then log("Couldn't write download.cmd in the mod's folder") return end
-    script:write(table.concat(lines, "\r\n") .. "\r\n")
-    script:close()
-    local ok, result = pcall(os.execute, 'start "YouTubeTV download" /min "ue4ss\\Mods\\YouTubeTV\\download.cmd"')
-    if not ok then log("Couldn't start the download: " .. tostring(result)) return end
-    log("Downloading " .. #missing .. " video(s) in a minimized window" .. (cookies ~= "" and (" (with your " .. COOKIES:match("^%a+") .. " login)") or "")
+    local ok, why = RunScript("download.cmd", lines)
+    if not ok then log("Couldn't start the download: " .. why) return end
+    log("Downloading " .. #missing .. " video(s) in a minimized window" .. (COOKIES ~= "" and (" (with your " .. COOKIES:match("^%a+") .. " login)") or "")
         .. ". .tv list shows which are done, or why one failed")
 end
 
@@ -434,6 +457,7 @@ end
 ------------------------------------------------------------
 -- tv = { actor, media, player, texture, sound, dmi, index, hud = { panel } }
 local tv = nil
+local seekGen = 0   -- a newer video or off stops a pending jump
 
 -- Adds a component of the given class to an actor, registered (so it gets
 -- set up like one made in the editor)
@@ -480,17 +504,47 @@ local function MakePlayer(actor)
     return nil, table.concat(tried, "; ")
 end
 
+-- Opens a downloaded video by its ID; label says which it is in the log
+local function OpenId(player, id, label)
+    if not Downloaded(id) then return false, id .. " isn't downloaded yet (.tv download, then .tv list)" end
+    -- starts by itself once opened (a component's player may have it off)
+    pcall(function() player.PlayOnOpen = true end)
+    local ok, opened = pcall(function() return player:OpenFile(FileOf(id)) end)
+    if not ok then return false, "OpenFile failed: " .. tostring(opened) end
+    pcall(function() player:SetLooping(false) end)
+    log(string.format("  opening %s (%s): %s", label or "video", id, tostring(opened)))
+    return true
+end
+
 local function OpenVideo(player, index)
     local v = videos[index]
     if not v then return false, "no video " .. tostring(index) end
-    if not Downloaded(v.id) then return false, v.id .. " isn't downloaded yet (.tv download, then .tv list)" end
-    -- starts by itself once opened (a component's player may have it off)
-    pcall(function() player.PlayOnOpen = true end)
-    local ok, opened = pcall(function() return player:OpenFile(FileOf(v.id)) end)
-    if not ok then return false, "OpenFile failed: " .. tostring(opened) end
-    pcall(function() player:SetLooping(false) end)
-    log(string.format("  opening video %d (%s): %s", index, v.id, tostring(opened)))
-    return true
+    return OpenId(player, v.id, "video " .. index)
+end
+
+-- Jumping in a video: the player takes a Timespan, which this UE4SS can't
+-- build from a table (it has no fields it can see), so the engine's own
+-- FromSeconds makes it and GetTotalSeconds reads one
+local KMATH = "/Script/Engine.Default__KismetMathLibrary"
+
+local function SecondsOf(player)
+    local s = nil
+    pcall(function() s = Find(KMATH):GetTotalSeconds(player:GetTime()) end)
+    return type(s) == "number" and s or nil
+end
+
+local function SeekTo(player, seconds)
+    local kmath = Find(KMATH)
+    if not kmath then return false, "KismetMathLibrary not found" end
+    local done = nil
+    local ok, err = pcall(function() done = player:Seek(kmath:FromSeconds(seconds)) end)
+    if not ok then return false, "Seek failed: " .. tostring(err) end
+    return done ~= false, done == false and "the player refused (not ready?)" or nil
+end
+
+local function Clock(seconds)
+    seconds = math.max(0, math.floor(seconds + 0.5))
+    return string.format("%d:%02d", seconds // 60, seconds % 60)
 end
 
 -- .tv status: what the player says about itself now. If it's ready but not
@@ -531,7 +585,7 @@ local function Status()
     get("paused", function() return p:IsPaused() end)
     get("closed", function() return p:IsClosed() end)
     get("length", function() return p:GetDuration() end)
-    get("time", function() return p:GetTime() end)
+    get("time", function() local s = SecondsOf(p) return s and Clock(s) or "can't read" end)
     get("rate", function() return p:GetRate() end)
     get("video tracks", function() return p:GetNumTracks(6) end)   -- 6 = video
     get("audio tracks", function() return p:GetNumTracks(0) end)   -- 0 = audio
@@ -588,6 +642,7 @@ local kept = {}
 
 local function Stop()
     if not tv then log("Nothing playing") return end
+    seekGen = seekGen + 1
     pcall(function() tv.player:Close() end)
     if tv.hud and tv.hud.panel then pcall(function() tv.hud.panel:RemoveFromParent() end) end
     if Valid(tv.panel) then pcall(function() tv.panel:SetVisibility(false, false) end) end
@@ -681,9 +736,10 @@ local function Turn(x, y, yawDeg)
 end
 
 -- Where the panel goes: the face of the TV mesh's box that points at you
--- (you look at the screen when you turn it on). Returns location, rotation,
--- width and height in cm.
-local function FrontOf(mesh)
+-- (you look at the screen when you turn it on), or the given face (co-op: the
+-- side the player who turned it on chose: 0 +X, 1 -X, 2 +Y, 3 -Y, in the TV's
+-- own directions). Returns location, rotation, width and height in cm, face.
+local function FrontOf(mesh, face)
     local box, loc, rot, scale = nil, nil, nil, nil
     pcall(function() box = mesh.StaticMesh:GetBoundingBox() end)
     pcall(function() loc = mesh:K2_GetComponentLocation() end)
@@ -694,33 +750,38 @@ local function FrontOf(mesh)
     local sx, sy, sz = scale.X, scale.Y, scale.Z
     local cx, cy, cz = (min.X + max.X) / 2 * sx, (min.Y + max.Y) / 2 * sy, (min.Z + max.Z) / 2 * sz
     local hx, hy, hz = (max.X - min.X) / 2 * math.abs(sx), (max.Y - min.Y) / 2 * math.abs(sy), (max.Z - min.Z) / 2 * math.abs(sz)
-    -- you, in the TV's own directions
-    local here = PlayerLocation()
-    if not here then return nil, "load into a world first" end
-    local lx, ly = Turn(here.X - loc.X, here.Y - loc.Y, -rot.Yaw)
-    -- the side facing you: along the TV's X or Y, whichever points at you more
-    local faceYaw, out, across
-    if math.abs(lx) >= math.abs(ly) then
-        faceYaw = lx >= 0 and 0 or 180
-        out, across = hx, hy
-        cx = cx + (lx >= 0 and 1 or -1) * (hx + 0.5)
+    if face == nil then
+        -- you, in the TV's own directions
+        local here = PlayerLocation()
+        if not here then return nil, "load into a world first" end
+        local lx, ly = Turn(here.X - loc.X, here.Y - loc.Y, -rot.Yaw)
+        -- the side facing you: along the TV's X or Y, whichever points at you more
+        if math.abs(lx) >= math.abs(ly) then face = lx >= 0 and 0 or 1
+        else face = ly >= 0 and 2 or 3 end
+    end
+    local faceYaw, across
+    if face == 0 or face == 1 then
+        faceYaw = face == 0 and 0 or 180
+        across = hy
+        cx = cx + (face == 0 and 1 or -1) * (hx + 0.5)
     else
-        faceYaw = ly >= 0 and 90 or -90
-        out, across = hy, hx
-        cy = cy + (ly >= 0 and 1 or -1) * (hy + 0.5)
+        faceYaw = face == 2 and 90 or -90
+        across = hx
+        cy = cy + (face == 2 and 1 or -1) * (hy + 0.5)
     end
     local wx, wy = Turn(cx, cy, rot.Yaw)
     return { X = loc.X + wx, Y = loc.Y + wy, Z = loc.Z + cz },
            { Pitch = 0, Yaw = rot.Yaw + faceYaw, Roll = 0 },
-           across * 2 * SCREEN_WIDTH, hz * 2 * SCREEN_HEIGHT
+           across * 2 * SCREEN_WIDTH, hz * 2 * SCREEN_HEIGHT, face
 end
 
 -- Builds the panel on the actor showing texture through material's param.
 -- Returns the panel or nil, why
-local function MakePanel(actor, mesh, material, param, texture)
+local function MakePanel(actor, mesh, material, param, texture, face)
     local cube = LoadObject(CUBE)
     if not cube then return nil, "the engine's cube shape isn't in this game (" .. CUBE .. ")" end
-    local where, rot, width, height = FrontOf(mesh)
+    local where, rot, width, height
+    where, rot, width, height, face = FrontOf(mesh, face)
     if not where then return nil, rot end
     local panel, err = AddComponent(actor, "/Script/Engine.StaticMeshComponent")
     if not panel then return nil, err end
@@ -737,7 +798,7 @@ local function MakePanel(actor, mesh, material, param, texture)
         pcall(function() panel:K2_DestroyComponent(panel) end)
         return nil, "SetTextureParameterValue failed: " .. tostring(e)
     end
-    local placed = { where = where, rot = rot, width = width, height = height, turn = 0, mirror = false }
+    local placed = { where = where, rot = rot, width = width, height = height, turn = 0, mirror = false, face = face }
     return panel, placed, dmi
 end
 
@@ -789,36 +850,101 @@ local function PickScreen(actor, aimed)
     return best
 end
 
--- Turns a TV on: actor is the TV, aimed the part you looked at (or nil)
-local function OnActor(actor, aimed, index)
+-- Where a TV is, rounded to whole cm: how every player's game finds the same
+-- TV (an object's address is different on each PC)
+local function TvPos(actor)
+    local pos = nil
+    pcall(function()
+        local l = actor:K2_GetActorLocation()
+        pos = { X = math.floor(l.X + 0.5), Y = math.floor(l.Y + 0.5), Z = math.floor(l.Z + 0.5) }
+    end)
+    return pos
+end
+
+local function SamePos(a, b)
+    return a ~= nil and b ~= nil and math.abs(a.X - b.X) + math.abs(a.Y - b.Y) + math.abs(a.Z - b.Z) < 60
+end
+
+-- After a video opens: jump to where the host's is (startClock: os.clock()
+-- when the host's video was at 0:00). Asks the player twice a second, up to
+-- 20 s, whether it's ready; only that one cheap call goes to the game thread
+local function SeekWhenReady(startClock)
+    seekGen = seekGen + 1
+    local gen, tries, done = seekGen, 0, false
+    LoopAsync(500, function()
+        tries = tries + 1
+        if done or gen ~= seekGen or tries > 40 then return true end
+        local try = tries
+        ExecuteInGameThread(function()
+            if done or gen ~= seekGen or not tv then done = true return end
+            local ready = false
+            pcall(function() ready = tv.player:IsReady() end)
+            if not ready then
+                if try >= 40 then log("  the video didn't get ready in 20 s - it plays from the start") end
+                return
+            end
+            done = true
+            local target = os.clock() - startClock + 0.3   -- (jumping takes a moment)
+            if target < 2 then return end
+            local ok, why = SeekTo(tv.player, target)
+            log(string.format("  jumped to %s, where the host's video is: %s", Clock(target),
+                ok and "ok (.tv status shows the time)" or ("failed, " .. tostring(why))))
+        end)
+        return false
+    end)
+end
+
+-- Turns a TV on: actor is the TV, aimed the part you looked at (or nil).
+-- play: index = which of config.lua's videos, or id = a video's ID (the
+-- host's); face = the screen's side (nil: the one facing you); startClock =
+-- jump to where the host's video is. Returns true, or false, why
+local function OnActor(actor, aimed, play)
+    play = play or {}
     if tv then Stop() end
+    local index = play.index or (play.id == nil and 1 or nil)
+    local id = play.id or (videos[index] and videos[index].id)
+    if not id then log("TV on: no video " .. tostring(index) .. " in config.lua") return false, "no video " .. tostring(index) end
     log("TV on: " .. NameOf(actor) .. " (" .. ClassName(actor) .. ")")
     local screen = PickScreen(actor, aimed)
-    if not screen then log("  it has no mesh to show a picture on") return end
+    if not screen then log("  it has no mesh to show a picture on") return false, "the TV has no mesh" end
     local param = PickParam(screen.params)
     log(string.format("  TV mesh: %s, material %s, texture slot: %s", NameOf(screen.mesh), NameOf(screen.mat),
         param or "none"))
-    if not param then log("  its material has no texture slot to show the video in") return end
+    if not param then log("  its material has no texture slot to show the video in") return false, "no texture slot" end
+    local label = index and ("video " .. index) or "the host's video"
+    local function Open()
+        tv.index, tv.id, tv.pos, tv.startClock = index, id, TvPos(actor), play.startClock or os.clock()
+        local ok, why = OpenId(tv.player, id, label)
+        if not ok then
+            log("  " .. why)
+            Stop()
+            return false, why
+        end
+        if play.startClock then SeekWhenReady(play.startClock) end
+        return true
+    end
     -- turned on before: the same player, sound and screen again
     local addr = AddressOf(actor)
     local old = addr and kept[addr]
     if old then
         kept[addr] = nil
         tv = old
-        tv.index = index or 1
         if Valid(tv.panel) then
+            local p = tv.placed
+            if play.face ~= nil and p and play.face ~= p.face then   -- co-op: another side this time
+                local where, rot, width, height, face = FrontOf(screen.mesh, play.face)
+                if where then p.where, p.rot, p.width, p.height, p.face = where, rot, width, height, face end
+            end
             pcall(function() tv.panel:SetVisibility(true, false) end)
             PlacePanel(tv.panel, tv.placed)
         end
-        local ok, why = OpenVideo(tv.player, tv.index)
-        if not ok then log("  " .. why) end
         log("  (the same player, sound and screen as before)")
-        return
+        return Open()
     end
     local media, player, texture = MakePlayer(actor)
-    if not media then log("  no player: " .. tostring(player)) return end
-    tv = { actor = actor, addr = AddressOf(actor), media = media, player = player, texture = texture, index = index or 1 }
-    local panel, placed, dmi = MakePanel(actor, screen.mesh, screen.mat, param, texture)
+    if not media then log("  no player: " .. tostring(player)) return false, "no video player" end
+    tv = { actor = actor, addr = AddressOf(actor), media = media, player = player, texture = texture }
+    local panel, placed, dmi = MakePanel(actor, screen.mesh, screen.mat, param, texture, play.face)
     if panel then
         tv.panel, tv.placed, tv.dmi = panel, placed, dmi
         PlacePanel(panel, placed)
@@ -828,15 +954,17 @@ local function OnActor(actor, aimed, index)
         log("  no screen panel: " .. tostring(placed))
     end
     tv.sound = AttachSound(actor, player, true)
-    local ok, why = OpenVideo(player, tv.index)
-    if not ok then log("  " .. why) end
+    local ok, why = Open()
     log("Done - send these lines if the TV stays dark or silent (.tv off stops it)")
+    return ok, why
 end
 
-local function On(index)
-    local target, err = LookedAt(false)
-    if not target then log("TV on: " .. err .. " - look at the TV") return end
-    OnActor(target.actor, target.comp, index)
+-- The side of the TV facing you (0-3, see FrontOf), for the host to use
+local function FaceToward(actor, aimed)
+    local screen = PickScreen(actor, aimed)
+    if not screen then return 0 end
+    local _, _, _, _, face = FrontOf(screen.mesh)
+    return face or 0
 end
 
 -- .tv turn / .tv mirror / .tv size <factor>: fix the picture if it's sideways,
@@ -859,12 +987,320 @@ local function Adjust(what, value)
     PlacePanel(tv.panel, p)
 end
 
+-- The next video in config.lua's list on the TV that's on. Returns true when it opened
 local function Next()
-    if not tv then log("Nothing playing - .tv on") return end
-    if #videos == 0 then return end
-    tv.index = tv.index % #videos + 1
+    if not tv then log("Nothing playing - .tv on") return false end
+    if #videos == 0 then log("No videos in config.lua") return false end
+    tv.index = (tv.index or 0) % #videos + 1
+    tv.id, tv.startClock = videos[tv.index].id, os.clock()
+    seekGen = seekGen + 1
     local ok, why = OpenVideo(tv.player, tv.index)
     if not ok then log(why) end
+    return ok
+end
+
+------------------------------------------------------------
+-- Co-op
+------------------------------------------------------------
+-- The host's game decides what plays, like the other mods in this folder
+-- (Radiation Shield, Mod Menu), through two messages Unreal always has:
+-- Player -> host: PlayerController:ServerNotifyLoadedWorld(FName "YTTV_ON_x_y_z_face_n")
+--   (also YTTV_OFF, YTTV_NEXT, YTTV_SYNC). The game ignores the name; the
+--   host's mod reads it.
+-- Host -> player: PlayerController:ClientMessage("... #TV:play:<id>:x:y:z:face:<seconds in>")
+--   (or #TV:off, #TV:none, #TV:err). A line in the player's console; their
+--   mod reads the tag.
+-- A TV is named by where it stands (whole cm), the same on every PC. Each
+-- player's game plays its own copy of the video and jumps to the host's
+-- point; a missing video is downloaded first. Nothing goes through the game.
+local SERVER_TAG = "YTTV"
+local remote = nil    -- joined: what the host says plays { id, pos, face, startClock }
+local fetching = {}   -- [video ID] = true while a host's video downloads here
+local answered = 0    -- host answers so far (the no-answer check counts them)
+
+-- Joined someone else's world: our own controller isn't the authority
+local function Joined()
+    local joined = false
+    pcall(function()
+        local pc = LocalController()
+        if Valid(pc) then joined = pc:HasAuthority() == false end
+    end)
+    return joined
+end
+
+local function ParamString(param)
+    local value = param
+    pcall(function() value = param:get() end)
+    if type(value) == "string" then return value end
+    local ok, s = pcall(function() return value:ToString() end)
+    return ok and type(s) == "string" and s or ""
+end
+
+local function PlayerName(pc)
+    local name = "a player"
+    pcall(function()
+        local state = pc.PlayerState
+        if Valid(state) then name = state:GetPlayerName():ToString() end
+    end)
+    return name
+end
+
+local function Tell(pc, tag, text)
+    pcall(function() pc:ClientMessage("[YouTubeTV] " .. text .. " #TV:" .. tag, FName("None"), 0.0) end)
+end
+
+-- Hosting: every player who joined
+local function TellEveryone(tag, text)
+    pcall(function()
+        for _, ctrl in ipairs(FindAllOf("BP_SGKController_C") or {}) do
+            if Valid(ctrl) and not ctrl:IsLocalController() then Tell(ctrl, tag, text) end
+        end
+    end)
+end
+
+local function SendToHost(command)
+    local pc = LocalController()
+    if not pc then return false end
+    return pcall(function() pc:ServerNotifyLoadedWorld(FName(SERVER_TAG .. "_" .. command)) end)
+end
+
+-- The TV standing at pos (whole cm), found among the game's TVs only
+local function FindTvAt(pos)
+    local best, bestD = nil, nil
+    pcall(function()
+        for _, a in ipairs(FindAllOf("BP_TV_C") or {}) do
+            if Valid(a) then
+                local p = TvPos(a)
+                if SamePos(p, pos) then
+                    local d = math.abs(p.X - pos.X) + math.abs(p.Y - pos.Y) + math.abs(p.Z - pos.Z)
+                    if not bestD or d < bestD then best, bestD = a, d end
+                end
+            end
+        end
+    end)
+    return best
+end
+
+local function MainMesh(actor)
+    local main = nil
+    pcall(function() main = actor.StaticMesh end)   -- the TV body (not its lace)
+    return Valid(main) and main or nil
+end
+
+-- Hosting: what plays now, as the message players get
+local function PlayMessage()
+    if not (tv and tv.id and tv.pos) then return "none", "Nothing is playing on the host's TV" end
+    local face = tv.placed and tv.placed.face or 0
+    return string.format("play:%s:%d:%d:%d:%d:%.1f", tv.id, tv.pos.X, tv.pos.Y, tv.pos.Z, face,
+        os.clock() - (tv.startClock or os.clock())), "The host's TV plays " .. tv.id
+end
+
+-- Hosting: tell every player who joined what plays (or that it's off)
+local function Broadcast()
+    if Joined() then return end
+    local tag, text = PlayMessage()
+    if tag == "none" then tag, text = "off", "The host's TV is off" end
+    TellEveryone(tag, text)
+end
+
+-- Joined: ask the host; fallback runs if no answer comes in 3 s (the host
+-- doesn't have this mod)
+local function AskHost(command, fallback)
+    local before = answered
+    local sent = SendToHost(command)
+    LoopAsync(3000, function()
+        ExecuteInGameThread(function()
+            if answered ~= before then return end
+            log("No answer from the host" .. (sent and "" or " (couldn't send)") .. " - the host needs YouTube TV "
+                .. VERSION .. " for TVs in their world" .. (fallback and "; playing it just for you" or ""))
+            if fallback then pcall(fallback) end
+        end)
+        return true
+    end)
+end
+
+local StartRemote
+
+-- Joined: download the host's video, then start it if it still plays
+local function FetchThen(id)
+    if fetching[id] then return end
+    fetching[id] = true
+    local doneFile = "./" .. VIDEO_DIR .. id .. ".done"
+    os.remove(doneFile)
+    local ok, why = RunScript("download_" .. id .. ".cmd", {
+        string.format("echo Downloading the host's video %s ...", id),
+        DownloadLine(id),
+        string.format('echo done> "videos\\%s.done"', id),
+    })
+    if not ok then
+        fetching[id] = nil
+        log("Couldn't download the host's video: " .. why)
+        return
+    end
+    log("Downloading the host's video " .. id .. " in a minimized window - it starts here when it's done")
+    local waited = 0
+    LoopAsync(2000, function()   -- only looks for a file; nothing in the game until it's there
+        waited = waited + 2
+        local f = io.open(doneFile, "r")
+        if not f then
+            if waited < 1800 then return false end
+            fetching[id] = nil
+            return true
+        end
+        f:close()
+        ExecuteInGameThread(function()
+            fetching[id] = nil
+            os.remove(doneFile)
+            if not Downloaded(id) then
+                log("Couldn't download the host's video " .. id .. ": " .. (FailReason(id) or ("see videos\\" .. id .. ".log")))
+            elseif remote and remote.id == id then
+                StartRemote()
+            end
+        end)
+        return true
+    end)
+end
+
+-- Joined: play what the host says plays, from the host's point
+StartRemote = function()
+    local r = remote
+    if not r then return end
+    if tv and tv.id == r.id and SamePos(tv.pos, r.pos) then
+        -- already on: only a restart (the host's next, same video) jumps
+        if math.abs((tv.startClock or 0) - r.startClock) > 3 then
+            tv.startClock = r.startClock
+            SeekTo(tv.player, math.max(0, os.clock() - r.startClock))
+        end
+        return
+    end
+    if not Downloaded(r.id) then FetchThen(r.id) return end
+    local actor = FindTvAt(r.pos)
+    if not actor then
+        log("The host's TV isn't loaded in your game yet - it starts when you look at it, or .tv sync")
+        return
+    end
+    OnActor(actor, MainMesh(actor), { id = r.id, face = r.face, startClock = r.startClock })
+end
+
+-- A joined player's request, on the host
+local function OnHostMessage(selfParam, msgParam)
+    if Joined() then return end   -- only the host answers
+    local msg = ParamString(msgParam)
+    local cmd, rest = msg:match("^" .. SERVER_TAG .. "_(%u+)_?(.*)$")
+    if not cmd then return end
+    local pc = nil
+    pcall(function() pc = selfParam:get() end)
+    if not Valid(pc) then return end
+    local isLocal = true
+    pcall(function() isLocal = pc:IsLocalController() end)
+    if isLocal then return end
+    local who = PlayerName(pc)
+    if cmd == "ON" then
+        local x, y, z, face, n = rest:match("^(%-?%d+)_(%-?%d+)_(%-?%d+)_(%d)_?(%d*)$")
+        if not x then return end
+        local actor = FindTvAt({ X = tonumber(x), Y = tonumber(y), Z = tonumber(z) })
+        if not actor then Tell(pc, "err", "The host's game couldn't find that TV") return end
+        local index = tonumber(n) or 1
+        if index < 1 or index > #videos then index = 1 end
+        log(who .. " turned a TV on")
+        local ok, why = OnActor(actor, MainMesh(actor), { index = index, face = tonumber(face) })
+        if ok then Broadcast() else Tell(pc, "err", "The host's TV couldn't play: " .. tostring(why)) end
+    elseif cmd == "OFF" then
+        if tv then log(who .. " turned the TV off") Stop() end
+        Broadcast()
+    elseif cmd == "NEXT" then
+        if tv and Next() then Broadcast() else Tell(pc, "err", "Nothing is playing on the host's TV") end
+    elseif cmd == "SYNC" then
+        Tell(pc, PlayMessage())
+    end
+end
+
+-- The host's answers, on a player who joined
+local function OnClientMessage(selfParam, textParam)
+    local text = ParamString(textParam)
+    local tag, rest = text:match("#TV:(%a+):?(%S*)%s*$")
+    if not tag or not Joined() then return end   -- (the host's own copies of its messages)
+    answered = answered + 1
+    if tag == "play" then
+        local id, x, y, z, face, secs = rest:match("^([%w_%-]+):(%-?%d+):(%-?%d+):(%-?%d+):(%d):([%d%.]+)$")
+        if not id or #id ~= 11 then return end
+        remote = { id = id, pos = { X = tonumber(x), Y = tonumber(y), Z = tonumber(z) }, face = tonumber(face),
+                   startClock = os.clock() - (tonumber(secs) or 0) }
+        log("The host's TV plays " .. id .. " (" .. Clock(tonumber(secs) or 0) .. " in)")
+        ExecuteInGameThread(function() pcall(StartRemote) end)
+    elseif tag == "off" or tag == "none" then
+        remote = nil
+        ExecuteInGameThread(function() if tv then Stop() end end)
+    elseif tag == "err" then
+        log((text:gsub("^%[YouTubeTV%]%s*", ""):gsub("%s*#TV:.*$", "")))
+    end
+end
+
+for path, fn in pairs({
+    ["/Script/Engine.PlayerController:ServerNotifyLoadedWorld"] = OnHostMessage,
+    ["/Script/Engine.PlayerController:ClientMessage"] = OnClientMessage,
+}) do
+    if not pcall(RegisterHook, path, fn) then log("Co-op messages unavailable (" .. path .. ")") end
+end
+
+-- Turning a TV on, off, to the next video: by yourself or hosting, here and
+-- for every player who joined; joined, the host does it for everyone
+local function TurnOn(actor, aimed, index)
+    if not Joined() then
+        if OnActor(actor, aimed, { index = index }) then Broadcast() end
+        return
+    end
+    local pos = TvPos(actor)
+    if not pos then log("TV on: couldn't read where the TV is") return end
+    local face = FaceToward(actor, aimed)
+    log("Asking the host to turn the TV on (the host's videos play)")
+    AskHost(string.format("ON_%d_%d_%d_%d_%d", pos.X, pos.Y, pos.Z, face, index or 1), function()
+        local a = FindTvAt(pos)
+        if a then OnActor(a, MainMesh(a), { index = index, face = face }) end
+    end)
+end
+
+local function TurnOff()
+    if not Joined() then
+        local was = tv ~= nil
+        Stop()
+        if was then Broadcast() end
+        return
+    end
+    remote = nil
+    if tv then Stop() end   -- yours now; the host turns it off for everyone
+    AskHost("OFF")
+end
+
+local function NextVideo()
+    if not Joined() then
+        if Next() then Broadcast() end
+        return
+    end
+    AskHost("NEXT")
+end
+
+local function Sync()
+    if not Joined() then log("You're the host: players who join get what plays by themselves") return end
+    log("Asking the host what plays")
+    AskHost("SYNC")
+end
+
+local function On(index)
+    local target, err = LookedAt(false)
+    if not target then log("TV on: " .. err .. " - look at the TV") return end
+    TurnOn(target.actor, target.comp, index)
+end
+
+-- .tv seek <seconds>: jumps in the video that plays (tests what co-op needs)
+local function Seek(value)
+    local seconds = tonumber(value)
+    if not seconds or seconds < 0 then log(".tv seek 90 = 1:30 into the video") return end
+    if not tv then log("Nothing playing - .tv on") return end
+    local before = SecondsOf(tv.player)
+    local ok, why = SeekTo(tv.player, seconds)
+    log(string.format("Seek to %s: %s (the player said %s before; .tv status shows where it is now)", Clock(seconds),
+        ok and "ok" or ("failed, " .. tostring(why)), before and Clock(before) or "it can't tell"))
 end
 
 ------------------------------------------------------------
@@ -984,6 +1420,10 @@ local function OnMenuBuilt(self, lookAtActor)
     if traceSteps and Valid(actor) then LogOnce("first:" .. NameOf(actor), "E menu step: menu for " .. NameOf(actor)) end
     eMenu.menu = menu
     if not IsTv(actor) then return end
+    -- joined: the host's TV plays, but it wasn't loaded here when the host said so
+    if remote and not (tv and tv.id == remote.id) and not fetching[remote.id] and SamePos(TvPos(actor), remote.pos) then
+        ExecuteInGameThread(function() pcall(StartRemote) end)
+    end
     Step("the E menu is for a TV")
     local ok, err = pcall(AddEntry, menu, actor)
     if not ok then LogOnce("adderr", "E menu: " .. tostring(err)) end
@@ -1020,11 +1460,9 @@ local function OnEKey()
     if now - lastToggle < 1.0 then return end   -- one toggle a second at most
     lastToggle = now
     if PlayingOn(actor) then
-        Stop()
+        TurnOff()
     else
-        local main = nil
-        pcall(function() main = actor.StaticMesh end)   -- the TV body (not its lace)
-        OnActor(actor, Valid(main) and main or nil, 1)
+        TurnOn(actor, MainMesh(actor), 1)
     end
     -- the entry's label follows
     local label = PlayingOn(actor) and LABEL_OFF or LABEL_ON
@@ -1038,17 +1476,22 @@ end
 local function Forget(addr)
     if not addr then return end
     if tv and tv.addr == addr then
+        seekGen = seekGen + 1
         pcall(function() tv.player:Close() end)
         tv = nil
         log("The TV that was on was picked up or removed - off")
+        Broadcast()   -- hosting: off for everyone
     end
     kept[addr] = nil
 end
 
 local function ForgetAll()
+    local was = tv ~= nil
+    seekGen = seekGen + 1
     if tv then pcall(function() tv.player:Close() end) end
     tv, kept = nil, {}
     eMenu.menu = nil
+    return was
 end
 
 local function HookEMenu()
@@ -1269,12 +1712,14 @@ RegisterConsoleCommandHandler(".tv", function(FullCommand, Parameters)
             elseif a == "scan" then Scan()
             elseif a == "hud" then Hud(n)
             elseif a == "on" then On(n)
-            elseif a == "next" then Next()
+            elseif a == "next" then NextVideo()
+            elseif a == "seek" then Seek(Parameters and Parameters[2])
+            elseif a == "sync" then Sync()
             elseif a == "status" then Status()
             elseif a == "learn" then Learn()
             elseif a == "turn" or a == "mirror" or a == "size" then Adjust(a, Parameters and Parameters[2])
-            elseif a == "off" then Stop()
-            else log(".tv probe | download | list | scan | hud [n] | on [n] | status | next | turn | mirror | size <x> | off | learn") end
+            elseif a == "off" then TurnOff()
+            else log(".tv probe | download | list | scan | hud [n] | on [n] | status | next | seek <s> | sync | turn | mirror | size <x> | off | learn") end
         end)
         if not ok then log("Error: " .. tostring(err)) end
     end)
@@ -1296,11 +1741,22 @@ pcall(HookDestroyed)
 
 -- The TV's class exists once a level with TVs has loaded: hook its menu then
 pcall(function()
-    RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
+    RegisterHook("/Script/Engine.PlayerController:ClientRestart", function(self)
+        local isLocal = false
+        pcall(function() isLocal = self:get():IsLocalController() end)
+        if not isLocal then return end   -- (hosting: a joined player's respawn)
         ExecuteInGameThread(function()
-            ForgetAll()   -- a new level or a respawn: nothing from before is safe to touch
+            -- a new level or a respawn: nothing from before is safe to touch
+            if ForgetAll() then Broadcast() end   -- hosting: the TV went off for everyone
             pcall(HookEMenu)
             pcall(HookDestroyed)
+        end)
+        -- joined: ask the host what plays once the world is there
+        LoopAsync(3000, function()
+            ExecuteInGameThread(function()
+                if Joined() then remote = nil SendToHost("SYNC") end
+            end)
+            return true
         end)
     end)
 end)
