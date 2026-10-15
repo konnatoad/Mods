@@ -33,7 +33,7 @@
 -- of the file (nothing is streamed through the game), jumping to the host's
 -- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.5.2"
+local VERSION = "0.5.3"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -585,6 +585,14 @@ local function FullPath(id)
     return type(full) == "string" and full ~= "" and full or FileOf(id)
 end
 
+-- Media Plate opened nothing in 0.5.2 (dark TV). Until it's seen playing,
+-- each open is checked after 2 s; if it isn't playing, the log says what the
+-- player reports and that TV (and later ones) use the player directly, from
+-- the start. plateWorks: nil = not known yet, true, false
+local plateWorks = nil
+local CheckPlate   -- (below OpenAt)
+local Broadcast    -- (co-op, below)
+
 -- Opens a downloaded video on a TV (entry = tv: its media component, player
 -- and whether it's a Media Plate) at seconds in. Returns the point it starts
 -- at (0 without Media Plate), or nil, why. label says which it is in the log.
@@ -593,7 +601,7 @@ local function OpenAt(entry, id, at, label)
     at = math.max(0, at or 0)
     local length = LengthOfId(id)
     if length and at > length - 2 then at = math.max(0, length - 2) end   -- (it ended: the last moments)
-    if entry.plate then
+    if entry.plate and plateWorks ~= false then
         local ok, err = pcall(function()
             local plate = entry.media
             local list = plate.MediaPlaylist
@@ -604,6 +612,7 @@ local function OpenAt(entry, id, at, label)
             plate:Open()
         end)
         if not ok then return nil, "Media Plate couldn't open it: " .. tostring(err) end
+        if plateWorks == nil then CheckPlate(entry, id, label) end
     else
         at = 0
         -- starts by itself once opened (a component's player may have it off)
@@ -615,6 +624,50 @@ local function OpenAt(entry, id, at, label)
     log(string.format("  opening %s (%s)%s%s", label or "video", id, at >= 1 and (" at " .. Clock(at)) or " from the start",
         length and (" of " .. Clock(length)) or ""))
     return at
+end
+
+local function PlayerState(p)
+    local parts = {}
+    for _, f in ipairs({ "IsPreparing", "IsReady", "IsPlaying", "IsClosed", "HasError" }) do
+        local v = nil
+        pcall(function() v = p[f](p) end)
+        table.insert(parts, f:gsub("^Is", ""):gsub("^Has", ""):lower() .. "=" .. tostring(v))
+    end
+    local url = nil
+    pcall(function() url = p:GetUrl():ToString() end)
+    if url == nil then pcall(function() url = tostring(p:GetUrl()) end) end
+    table.insert(parts, "url=" .. tostring(url))
+    return table.concat(parts, " ")
+end
+
+CheckPlate = function(entry, id, label)
+    local done = false
+    LoopAsync(2000, function()
+        ExecuteInGameThread(function()
+            if done then return end
+            done = true
+            if tv ~= entry or entry.id ~= id or plateWorks ~= nil then return end
+            local playing = false
+            pcall(function() playing = entry.player:IsPlaying() or entry.player:IsPreparing() end)
+            if playing then
+                plateWorks = true
+                log("  Media Plate plays (" .. PlayerState(entry.player) .. ")")
+                return
+            end
+            local plateState = "?"
+            pcall(function() plateState = "playing=" .. tostring(entry.media.bIsMediaPlatePlaying) .. " index=" .. tostring(entry.media.PlaylistIndex) end)
+            log("  Media Plate didn't start the video (player: " .. PlayerState(entry.player) .. "; plate: " .. plateState
+                .. ") - TVs now play from the start instead. Send these lines")
+            plateWorks = false
+            pcall(function() entry.media:Close() end)
+            local at = OpenAt(entry, id, 0, label)
+            if at then
+                entry.startClock = os.clock() - at
+                if Broadcast then Broadcast() end
+            end
+        end)
+        return true
+    end)
 end
 
 -- .tv status: what the player says about itself now. If it's ready but not
@@ -937,8 +990,6 @@ end
 local function SamePos(a, b)
     return a ~= nil and b ~= nil and math.abs(a.X - b.X) + math.abs(a.Y - b.Y) + math.abs(a.Z - b.Z) < 60
 end
-
-local Broadcast   -- (co-op, below)
 
 -- Where a video starts: the host's point (startClock: os.clock() when the
 -- host's was at 0:00), or like a real TV a random point in its first 85%
