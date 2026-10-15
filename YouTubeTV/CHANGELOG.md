@@ -2,6 +2,10 @@
 
 ---
 
+## 0.5.4 (2026-10-15)
+
+- Media Plate marked itself as playing but its player never got the video (no URL). Two changes to find out why and maybe fix it: Media Plate gets the TV's screen panel as its mesh (it may only open media while its mesh is visible), and if it still doesn't start, the log line also shows the file path it was given, whether that file is there, and what its media source says (URL, valid). TVs still fall back to playing from the start
+
 ## 0.5.3 (2026-10-15)
 
 - 0.5.2's TVs stayed dark: Media Plate took the video but never started it. Now the first video a Media Plate opens is checked 2 s later; if it isn't playing, the log says what the player reports ("Media Plate didn't start the video ...") and TVs play from the start with the plain player again, as before 0.5.2

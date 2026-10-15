@@ -33,7 +33,7 @@
 -- of the file (nothing is streamed through the game), jumping to the host's
 -- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.5.3"
+local VERSION = "0.5.4"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -606,8 +606,11 @@ local function OpenAt(entry, id, at, label)
             local plate = entry.media
             local list = plate.MediaPlaylist
             if not Valid(list) then error("the Media Plate has no playlist", 0) end
-            if list:AddFile(FullPath(id)) == false then error("its playlist refused the file", 0) end
+            entry.platePath = FullPath(id)
+            if list:AddFile(entry.platePath) == false then error("its playlist refused the file", 0) end
             plate.PlaylistIndex = list:Num() - 1
+            -- it may only open media while its mesh is visible: the screen panel is its mesh
+            if Valid(entry.panel) then pcall(function() plate.StaticMeshComponent = entry.panel end) end
             plate.StartTime = at
             plate:Open()
         end)
@@ -656,6 +659,21 @@ CheckPlate = function(entry, id, label)
             end
             local plateState = "?"
             pcall(function() plateState = "playing=" .. tostring(entry.media.bIsMediaPlatePlaying) .. " index=" .. tostring(entry.media.PlaylistIndex) end)
+            -- what it was given: the file, as Media Plate's source sees it
+            local source, url, valid = nil, "?", "?"
+            pcall(function() source = entry.media.MediaPlaylist:Get(entry.media.PlaylistIndex) end)
+            if Valid(source) then
+                pcall(function() url = source:GetUrl():ToString() end)
+                if url == "?" then pcall(function() url = tostring(source:GetUrl()) end) end
+                pcall(function() valid = tostring(source:Validate()) end)
+            end
+            local exists = false
+            if entry.platePath then
+                local f = io.open(entry.platePath, "rb")
+                if f then exists = true f:close() end
+            end
+            plateState = plateState .. "; path " .. tostring(entry.platePath) .. " (file there: " .. tostring(exists)
+                .. "), source " .. (Valid(source) and ("url=" .. url .. " valid=" .. valid) or "missing")
             log("  Media Plate didn't start the video (player: " .. PlayerState(entry.player) .. "; plate: " .. plateState
                 .. ") - TVs now play from the start instead. Send these lines")
             plateWorks = false
