@@ -2,6 +2,11 @@
 
 ---
 
+## 0.5.6 (2026-10-15)
+
+- The crash about a minute after using a TV (since 0.4.3) is very likely found. TURN ON TV / TURN OFF TV wrote its name into the menu entry's action, and this UE4SS writes such a text 8 bytes too long: over the entry's pointer to your inventory, which comes right after it. The engine's memory clean-up (about once a minute) then followed that broken pointer and crashed. The mod's own entries are now recognised by the label they show, and nothing is written into their action
+- When a video ends, the next one starts from the beginning (changing the channel with `.tv next` or turning the TV on still starts at a random point). Before, Media Plate went on to an older video by itself, at the random point still set. In co-op the host's TV decides, and everyone gets the next video from the start
+
 ## 0.5.5 (2026-10-15)
 
 - Media Plate plays now (0.5.4's fix: it only opens a video while its mesh is visible, and the screen panel is its mesh), so a TV starts somewhere in the middle of a video. But it stretched its mesh to the video's shape, turning the thin screen into a block on top of the TV. Its automatic aspect ratio and letterboxing are off now, and 2 s after each video opens the screen is put back to its own size and place in case it changed anyway

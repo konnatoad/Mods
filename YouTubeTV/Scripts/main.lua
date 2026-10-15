@@ -33,7 +33,7 @@
 -- of the file (nothing is streamed through the game), jumping to the host's
 -- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.5.5"
+local VERSION = "0.5.6"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -609,6 +609,9 @@ local function OpenAt(entry, id, at, label)
             if not Valid(list) then error("the Media Plate has no playlist", 0) end
             entry.platePath = FullPath(id)
             if list:AddFile(entry.platePath) == false then error("its playlist refused the file", 0) end
+            -- only this video in it: at its end Media Plate would go on to the
+            -- older ones by itself (from the start point still set)
+            for _ = 2, list:Num() do list:RemoveAt(0) end
             plate.PlaylistIndex = list:Num() - 1
             -- it only opens media while its mesh is visible (0.5.3 stayed dark): the
             -- screen panel is its mesh. It mustn't reshape it: by default it
@@ -629,6 +632,7 @@ local function OpenAt(entry, id, at, label)
         if not ok then return nil, "OpenFile failed: " .. tostring(opened) end
         pcall(function() entry.player:SetLooping(false) end)
     end
+    entry.openedAt = os.clock()
     log(string.format("  opening %s (%s)%s%s", label or "video", id, at >= 1 and (" at " .. Clock(at)) or " from the start",
         length and (" of " .. Clock(length)) or ""))
     return at
@@ -1095,7 +1099,8 @@ local function OnActor(actor, aimed, play)
     end
     local media, player, texture, isPlate = MakePlayer(actor)
     if not media then log("  no player: " .. tostring(player)) return false, "no video player" end
-    tv = { actor = actor, addr = AddressOf(actor), media = media, player = player, texture = texture, plate = isPlate }
+    tv = { actor = actor, addr = AddressOf(actor), media = media, mediaAddr = AddressOf(media), player = player,
+           texture = texture, plate = isPlate }
     local panel, placed, dmi = MakePanel(actor, screen.mesh, screen.mat, param, texture, play.face)
     if panel then
         tv.panel, tv.placed, tv.dmi = panel, placed, dmi
@@ -1139,14 +1144,15 @@ local function Adjust(what, value)
     PlacePanel(tv.panel, p)
 end
 
--- Another video on the TV that's on (a random one from a random point, or
--- the next in the list: shuffle, randomStart). Returns true when it opened
-local function Next()
+-- Another video on the TV that's on (a random one, or the next in the list:
+-- shuffle). Changing the channel starts it at a random point (randomStart);
+-- fromStart: when the one before ended. Returns true when it opened
+local function Next(fromStart)
     if not tv then log("Nothing playing - .tv on") return false end
     if #videos == 0 then log("No videos in config.lua") return false end
     tv.index = PickIndex(tv.index)
     tv.id = videos[tv.index].id
-    local at, why = OpenAt(tv, tv.id, StartPoint(tv.id, nil, true), "video " .. tv.index)
+    local at, why = OpenAt(tv, tv.id, StartPoint(tv.id, nil, not fromStart), "video " .. tv.index)
     if not at then log(why) return false end
     tv.startClock = os.clock() - at
     return true
@@ -1425,6 +1431,24 @@ local function TurnOff()
     AskHost("OFF")
 end
 
+-- A TV's video ended: the next one, from the start. Hosting, every player
+-- follows; joined, the host's TV decides (its end comes the same moment)
+local function OnPlateEnd(selfParam)
+    local addr = nil
+    pcall(function() addr = selfParam:get():GetAddress() end)
+    if not (addr and tv and tv.mediaAddr == addr) then return end
+    ExecuteInGameThread(function()
+        if not (tv and tv.mediaAddr == addr) then return end
+        if os.clock() - (tv.openedAt or 0) < 3 then return end   -- (not the video just opened)
+        if Joined() then return end
+        log("Video ended - the next one, from the start")
+        if Next(true) then Broadcast() end
+    end)
+end
+if not pcall(RegisterHook, "/Script/MediaPlate.MediaPlateComponent:OnMediaEnd", OnPlateEnd) then
+    log("Couldn't watch for videos ending: a TV stops at the end of its video")
+end
+
 local function NextVideo()
     if not Joined() then
         if Next() then Broadcast() end
@@ -1512,13 +1536,21 @@ local function LogActionTypes()
 end
 
 -- Is one of the menu's entries already ours?
+-- An entry's label, as shown. Ours are recognised by it: their Action has no
+-- name (writing one broke the game's memory, see AddEntry)
+local function EntryLabel(e)
+    local name = nil
+    pcall(function() name = e.TextBlock:GetText():ToString() end)
+    return name
+end
+
 local function HasOurEntry(box)
     local count = 0
     pcall(function() count = box:GetChildrenCount() end)
     for i = 0, count - 1 do
-        local e, name = nil, nil
+        local e = nil
         pcall(function() e = box:GetChildAt(i) end)
-        pcall(function() name = e.Action[E_ACTION_NAME]:ToString() end)
+        local name = EntryLabel(e)
         if name == LABEL_ON or name == LABEL_OFF then return true, i, e end
     end
     return false, count
@@ -1546,12 +1578,15 @@ local function AddEntry(menu, actor)
     Step("creating the entry widget")
     local ok, err = pcall(function() entry = lib:Create(menu, cls, pc) end)
     if not ok or not Valid(entry) then LogOnce("create", "E menu: couldn't create the entry: " .. tostring(err)) return end
-    local action = { [E_ACTION_TYPE] = E_TYPE, [E_ACTION_NAME] = FText(label) }
     -- Filled in directly, not with InitializeEntry: that starts the entry's
     -- UpdateText timer, which asks the TV for its actions again, finds none at
-    -- our index and removes the entry about a second later (0.4.1)
+    -- our index and removes the entry about a second later (0.4.1).
+    -- No name is written into its Action: this UE4SS writes a text 8 bytes too
+    -- long, over the PlayerInventory pointer right after it, and the engine's
+    -- memory clean-up crashed on that pointer about a minute later (0.4.3 to
+    -- 0.5.5). A new entry's action type is already 0; only another is written.
     Step("filling it in")
-    pcall(function() entry.Action = action end)
+    if E_TYPE ~= 0 then pcall(function() entry.Action[E_ACTION_TYPE] = E_TYPE end) end
     pcall(function() entry.Actor = actor end)
     pcall(function() entry.Index = index end)
     pcall(function() entry.PlayerInventory = menu.PlayerInventory end)
@@ -1598,9 +1633,9 @@ local function OnEKey()
         LogOnce("e-nobox", "E menu: E pressed, but couldn't read the menu's selection (" .. tostring(selected) .. ")")
         return
     end
-    local entry, name = nil, nil
+    local entry = nil
     pcall(function() entry = box:GetChildAt(selected) end)
-    pcall(function() name = entry.Action[E_ACTION_NAME]:ToString() end)
+    local name = EntryLabel(entry)
     if name ~= LABEL_ON and name ~= LABEL_OFF then return end   -- another entry: not ours
     -- the TV: the one our entry was made for (the entry is in the menu now, so
     -- it exists), else what the menu says you look at
@@ -1621,7 +1656,6 @@ local function OnEKey()
     end
     -- the entry's label follows
     local label = PlayingOn(actor) and LABEL_OFF or LABEL_ON
-    pcall(function() entry.Action[E_ACTION_NAME] = FText(label) end)
     pcall(function() entry.TextBlock:SetText(FText(label)) end)
     pcall(function() entry.TextBlock_86:SetText(FText(label)) end)
 end
