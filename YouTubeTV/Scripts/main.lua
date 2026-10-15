@@ -33,7 +33,7 @@
 -- of the file (nothing is streamed through the game), jumping to the host's
 -- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.5.6"
+local VERSION = "0.5.7"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -1099,7 +1099,7 @@ local function OnActor(actor, aimed, play)
     end
     local media, player, texture, isPlate = MakePlayer(actor)
     if not media then log("  no player: " .. tostring(player)) return false, "no video player" end
-    tv = { actor = actor, addr = AddressOf(actor), media = media, mediaAddr = AddressOf(media), player = player,
+    tv = { actor = actor, addr = AddressOf(actor), name = NameOf(actor), media = media, mediaAddr = AddressOf(media), player = player,
            texture = texture, plate = isPlate }
     local panel, placed, dmi = MakePanel(actor, screen.mesh, screen.mat, param, texture, play.face)
     if panel then
@@ -1674,14 +1674,29 @@ local function Forget(addr)
     kept[addr] = nil
 end
 
+-- Is the TV that's on still in the world? Found among the game's TVs by its
+-- address and name, without touching the old object itself
+local function StillThere(entry)
+    if not (entry and entry.addr) then return false end
+    local found = false
+    pcall(function()
+        for _, a in ipairs(FindAllOf("BP_TV_C") or {}) do
+            if Valid(a) and a:GetAddress() == entry.addr and NameOf(a) == entry.name then found = true return end
+        end
+    end)
+    return found
+end
+
+-- A respawn or a new world (ClientRestart). A respawn keeps the world: the TV
+-- plays on. A new world (leaving or joining a game, loading) has already
+-- deleted the old TVs with their players: nothing from before is touched,
+-- only let go of. (0.5.6 closed the old players: disconnecting crashed UE4SS.)
+-- Returns true when a TV that was on is gone
 local function ForgetAll()
-    local was = tv ~= nil
-    if tv then
-        if tv.plate then pcall(function() tv.media:Close() end) end
-        pcall(function() tv.player:Close() end)
-    end
-    tv, kept = nil, {}
     eMenu.menu = nil
+    if tv and StillThere(tv) then return false end
+    local was = tv ~= nil
+    tv, kept = nil, {}
     return was
 end
 
@@ -1938,6 +1953,7 @@ pcall(function()
         if not isLocal then return end   -- (hosting: a joined player's respawn)
         ExecuteInGameThread(function()
             -- a new level or a respawn: nothing from before is safe to touch
+            learning.menu = nil
             if ForgetAll() then Broadcast() end   -- hosting: the TV went off for everyone
             pcall(HookEMenu)
             pcall(HookDestroyed)
