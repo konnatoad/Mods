@@ -2,6 +2,14 @@
 
 ---
 
+## 0.5.2 (2026-10-15)
+
+- 0.5.1's TVs always started from the beginning, and the game crashed about a minute after it started. Jumping in a video used the engine's time values, which this UE4SS can't read or make: the length came back as nothing ("a short video"), and the jump went to 0:00. The crash came from the engine's memory clean-up (it runs about once a minute) tripping over a bad pointer; the time values the mod passed in are the likely cause, since nothing else new touched the engine. 0.4.3's crash had the same signature
+- Those time values are gone. A video's length is read from the video file itself, and the TV's player is now the engine's Media Plate, which opens a video at a start time in plain seconds. So a TV turned on starts somewhere in the middle, and co-op players start where the host's video is
+- If Media Plate doesn't work in this game, the TV falls back to the old player (the log says "videos start from the beginning")
+- `.tv seek <seconds>` opens the video that plays again from that point (hosting: for every player too)
+- `.tv status` shows which player the TV uses, the video's length and about how far in it is
+
 ## 0.5.1 (2026-10-15)
 
 ### Like a Real TV

@@ -33,7 +33,7 @@
 -- of the file (nothing is streamed through the game), jumping to the host's
 -- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.5.1"
+local VERSION = "0.5.2"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -461,7 +461,6 @@ end
 ------------------------------------------------------------
 -- tv = { actor, media, player, texture, sound, dmi, index, hud = { panel } }
 local tv = nil
-local seekGen = 0   -- a newer video or off stops a pending jump
 
 -- Adds a component of the given class to an actor, registered (so it gets
 -- set up like one made in the editor)
@@ -486,18 +485,37 @@ local function AddComponent(actor, classPath, setup)
     return comp
 end
 
--- A media player + texture on the actor: MediaComponent first, then Media Plate
+-- A media player + texture on the actor. The engine's Media Plate first: it
+-- opens a video at a start time given in plain seconds (StartTime), which is
+-- how a TV starts in the middle of a video. The player's own Seek takes a
+-- Timespan, which this UE4SS can't build or read (0.5.1 tried; it may also
+-- have broken memory the garbage collector then crashed on). MediaComponent
+-- (from the start only) if Media Plate doesn't work.
+-- Returns comp, player, texture, isPlate or nil, why
+local PLATE = "/Script/MediaPlate.MediaPlateComponent"
 local function MakePlayer(actor)
     local tried = {}
-    for _, path in ipairs({ "/Script/MediaAssets.MediaComponent", "/Script/MediaPlate.MediaPlateComponent" }) do
-        local comp, err = AddComponent(actor, path)
+    for _, path in ipairs({ PLATE, "/Script/MediaAssets.MediaComponent" }) do
+        local isPlate = path == PLATE
+        local setup = nil
+        if isPlate then
+            setup = function(plate)   -- before it starts
+                pcall(function() plate.bAutoPlay = false end)
+                pcall(function() plate.bPlayOnOpen = true end)
+                pcall(function() plate.bEnableAudio = false end)          -- the TV's own sound comes from AttachSound
+                pcall(function() plate.bPlayOnlyWhenVisible = false end)  -- it has no mesh of its own to be seen on
+                pcall(function() plate.bLoop = false end)
+            end
+        end
+        local comp, err = AddComponent(actor, path, setup)
         if comp then
             local player, texture = nil, nil
             pcall(function() player = comp:GetMediaPlayer() end)
-            pcall(function() texture = comp:GetMediaTexture() end)
+            pcall(function() texture = isPlate and comp:GetMediaTexture(0) or comp:GetMediaTexture() end)
             if Valid(player) and Valid(texture) then
-                log("  player and texture from " .. path:match("%.(%w+)$"))
-                return comp, player, texture
+                log("  player and texture from " .. path:match("%.(%w+)$")
+                    .. (isPlate and " (starts anywhere in a video)" or " (videos start from the beginning)"))
+                return comp, player, texture, isPlate
             end
             table.insert(tried, path:match("%.(%w+)$") .. ": no player/texture")
             pcall(function() comp:K2_DestroyComponent(comp) end)
@@ -508,47 +526,95 @@ local function MakePlayer(actor)
     return nil, table.concat(tried, "; ")
 end
 
--- Opens a downloaded video by its ID; label says which it is in the log
-local function OpenId(player, id, label)
-    if not Downloaded(id) then return false, id .. " isn't downloaded yet (.tv download, then .tv list)" end
-    -- starts by itself once opened (a component's player may have it off)
-    pcall(function() player.PlayOnOpen = true end)
-    local ok, opened = pcall(function() return player:OpenFile(FileOf(id)) end)
-    if not ok then return false, "OpenFile failed: " .. tostring(opened) end
-    pcall(function() player:SetLooping(false) end)
-    log(string.format("  opening %s (%s): %s", label or "video", id, tostring(opened)))
-    return true
-end
-
-local function OpenVideo(player, index)
-    local v = videos[index]
-    if not v then return false, "no video " .. tostring(index) end
-    return OpenId(player, v.id, "video " .. index)
-end
-
--- Jumping in a video: the player takes a Timespan, which this UE4SS can't
--- build from a table (it has no fields it can see), so the engine's own
--- FromSeconds makes it and GetTotalSeconds reads one
-local KMATH = "/Script/Engine.Default__KismetMathLibrary"
-
-local function SecondsOf(player)
-    local s = nil
-    pcall(function() s = Find(KMATH):GetTotalSeconds(player:GetTime()) end)
-    return type(s) == "number" and s or nil
-end
-
-local function SeekTo(player, seconds)
-    local kmath = Find(KMATH)
-    if not kmath then return false, "KismetMathLibrary not found" end
-    local done = nil
-    local ok, err = pcall(function() done = player:Seek(kmath:FromSeconds(seconds)) end)
-    if not ok then return false, "Seek failed: " .. tostring(err) end
-    return done ~= false, done == false and "the player refused (not ready?)" or nil
-end
-
 local function Clock(seconds)
     seconds = math.max(0, math.floor(seconds + 0.5))
     return string.format("%d:%02d", seconds // 60, seconds % 60)
+end
+
+-- A video's length in seconds, from its .mp4 header (the moov box's mvhd):
+-- read from the file, so the game's player isn't asked
+local function Mp4Length(path)
+    local f = io.open(path, "rb")
+    if not f then return nil end
+    local function u32(s, i)
+        local a, b, c, d = s:byte(i, i + 3)
+        return ((a * 256 + b) * 256 + c) * 256 + d
+    end
+    -- the box of type want between from and to: where its content starts and ends
+    local function find(from, to, want)
+        local pos = from
+        for _ = 1, 10000 do
+            if pos + 8 > to then return nil end
+            f:seek("set", pos)
+            local h = f:read(16)
+            if not h or #h < 8 then return nil end
+            local size, kind, header = u32(h, 1), h:sub(5, 8), 8
+            if size == 1 and #h >= 16 then size, header = u32(h, 9) * 4294967296 + u32(h, 13), 16
+            elseif size == 0 then size = to - pos end
+            if size < header then return nil end
+            if kind == want then return pos + header, pos + size end
+            pos = pos + size
+        end
+    end
+    local length = nil
+    pcall(function()
+        local moov, moovEnd = find(0, f:seek("end"), "moov")
+        local mvhd = moov and find(moov, moovEnd, "mvhd")
+        if not mvhd then return end
+        f:seek("set", mvhd)
+        local d = f:read(32)
+        local scale, duration
+        if d:byte(1) == 1 then scale, duration = u32(d, 21), u32(d, 25) * 4294967296 + u32(d, 29)
+        else scale, duration = u32(d, 13), u32(d, 17) end
+        if scale > 0 then length = duration / scale end
+    end)
+    f:close()
+    return length
+end
+
+local function LengthOfId(id) return Mp4Length("./" .. FileOf(id)) end
+
+-- The video file for Media Plate, as a full path (a relative one would be
+-- taken from the game's Content folder)
+local function FullPath(id)
+    local full = nil
+    pcall(function()
+        full = Find("/Script/Engine.Default__KismetSystemLibrary"):ConvertToAbsolutePath(FileOf(id))
+    end)
+    if type(full) ~= "string" then pcall(function() full = full:ToString() end) end
+    return type(full) == "string" and full ~= "" and full or FileOf(id)
+end
+
+-- Opens a downloaded video on a TV (entry = tv: its media component, player
+-- and whether it's a Media Plate) at seconds in. Returns the point it starts
+-- at (0 without Media Plate), or nil, why. label says which it is in the log.
+local function OpenAt(entry, id, at, label)
+    if not Downloaded(id) then return nil, id .. " isn't downloaded yet (.tv download, then .tv list)" end
+    at = math.max(0, at or 0)
+    local length = LengthOfId(id)
+    if length and at > length - 2 then at = math.max(0, length - 2) end   -- (it ended: the last moments)
+    if entry.plate then
+        local ok, err = pcall(function()
+            local plate = entry.media
+            local list = plate.MediaPlaylist
+            if not Valid(list) then error("the Media Plate has no playlist", 0) end
+            if list:AddFile(FullPath(id)) == false then error("its playlist refused the file", 0) end
+            plate.PlaylistIndex = list:Num() - 1
+            plate.StartTime = at
+            plate:Open()
+        end)
+        if not ok then return nil, "Media Plate couldn't open it: " .. tostring(err) end
+    else
+        at = 0
+        -- starts by itself once opened (a component's player may have it off)
+        pcall(function() entry.player.PlayOnOpen = true end)
+        local ok, opened = pcall(function() return entry.player:OpenFile(FileOf(id)) end)
+        if not ok then return nil, "OpenFile failed: " .. tostring(opened) end
+        pcall(function() entry.player:SetLooping(false) end)
+    end
+    log(string.format("  opening %s (%s)%s%s", label or "video", id, at >= 1 and (" at " .. Clock(at)) or " from the start",
+        length and (" of " .. Clock(length)) or ""))
+    return at
 end
 
 -- .tv status: what the player says about itself now. If it's ready but not
@@ -567,7 +633,7 @@ local function Status()
             if okS and type(s) == "string" then
                 table.insert(parts, s)
             else
-                for _, k in ipairs({ "X", "Y", "Ticks" }) do
+                for _, k in ipairs({ "X", "Y" }) do
                     local okk, kv = pcall(function() return v[k] end)
                     if okk and (type(kv) == "number" or type(kv) == "string") then
                         table.insert(parts, k .. "=" .. tostring(kv))
@@ -588,8 +654,9 @@ local function Status()
     local playing = get("playing", function() return p:IsPlaying() end)
     get("paused", function() return p:IsPaused() end)
     get("closed", function() return p:IsClosed() end)
-    get("length", function() return p:GetDuration() end)
-    get("time", function() local s = SecondsOf(p) return s and Clock(s) or "can't read" end)
+    get("player", function() return tv.plate and "Media Plate" or "MediaComponent (from the start only)" end)
+    get("length", function() local l = tv.id and LengthOfId(tv.id) return l and Clock(l) or "?" end)
+    get("time (about)", function() return tv.startClock and Clock(os.clock() - tv.startClock) or "?" end)
     get("rate", function() return p:GetRate() end)
     get("video tracks", function() return p:GetNumTracks(6) end)   -- 6 = video
     get("audio tracks", function() return p:GetNumTracks(0) end)   -- 0 = audio
@@ -646,7 +713,7 @@ local kept = {}
 
 local function Stop()
     if not tv then log("Nothing playing") return end
-    seekGen = seekGen + 1
+    if tv.plate then pcall(function() tv.media:Close() end) end
     pcall(function() tv.player:Close() end)
     if tv.hud and tv.hud.panel then pcall(function() tv.hud.panel:RemoveFromParent() end) end
     if Valid(tv.panel) then pcall(function() tv.panel:SetVisibility(false, false) end) end
@@ -704,14 +771,16 @@ local function Hud(index)
     pcall(function() pawn = pc.Pawn end)
     if not Valid(pawn) then log("Load into a world first") return end
     log("HUD test:")
-    local media, player, texture = MakePlayer(pawn)
+    local media, player, texture, isPlate = MakePlayer(pawn)
     if not media then log("  no player: " .. tostring(player)) return end
-    tv = { actor = pawn, media = media, player = player, texture = texture, index = index or 1 }
+    tv = { actor = pawn, media = media, player = player, texture = texture, plate = isPlate, index = index or 1 }
     tv.sound = AttachSound(pawn, player, false)
     local hud, err = HudPanel(texture)
     if hud then tv.hud = hud log("  panel shown top right") else log("  no panel: " .. err) end
-    local ok, why = OpenVideo(player, tv.index)
-    if not ok then log("  " .. why) end
+    local v = videos[tv.index]
+    local at, why = nil, "no video " .. tv.index .. " in config.lua"
+    if v then at, why = OpenAt(tv, v.id, 0, "video " .. tv.index) end
+    if not at then log("  " .. why) end
     log("Done - if the panel stays black or silent, send these lines (.tv off stops it)")
 end
 
@@ -871,73 +940,15 @@ end
 
 local Broadcast   -- (co-op, below)
 
--- After a video opens: runs onReady once the player is ready. Asks the player
--- twice a second, up to 20 s; only that one cheap call goes to the game
--- thread. onFail runs if it never gets ready. A newer video or off cancels it.
-local function WhenReady(onReady, onFail)
-    seekGen = seekGen + 1
-    local gen, tries, done = seekGen, 0, false
-    LoopAsync(500, function()
-        tries = tries + 1
-        if done or gen ~= seekGen or tries > 40 then return true end
-        local try = tries
-        ExecuteInGameThread(function()
-            if done or gen ~= seekGen or not tv then done = true return end
-            local ready = false
-            pcall(function() ready = tv.player:IsReady() end)
-            if not ready then
-                if try >= 40 then
-                    done = true
-                    log("  the video didn't get ready in 20 s - it plays from the start")
-                    if onFail then pcall(onFail) end
-                end
-                return
-            end
-            done = true
-            pcall(onReady)
-        end)
-        return false
-    end)
-end
-
--- Jump to where the host's video is (startClock: os.clock() when it was at
--- 0:00). force: also when that's near the start (the host restarted it)
-local function SeekWhenReady(startClock, force)
-    WhenReady(function()
-        local target = math.max(0, os.clock() - startClock + 0.3)   -- (jumping takes a moment)
-        if target < 2 and not force then return end
-        local ok, why = SeekTo(tv.player, target)
-        log(string.format("  jumped to %s, where the host's video is: %s", Clock(target),
-            ok and "ok (.tv status shows the time)" or ("failed, " .. tostring(why))))
-    end)
-end
-
-local function LengthOf(player)
-    local s = nil
-    pcall(function() s = Find(KMATH):GetTotalSeconds(player:GetDuration()) end)
-    return type(s) == "number" and s or nil
-end
-
--- Like a real TV: the video has already been on for a while. A random point
--- in its first 85%; then every player who joined is told (they wait for it)
-local function RandomStartWhenReady()
-    tv.pendingStart = true
-    local function Done()
-        if tv then tv.pendingStart = nil end
-        if Broadcast then Broadcast() end
+-- Where a video starts: the host's point (startClock: os.clock() when the
+-- host's was at 0:00), or like a real TV a random point in its first 85%
+local function StartPoint(id, startClock, random)
+    if startClock then return math.max(0, os.clock() - startClock) end
+    if random and RANDOM_START then
+        local length = LengthOfId(id)
+        if length and length >= 30 then return math.random() * length * 0.85 end
     end
-    WhenReady(function()
-        local length = LengthOf(tv.player)
-        if not length or length < 30 then
-            log("  plays from the start (" .. (length and "a short video" or "couldn't read its length") .. ")")
-        else
-            local at = math.random() * length * 0.85
-            local ok, why = SeekTo(tv.player, at)
-            if ok then tv.startClock = os.clock() - at end
-            log(string.format("  started at %s of %s: %s", Clock(at), Clock(length), ok and "ok" or ("failed, " .. tostring(why))))
-        end
-        Done()
-    end, Done)
+    return 0
 end
 
 -- Which of config.lua's videos plays next: a random one (shuffle), preferring
@@ -977,15 +988,14 @@ local function OnActor(actor, aimed, play)
     if not param then log("  its material has no texture slot to show the video in") return false, "no texture slot" end
     local label = index and ("video " .. index) or "the host's video"
     local function Open()
-        tv.index, tv.id, tv.pos, tv.startClock = index, id, TvPos(actor), play.startClock or os.clock()
-        local ok, why = OpenId(tv.player, id, label)
-        if not ok then
+        tv.index, tv.id, tv.pos = index, id, TvPos(actor)
+        local at, why = OpenAt(tv, id, StartPoint(id, play.startClock, random), label)
+        if not at then
             log("  " .. why)
             Stop()
             return false, why
         end
-        if play.startClock then SeekWhenReady(play.startClock)
-        elseif random and RANDOM_START then RandomStartWhenReady() end
+        tv.startClock = os.clock() - at
         return true
     end
     -- turned on before: the same player, sound and screen again
@@ -1006,9 +1016,9 @@ local function OnActor(actor, aimed, play)
         log("  (the same player, sound and screen as before)")
         return Open()
     end
-    local media, player, texture = MakePlayer(actor)
+    local media, player, texture, isPlate = MakePlayer(actor)
     if not media then log("  no player: " .. tostring(player)) return false, "no video player" end
-    tv = { actor = actor, addr = AddressOf(actor), media = media, player = player, texture = texture }
+    tv = { actor = actor, addr = AddressOf(actor), media = media, player = player, texture = texture, plate = isPlate }
     local panel, placed, dmi = MakePanel(actor, screen.mesh, screen.mat, param, texture, play.face)
     if panel then
         tv.panel, tv.placed, tv.dmi = panel, placed, dmi
@@ -1058,11 +1068,10 @@ local function Next()
     if not tv then log("Nothing playing - .tv on") return false end
     if #videos == 0 then log("No videos in config.lua") return false end
     tv.index = PickIndex(tv.index)
-    tv.id, tv.startClock, tv.pendingStart = videos[tv.index].id, os.clock(), nil
-    seekGen = seekGen + 1
-    local ok, why = OpenVideo(tv.player, tv.index)
-    if not ok then log(why) return false end
-    if RANDOM_START then RandomStartWhenReady() end
+    tv.id = videos[tv.index].id
+    local at, why = OpenAt(tv, tv.id, StartPoint(tv.id, nil, true), "video " .. tv.index)
+    if not at then log(why) return false end
+    tv.startClock = os.clock() - at
     return true
 end
 
@@ -1162,10 +1171,9 @@ local function PlayMessage()
         os.clock() - (tv.startClock or os.clock())), "The host's TV plays " .. tv.id
 end
 
--- Hosting: tell every player who joined what plays (or that it's off). Not
--- while a random start is being picked: they're told when it's picked
+-- Hosting: tell every player who joined what plays (or that it's off)
 Broadcast = function()
-    if Joined() or (tv and tv.pendingStart) then return end
+    if Joined() then return end
     local tag, text = PlayMessage()
     if tag == "none" then tag, text = "off", "The host's TV is off" end
     TellEveryone(tag, text)
@@ -1235,9 +1243,9 @@ StartRemote = function()
     if not r then return end
     if tv and tv.id == r.id and SamePos(tv.pos, r.pos) then
         -- already on: only a restart (the host's next, same video) jumps
-        if math.abs((tv.startClock or 0) - r.startClock) > 3 then
-            tv.startClock = r.startClock
-            SeekWhenReady(r.startClock, true)
+        if math.abs((tv.startClock or 0) - r.startClock) > 3 then   -- moved: open it again at the host's point
+            local at = OpenAt(tv, r.id, os.clock() - r.startClock, "the host's video")
+            if at then tv.startClock = os.clock() - at end
         end
         return
     end
@@ -1272,16 +1280,12 @@ local function OnHostMessage(selfParam, msgParam)
         if index and (index < 1 or index > #videos) then index = nil end
         log(who .. " turned a TV on")
         local ok, why = OnActor(actor, MainMesh(actor), { index = index, face = tonumber(face) })
-        if not ok then Tell(pc, "err", "The host's TV couldn't play: " .. tostring(why))
-        elseif tv and tv.pendingStart then Tell(pc, "wait", "The host's TV is turning on")
-        else Broadcast() end
+        if ok then Broadcast() else Tell(pc, "err", "The host's TV couldn't play: " .. tostring(why)) end
     elseif cmd == "OFF" then
         if tv then log(who .. " turned the TV off") Stop() end
         Broadcast()
     elseif cmd == "NEXT" then
-        if not (tv and Next()) then Tell(pc, "err", "Nothing is playing on the host's TV")
-        elseif tv.pendingStart then Tell(pc, "wait", "The host's TV changes the video")
-        else Broadcast() end
+        if tv and Next() then Broadcast() else Tell(pc, "err", "Nothing is playing on the host's TV") end
     elseif cmd == "SYNC" then
         Tell(pc, PlayMessage())
     end
@@ -1364,15 +1368,17 @@ local function On(index)
     TurnOn(target.actor, target.comp, index)
 end
 
--- .tv seek <seconds>: jumps in the video that plays (tests what co-op needs)
+-- .tv seek <seconds>: the video that plays, from that point (tests what
+-- random starts and co-op need). Hosting: every player follows
 local function Seek(value)
     local seconds = tonumber(value)
     if not seconds or seconds < 0 then log(".tv seek 90 = 1:30 into the video") return end
-    if not tv then log("Nothing playing - .tv on") return end
-    local before = SecondsOf(tv.player)
-    local ok, why = SeekTo(tv.player, seconds)
-    log(string.format("Seek to %s: %s (the player said %s before; .tv status shows where it is now)", Clock(seconds),
-        ok and "ok" or ("failed, " .. tostring(why)), before and Clock(before) or "it can't tell"))
+    if not (tv and tv.id) then log("Nothing playing - .tv on") return end
+    if Joined() then log("In someone else's world the host decides where the video is") return end
+    local at, why = OpenAt(tv, tv.id, seconds, tv.index and ("video " .. tv.index) or "the video")
+    if not at then log(why) return end
+    tv.startClock = os.clock() - at
+    Broadcast()
 end
 
 ------------------------------------------------------------
@@ -1548,7 +1554,7 @@ end
 local function Forget(addr)
     if not addr then return end
     if tv and tv.addr == addr then
-        seekGen = seekGen + 1
+        if tv.plate then pcall(function() tv.media:Close() end) end
         pcall(function() tv.player:Close() end)
         tv = nil
         log("The TV that was on was picked up or removed - off")
@@ -1559,8 +1565,10 @@ end
 
 local function ForgetAll()
     local was = tv ~= nil
-    seekGen = seekGen + 1
-    if tv then pcall(function() tv.player:Close() end) end
+    if tv then
+        if tv.plate then pcall(function() tv.media:Close() end) end
+        pcall(function() tv.player:Close() end)
+    end
     tv, kept = nil, {}
     eMenu.menu = nil
     return was
