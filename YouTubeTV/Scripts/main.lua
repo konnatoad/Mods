@@ -33,7 +33,7 @@
 -- of the file (nothing is streamed through the game), jumping to the host's
 -- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.5.7"
+local VERSION = "0.5.8"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -1505,7 +1505,7 @@ local E_MENU = cfg.eMenu ~= false   -- eMenu = false in config.lua: no E menu en
 local E_TYPE = math.floor(tonumber(cfg.eMenuActionType) or 0)
 if E_TYPE == 2 then E_TYPE = 0 end   -- never PICK UP
 local LABEL_ON, LABEL_OFF = "TURN ON TV", "TURN OFF TV"
-local eMenu = { hooked = false, logged = {}, menu = nil, entry = nil, index = nil, tvActor = nil }
+local eMenu = { hooked = false, logged = {}, menuAddr = nil }
 
 local function LogOnce(key, msg)
     if eMenu.logged[key] then return end
@@ -1608,7 +1608,7 @@ local function OnMenuBuilt(self, lookAtActor)
     if not Valid(menu) then return end
     pcall(function() actor = lookAtActor:get() end)
     if traceSteps and Valid(actor) then LogOnce("first:" .. NameOf(actor), "E menu step: menu for " .. NameOf(actor)) end
-    eMenu.menu = menu
+    eMenu.menuAddr = AddressOf(menu)   -- only its address: the game may delete the menu later
     if not IsTv(actor) then return end
     -- joined: the host's TV plays, but it wasn't loaded here when the host said so
     if remote and not (tv and tv.id == remote.id) and not fetching[remote.id] and SamePos(TvPos(actor), remote.pos) then
@@ -1621,11 +1621,27 @@ end
 
 -- E: if our entry is the selected one, the TV goes on / off
 local lastToggle = -100
+-- The E menu last built, found fresh among the game's menus by its address.
+-- The menu object itself isn't kept: when the game deletes a menu, touching
+-- it crashes UE4SS (0.5.7: an E press anywhere, a while after the menu was
+-- deleted, read the freed menu)
+local function CurrentMenu()
+    if not eMenu.menuAddr then return nil end
+    local found = nil
+    pcall(function()
+        for _, m in ipairs(FindAllOf("BP_InteractionContextMenu_C") or {}) do
+            if m:GetAddress() == eMenu.menuAddr then found = m return end
+        end
+    end)
+    return Valid(found) and found or nil
+end
+
 local function OnEKey()
-    -- read fresh from the menu: the entry selected now and what you look at now
-    -- (an entry or TV kept from earlier may have been deleted since)
-    local menu = eMenu.menu
-    if not menu then LogOnce("e-nomenu", "E menu: E pressed, but no menu seen yet") return end
+    -- everything read fresh: the menu, the entry selected now and what you
+    -- look at now (anything kept from earlier may have been deleted since)
+    if not eMenu.menuAddr then LogOnce("e-nomenu", "E menu: E pressed, but no menu seen yet") return end
+    local menu = CurrentMenu()
+    if not menu then eMenu.menuAddr = nil return end   -- deleted since
     local selected, box = nil, nil
     pcall(function() selected = menu.SelectedEntryIndex end)
     pcall(function() box = menu.ContextVerticalBox end)
@@ -1693,7 +1709,7 @@ end
 -- only let go of. (0.5.6 closed the old players: disconnecting crashed UE4SS.)
 -- Returns true when a TV that was on is gone
 local function ForgetAll()
-    eMenu.menu = nil
+    eMenu.menuAddr = nil
     if tv and StillThere(tv) then return false end
     local was = tv ~= nil
     tv, kept = nil, {}
@@ -1786,7 +1802,7 @@ local function Watch(path, label, isMenu)
         local menu = nil
         if isMenu then
             pcall(function() menu = self:get() end)
-            if Valid(menu) then learning.menu = menu end   -- the E key reads it (no object search)
+            if Valid(menu) then eMenu.menuAddr = AddressOf(menu) end   -- the E key finds it by this
         end
         local n = (learning.calls[path] or 0) + 1
         learning.calls[path] = n
@@ -1841,8 +1857,8 @@ local function LearnEKey()
     pcall(function()
         RegisterKeyBind(Key.E, function()
             ExecuteInGameThread(function()
-                local menu = learning.menu
-                if not Valid(menu) then log("learn: E pressed - no menu seen yet") return end
+                local menu = CurrentMenu()
+                if not menu then log("learn: E pressed - no menu seen yet") return end
                 local vis = "?"
                 pcall(function() vis = tostring(menu:GetVisibility()) end)
                 log("learn: E pressed - menu visibility " .. vis .. ", " .. MenuEntries(menu))
@@ -1953,7 +1969,6 @@ pcall(function()
         if not isLocal then return end   -- (hosting: a joined player's respawn)
         ExecuteInGameThread(function()
             -- a new level or a respawn: nothing from before is safe to touch
-            learning.menu = nil
             if ForgetAll() then Broadcast() end   -- hosting: the TV went off for everyone
             pcall(HookEMenu)
             pcall(HookDestroyed)

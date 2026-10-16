@@ -2,6 +2,10 @@
 
 ---
 
+## 0.5.8 (2026-10-16)
+
+- A crash some time after using a TV's E menu: the mod kept the last E menu it saw and looked at it on every E press (to see whether TURN ON TV was selected). Once the game had deleted that menu, the next E press anywhere read the deleted menu, which crashes UE4SS. Now only the menu's address is kept, and on E the menu is looked up among the game's menus; a deleted one isn't touched (`.tv learn` the same)
+
 ## 0.5.7 (2026-10-15)
 
 - Disconnecting from a co-op game with a TV on (or off but used) crashed the game. Leaving a world deletes its TVs and their players, and the mod then closed those players, which crashes UE4SS. Now, when you respawn or change worlds, the mod first looks whether the TV is still there: after a respawn it plays on (it used to go off), and in a new world the old TV's objects are only let go of, never touched
