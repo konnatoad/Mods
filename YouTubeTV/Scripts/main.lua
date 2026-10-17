@@ -34,7 +34,7 @@
 -- of the file (nothing is streamed through the game), jumping to the host's
 -- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.5.10"
+local VERSION = "0.5.11"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -801,7 +801,8 @@ local function Stop()
     pcall(function() tv.player:Close() end)
     if tv.hud and tv.hud.panel then pcall(function() tv.hud.panel:RemoveFromParent() end) end
     if Valid(tv.panel) then pcall(function() tv.panel:SetVisibility(false, false) end) end
-    if tv.light and Valid(tv.light) then pcall(function() tv.light:SetVisibility(false, false) end) end
+    local light = LightOf(tv)
+    if light then pcall(function() light:SetVisibility(false, false) end) end
     if tv.mesh and tv.oldMaterial then pcall(function() tv.mesh:SetMaterial(tv.slot, tv.oldMaterial) end) end
     if tv.addr and not tv.hud then kept[tv.addr] = tv end   -- the HUD test's are left alone too
     tv = nil
@@ -884,8 +885,12 @@ local SCREEN_HEIGHT = math.max(0.2, math.min(1.2, tonumber(cfg.screenHeight) or 
 local GLOW = cfg.glowScreen ~= false
 local GLOW_MATERIAL = "/Engine/EngineMaterials/Widget3DPassThrough_Opaque.Widget3DPassThrough_Opaque"
 local GLOW_PARAM = "SlateUI"
-local LIGHT_CD = math.max(0, tonumber(cfg.lightBrightness) or 150)     -- candelas (0 = no light)
-local LIGHT_M = math.max(1, tonumber(cfg.lightDistance) or 5)          -- it reaches this far
+local LIGHT_CD = math.max(0, tonumber(cfg.lightBrightness) or 60)      -- candelas at its brightest (0 = no light)
+local LIGHT_M = math.max(1, tonumber(cfg.lightDistance) or 4)          -- it reaches this far
+-- Like a real screen the light changes with the picture: a new scene every
+-- few seconds (brighter or darker, a bit warmer or cooler) and a slight
+-- flicker in between. false: a steady light
+local FLICKER = cfg.lightFlicker ~= false
 
 local function LoadObject(path)
     local obj = Find(path)
@@ -1013,6 +1018,53 @@ local function MakeLight(actor)
     return light
 end
 
+-- An entry's light, looked up by its name (a hash lookup): a light deleted
+-- with its world is never touched, only not found (touching a deleted object
+-- crashes UE4SS)
+local function LightOf(entry)
+    if not (entry and entry.lightPath) then return nil end
+    local light = nil
+    pcall(function() light = StaticFindObject(entry.lightPath) end)
+    if not Valid(light) then return nil end
+    local same = false
+    pcall(function() same = light:GetAddress() == entry.lightAddr end)
+    return same and light or nil
+end
+
+-- The flicker: one loop while a TV is on, 8 times a second. level is how
+-- bright the picture is now (0-1), heading for target; at a scene cut the
+-- target (and the colour) changes, quickly, like a cut on a real TV
+local flicker = { running = false, level = 0.7, target = 0.7, cutAt = 0,
+                  color = { R = 0.75, G = 0.85, B = 1.0 }, aim = { R = 0.75, G = 0.85, B = 1.0 } }
+local function FlickerTick()
+    local light = tv and LightOf(tv)
+    if not light then return end
+    local now = os.clock()
+    if now >= flicker.cutAt then
+        flicker.cutAt = now + 1.5 + math.random() * 5
+        flicker.target = 0.35 + math.random() * 0.65
+        local warm = math.random() * 0.3                -- 0: cool blue-white, 0.3: warmer
+        flicker.aim = { R = 0.72 + warm, G = 0.82 + warm * 0.3, B = 1.0 - warm }
+    end
+    flicker.level = flicker.level + (flicker.target - flicker.level) * 0.45
+    for _, c in ipairs({ "R", "G", "B" }) do
+        flicker.color[c] = flicker.color[c] + (flicker.aim[c] - flicker.color[c]) * 0.45
+    end
+    local wobble = 1 + (math.random() - 0.5) * 0.12    -- the picture moving within a scene
+    pcall(function() light:SetIntensity(LIGHT_CD * flicker.level * wobble) end)
+    pcall(function() light:SetLightColor({ R = flicker.color.R, G = flicker.color.G, B = flicker.color.B, A = 1 }, true) end)
+end
+
+local function StartFlicker()
+    if not FLICKER or flicker.running then return end
+    flicker.running = true
+    LoopAsync(125, function()
+        if not (tv and tv.lightPath) then flicker.running = false return true end
+        ExecuteInGameThread(function() pcall(FlickerTick) end)
+        return false
+    end)
+end
+
 -- .tv light <candelas>: the screen's light brighter or dimmer, now (put the
 -- number you like in config.lua as lightBrightness)
 local function SetLight(value)
@@ -1021,8 +1073,9 @@ local function SetLight(value)
     LIGHT_CD = cd
     local n = 0
     local function apply(entry)
-        if entry and entry.light and Valid(entry.light) then
-            pcall(function() entry.light:SetIntensity(cd) end)
+        local light = LightOf(entry)
+        if light then
+            pcall(function() light:SetIntensity(cd) end)
             n = n + 1
         end
     end
@@ -1040,8 +1093,8 @@ PlacePanel = function(panel, placed)
     if placed.turn % 180 ~= 0 then w, h = h, w end
     pcall(function() panel:SetWorldScale3D({ X = 0.004, Y = placed.mirror and -w or w, Z = h }) end)
     -- its light, 3 cm in front of it, shining out
-    local light = placed.light
-    if light and Valid(light) then
+    local light = LightOf(placed)
+    if light then
         local fx, fy = Turn(3, 0, placed.rot.Yaw)
         local at = { X = placed.where.X + fx, Y = placed.where.Y + fy, Z = placed.where.Z }
         pcall(function() light:K2_SetWorldLocationAndRotation(at, { Pitch = 0, Yaw = placed.rot.Yaw, Roll = 0 }, false, {}, false) end)
@@ -1159,6 +1212,7 @@ local function OnActor(actor, aimed, play)
             return false, why
         end
         tv.startClock = os.clock() - at
+        StartFlicker()
         return true
     end
     -- turned on before: the same player, sound and screen again
@@ -1174,7 +1228,8 @@ local function OnActor(actor, aimed, play)
                 if where then p.where, p.rot, p.width, p.height, p.face = where, rot, width, height, face end
             end
             pcall(function() tv.panel:SetVisibility(true, false) end)
-            if tv.light and Valid(tv.light) then pcall(function() tv.light:SetVisibility(true, false) end) end
+            local light = LightOf(tv)
+            if light then pcall(function() light:SetVisibility(true, false) end) end
             PlacePanel(tv.panel, tv.placed)
         end
         log("  (the same player, sound and screen as before)")
@@ -1188,7 +1243,14 @@ local function OnActor(actor, aimed, play)
     if panel then
         tv.panel, tv.placed, tv.dmi = panel, placed, dmi
         tv.light = MakeLight(actor)
-        placed.light = tv.light
+        if tv.light then
+            pcall(function()
+                tv.lightPath = tv.light:GetFullName():match("^%S+%s+(.+)$")
+                tv.lightAddr = tv.light:GetAddress()
+            end)
+            placed.lightPath, placed.lightAddr = tv.lightPath, tv.lightAddr
+        end
+        tv.light = nil   -- (only its name is kept)
         PlacePanel(panel, placed)
         log(string.format("  screen panel on the front, %.0f x %.0f cm (.tv turn / .tv mirror / .tv size if it's off)",
             placed.width, placed.height))

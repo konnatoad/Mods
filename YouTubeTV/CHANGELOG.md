@@ -2,6 +2,11 @@
 
 ---
 
+## 0.5.11 (2026-10-17)
+
+- The screen's light is like a real TV's: dimmer (60 cd at its brightest, reaching 4 m) and changing with the picture - a new scene every few seconds, brighter or darker and a bit warmer or cooler, with a slight flicker in between. `lightFlicker = false` in config.lua for a steady light
+- The light is looked up by its name each time, so a light deleted with its world (leaving a game) is never touched
+
 ## 0.5.10 (2026-10-17)
 
 - The screen's light was too dim to see (30 cd): now 150 cd by default, and `.tv light <candelas>` changes it on the spot (0 = off) to find what looks right; the log shows the light's brightness and units

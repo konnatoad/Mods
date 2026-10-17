@@ -43,8 +43,10 @@ return {
     -- room in front of it. lightBrightness in candelas (0 = no light; .tv light 300
     -- tries a value in game), lightDistance how far the light reaches in metres
     glowScreen = true,
-    lightBrightness = 150,
-    lightDistance = 5,
+    lightBrightness = 60,
+    lightDistance = 4,
+    -- the light changes with the picture like a real TV (scene cuts, flicker)
+    lightFlicker = true,
 
     -- TURN ON TV / TURN OFF TV in the game's E menu on a TV (false = off;
     -- .tv on / .tv off still work)
