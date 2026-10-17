@@ -40,10 +40,10 @@ return {
     screenHeight = 0.75,
 
     -- Like a real TV the screen glows (shows in a dark room) and lights the
-    -- room in front of it. lightBrightness in candelas (0 = no light; try 60
-    -- for brighter), lightDistance how far the light reaches in metres
+    -- room in front of it. lightBrightness in candelas (0 = no light; .tv light 300
+    -- tries a value in game), lightDistance how far the light reaches in metres
     glowScreen = true,
-    lightBrightness = 30,
+    lightBrightness = 150,
     lightDistance = 5,
 
     -- TURN ON TV / TURN OFF TV in the game's E menu on a TV (false = off;

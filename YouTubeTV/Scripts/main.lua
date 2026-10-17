@@ -17,6 +17,7 @@
 --                    random point, like a real TV (n: video n from the start)
 --   .tv next         another video
 --   .tv turn / .tv mirror / .tv size 1.1   fix the picture on the TV's screen
+--   .tv light 300    the light the screen gives off, brighter or dimmer (0 = off)
 --   .tv off          stops it (the HUD panel too)
 --   E menu on a TV   TURN ON TV / TURN OFF TV (eMenu = false in config.lua: off)
 --   .tv learn        look at a TV: how the game's E menu works on it (for turning it on with E)
@@ -33,7 +34,7 @@
 -- of the file (nothing is streamed through the game), jumping to the host's
 -- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.5.9"
+local VERSION = "0.5.10"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -883,7 +884,7 @@ local SCREEN_HEIGHT = math.max(0.2, math.min(1.2, tonumber(cfg.screenHeight) or 
 local GLOW = cfg.glowScreen ~= false
 local GLOW_MATERIAL = "/Engine/EngineMaterials/Widget3DPassThrough_Opaque.Widget3DPassThrough_Opaque"
 local GLOW_PARAM = "SlateUI"
-local LIGHT_CD = math.max(0, tonumber(cfg.lightBrightness) or 30)     -- candelas (0 = no light)
+local LIGHT_CD = math.max(0, tonumber(cfg.lightBrightness) or 150)     -- candelas (0 = no light)
 local LIGHT_M = math.max(1, tonumber(cfg.lightDistance) or 5)          -- it reaches this far
 
 local function LoadObject(path)
@@ -1005,8 +1006,29 @@ local function MakeLight(actor)
     pcall(function() light:SetIntensity(LIGHT_CD) end)
     pcall(function() light:SetAttenuationRadius(LIGHT_M * 100) end)
     pcall(function() light:SetLightColor({ R = 0.75, G = 0.85, B = 1.0, A = 1.0 }, true) end)   -- a screen's cool white
-    log(string.format("  light from the screen: %s, %g cd, reaching %g m", ClassName(light), LIGHT_CD, LIGHT_M))
+    local units, intensity = "?", "?"
+    pcall(function() units = tostring(light.IntensityUnits) end)
+    pcall(function() intensity = tostring(light.Intensity) end)
+    log(string.format("  light from the screen: %s, %s (units %s, 1 = candelas), reaching %g m", ClassName(light), intensity, units, LIGHT_M))
     return light
+end
+
+-- .tv light <candelas>: the screen's light brighter or dimmer, now (put the
+-- number you like in config.lua as lightBrightness)
+local function SetLight(value)
+    local cd = tonumber(value)
+    if not cd or cd < 0 then log(".tv light 300 = brighter, .tv light 50 = dimmer, .tv light 0 = off (now " .. LIGHT_CD .. ")") return end
+    LIGHT_CD = cd
+    local n = 0
+    local function apply(entry)
+        if entry and entry.light and Valid(entry.light) then
+            pcall(function() entry.light:SetIntensity(cd) end)
+            n = n + 1
+        end
+    end
+    apply(tv)
+    for _, entry in pairs(kept) do apply(entry) end
+    log(string.format("Screen light %g cd (%d TV%s) - lightBrightness = %g in config.lua keeps it", cd, n, n == 1 and "" or "s", cd))
 end
 
 -- Puts the panel where placed says (also after .tv turn / mirror / size)
@@ -2003,8 +2025,9 @@ RegisterConsoleCommandHandler(".tv", function(FullCommand, Parameters)
             elseif a == "status" then Status()
             elseif a == "learn" then Learn()
             elseif a == "turn" or a == "mirror" or a == "size" then Adjust(a, Parameters and Parameters[2])
+            elseif a == "light" then SetLight(Parameters and Parameters[2])
             elseif a == "off" then TurnOff()
-            else log(".tv probe | download | list | scan | hud [n] | on [n] | status | next | seek <s> | sync | turn | mirror | size <x> | off | learn") end
+            else log(".tv probe | download | list | scan | hud [n] | on [n] | status | next | seek <s> | sync | turn | mirror | size <x> | light <cd> | off | learn") end
         end)
         if not ok then log("Error: " .. tostring(err)) end
     end)

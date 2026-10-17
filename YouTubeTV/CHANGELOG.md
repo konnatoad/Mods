@@ -2,6 +2,10 @@
 
 ---
 
+## 0.5.10 (2026-10-17)
+
+- The screen's light was too dim to see (30 cd): now 150 cd by default, and `.tv light <candelas>` changes it on the spot (0 = off) to find what looks right; the log shows the light's brightness and units
+
 ## 0.5.9 (2026-10-17)
 
 - A TV glows like a real one: the picture is drawn unlit (the engine's own material for 3D screens), so it shows in a dark room, and a soft light the screen's size shines out from it into the room (no shadows, cheap). `lightBrightness` (candelas, 0 = no light), `lightDistance` (metres) and `glowScreen` in config.lua. Without that material the picture is lit like the TV, as before
