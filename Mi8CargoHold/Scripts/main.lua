@@ -225,6 +225,17 @@ end
 
 -- The wreck actor, not the old coordinates, controls where the hold goes. If
 -- the mesh is not loaded, fail closed rather than spawn an orphan.
+-- Where the wreck stands, kept once it has been found (a position, not the
+-- object, which the game may delete)
+local wreck_location = nil
+local function remember_wreck(actor)
+    pcall(function()
+        local l = actor:K2_GetActorLocation()
+        wreck_location = { X = l.X, Y = l.Y, Z = l.Z }
+    end)
+    return actor
+end
+
 local function find_wreck_actor()
     local ok_actors, actors = pcall(FindAllOf, "StaticMeshActor")
     local actor_count = 0
@@ -234,7 +245,7 @@ local function find_wreck_actor()
             local actor = as_object(raw)
             local ok_component, component = pcall(function() return actor and actor.StaticMeshComponent end)
             if ok_component and is_wreck_mesh(component) then
-                return actor, component
+                return remember_wreck(actor), component
             end
         end
     end
@@ -249,7 +260,7 @@ local function find_wreck_actor()
             if is_wreck_mesh(component) then
                 local ok_owner, owner = pcall(function() return component:GetOwner() end)
                 if ok_owner and is_valid(owner) then
-                    return owner, component
+                    return remember_wreck(owner), component
                 end
             end
         end
@@ -1041,6 +1052,35 @@ end
 -- live on the host, so nothing is created, cleared or saved here.
 local client = { next_scan = 0, delay = 5 }
 
+-- The host's hold reaches this game only while this player is near it (the
+-- game sends far-away objects to nobody). So once the wreck's place is known,
+-- there's no looking while far from it, and near it only the world cabinets
+-- are looked through, not every mesh in the world: in a dense area that full
+-- search (find_wreck_actor) every minute was a noticeable hitch.
+local CLIENT_SEARCH_RADIUS = 20000   -- cm; the game sends objects up to about 150 m
+local function distance_to(location)
+    local ok, position = pcall(function() return read(session.controller, "Pawn"):K2_GetActorLocation() end)
+    if not ok or not position then return nil end
+    local x, y, z = position.X - location.X, position.Y - location.Y, position.Z - location.Z
+    return math.sqrt(x * x + y * y + z * z)
+end
+
+local function find_proxy_near(location)
+    local ok_scan, instances = pcall(FindAllOf, WORLD_CONTAINER_CLASS)
+    if not ok_scan or type(instances) ~= "table" then return nil end
+    for _, raw in pairs(instances) do
+        local candidate = as_object(raw)
+        if candidate and is_cargo_scale(candidate) then
+            local ok, l = pcall(function() return candidate:K2_GetActorLocation() end)
+            if ok and l then
+                local x, y, z = l.X - location.X, l.Y - location.Y, l.Z - location.Z
+                if x * x + y * y + z * z < 2500 * 2500 then return candidate end
+            end
+        end
+    end
+    return nil
+end
+
 local function client_ensure(now, manual)
     if is_valid(active_actor) then return active_actor end
     if active_address then
@@ -1049,11 +1089,23 @@ local function client_ensure(now, manual)
         client.next_scan, client.delay = now + 2, 5
     end
     if now < client.next_scan and not manual then return nil end
-    client.next_scan = now + client.delay
-    client.delay = math.min(60, client.delay * 2)
-    local wreck = find_wreck_actor()
-    if not wreck then return nil end
-    local proxy = find_saved_proxy(wreck)
+    local proxy = nil
+    if wreck_location then
+        local distance = distance_to(wreck_location)
+        if distance and distance > CLIENT_SEARCH_RADIUS and not manual then
+            client.next_scan, client.delay = now + 5, 5   -- far away: only the distance, every 5 s
+            return nil
+        end
+        client.next_scan = now + client.delay
+        client.delay = math.min(60, client.delay * 2)
+        proxy = find_proxy_near(wreck_location)
+    else
+        client.next_scan = now + client.delay
+        client.delay = math.min(60, client.delay * 2)
+        local wreck = find_wreck_actor()
+        if not wreck then return nil end
+        proxy = find_saved_proxy(wreck)
+    end
     if not proxy then
         log_once("client-waiting", "In someone else's world: no Cargo Hold from the host yet. "
             .. "The host needs Mi8CargoHold installed too; still looking.")

@@ -2,6 +2,10 @@
 
 ---
 
+## 1.1.2 (2026-10-17)
+
+- In someone else's world, an FPS hitch about once a minute in dense areas: whenever the host's hold wasn't there (the game only sends it while you're near the Mi-8), the mod searched for it again, walking every object in the game twice and reading every mesh in the world. Now the wreck's place is remembered once found: far from it there's no searching at all (the hold can't be there), and near it only the world's cabinets are looked through
+
 ## 1.1.1 (2026-10-14)
 
 - Restarting this mod from the Mod Hub ("Restart changed mods") could crash the game: UE4SS removes a restarted mod's hooks on engine functions, but its hooks on the game's own functions stayed, still pointing into the old copy of the mod, and the next time the game ran one UE4SS crashed. They're now written down (`hooks.txt` in the mod's folder) and removed when the mod loads again in the same game session (shared `GameHooks` module)
