@@ -16,7 +16,7 @@
 --   .sort stop           stop a sort that's running
 --   .sort check          what the mod sees in the open container (changes nothing)
 ------------------------------------------------------------
-local VERSION = "1.2.0"
+local VERSION = "1.3.0"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -189,10 +189,28 @@ local function Mark(grid, idx, w, h, taken, value)
 end
 
 -- The sorted order: smallest first, the same kind together, bigger stacks first
+-- What kind of item it is: the start of its ID (Ammo_9mm -> Ammo,
+-- Holdable_RGD5 -> Holdable). Kinds go in this order; others after them
+local KIND_ORDER = { "Weapon", "Magazine", "Ammo", "Holdable", "Consumable", "Food", "Drink", "Equipment",
+                     "Artifact", "Resource", "Plant", "BuildPart", "Object", "Misc" }
+local KIND_ALIAS = { CUTWeapon = "Weapon" }
+local KIND_RANK = {}
+for i, k in ipairs(KIND_ORDER) do KIND_RANK[k] = i end
+local function KindOf(id)
+    local k = tostring(id):match("^([^_]+)_") or "Misc"
+    return KIND_ALIAS[k] or k
+end
+
 local function Order(items)
     local list = {}
-    for _, it in ipairs(items) do table.insert(list, it) end
+    for _, it in ipairs(items) do
+        it.kind = KindOf(it.id)
+        it.kindRank = KIND_RANK[it.kind] or 100
+        table.insert(list, it)
+    end
     table.sort(list, function(a, b)
+        if a.kindRank ~= b.kindRank then return a.kindRank < b.kindRank end
+        if a.kind ~= b.kind then return a.kind < b.kind end
         local aa, ba = a.w * a.h, b.w * b.h
         if aa ~= ba then return aa < ba end
         if a.h ~= b.h then return a.h < b.h end
@@ -238,10 +256,12 @@ local function Plan(grid, pin)
     -- Neat rows: each "shelf" holds one height of item, filled left to right
     -- row by row; the next height starts a new shelf below. Smallest first,
     -- so 1-cell items fill the top rows, then 2-cell, then 3-cell...
-    -- byHeight: one shelf per height instead of per shape (1x1, 2x1, 3x1
-    -- share rows, then 1x2, 2x2...): fewer half-empty rows, for a container
-    -- too small for a shelf per shape
-    local function shelves(byHeight)
+    -- mode: "shape" a shelf per kind of item (ammo, grenades, food...) and
+    -- shape; "height" a shelf per kind and height (1x1, 2x1, 3x1 of a kind
+    -- share rows); "mixed" a shelf per height only, the kinds in order within
+    -- it: fewer half-empty rows each, for containers too small for the one before
+    local function shelves(mode)
+        local byHeight = mode ~= "shape"
         local taken = {}
         local list = {}
         for _, it in ipairs(order) do
@@ -262,6 +282,8 @@ local function Plan(grid, pin)
             local rank = {}
             for i, it in ipairs(order) do rank[it] = i end
             table.sort(list, function(a, b)
+                if mode == "height" and a.kindRank ~= b.kindRank then return a.kindRank < b.kindRank end
+                if mode == "height" and a.kind ~= b.kind then return a.kind < b.kind end
                 if a.h ~= b.h then return a.h < b.h end
                 return rank[a] < rank[b]
             end)
@@ -269,7 +291,7 @@ local function Plan(grid, pin)
         local cols = grid.cols
         local top, x, shelfH, shape = 0, 0, nil, nil
         for _, it in ipairs(list) do
-            local key = byHeight and tostring(it.h) or (it.w .. "x" .. it.h)
+            local key = (mode == "mixed" and "" or it.kind .. "|") .. (byHeight and tostring(it.h) or (it.w .. "x" .. it.h))
             if shape ~= key then
                 -- a new shape: a new shelf (below whatever the last one used)
                 if shelfH then top, x = top + shelfH, 0 end
@@ -323,7 +345,7 @@ local function Plan(grid, pin)
         end
         return true
     end
-    if shelves(false) or shelves(true) or try(false) or try(true) then
+    if shelves("shape") or shelves("height") or shelves("mixed") or try(false) or try(true) then
         -- (the small ones of the second packing went in after the big ones:
         -- the moves still go smallest first)
         -- Identical items (same kind, amount, shape) can take each other's

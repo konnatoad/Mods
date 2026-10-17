@@ -2,6 +2,10 @@
 
 ---
 
+## 1.3.0 (2026-10-17)
+
+- Sorted by what the items are first: each kind gets its own rows (weapons, magazines, ammo, grenades and other holdables, medicine, food, drink, equipment, artifacts, resources...), then by size within the kind. 1.2.0 sorted only by size, so ammo boxes and grenades of the same size ended up mixed. The kind is the start of the game's item ID (Ammo_..., Holdable_...). A smaller container shares rows between sizes of a kind, and one too small for that shares rows between kinds (still in kind order)
+
 ## 1.2.0 (2026-10-17)
 
 - Items are turned to lie flat (wider than tall), so they line up in even rows: a 1x2 item becomes 2x1 and shares the rows of the other 1-high items. `rotate = false` in config.lua keeps every item turned the way it is. If the game turns items differently than expected, the mod notices on the first move, adjusts, and if that doesn't work either it stops turning items
