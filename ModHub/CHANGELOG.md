@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.13 (2026-10-14)
+
+- Lists the experimental YouTube TV mod and its `.tv` commands
+
 ## 1.4.12 (2026-10-14)
 
 - PageUp opens and closes the hub, like `.mods` (the Mod Menu used to take PageUp for its cheat menu; open that with `.menu`, or from the Mod Menu's page here)

@@ -33,5 +33,10 @@ ViewDebug/buffer_*.csv
 ViewDebug/dumps.txt
 ViewDebug/scan_*.txt
 
+# YouTube TV downloads
+YouTubeTV/videos/
+YouTubeTV/download.cmd
+YouTubeTV/download_*.cmd
+
 # Ids of hooks on the game's functions, written by shared/GameHooks while the game runs
 */hooks.txt
