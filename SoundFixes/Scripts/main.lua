@@ -15,7 +15,7 @@
 -- Each player's copy fixes what that player hears: the host needs it for the
 -- host's ears.
 ------------------------------------------------------------
-local VERSION = "1.0.0"
+local VERSION = "1.0.1"
 
 local function log(msg)
     print("[SoundFixes] " .. tostring(msg) .. "\n")
@@ -63,6 +63,18 @@ local function FixMicrowave(selfParam)
     if not Valid(audio) then LogOnce("noaudio", "Microwave: no sound component found - not changed") return end
     local falloff = Falloff()
     if not falloff then LogOnce("nofalloff", "Microwave: the game's falloff (" .. FALLOFF .. ") isn't there - not changed") return end
+    -- what it was, once (if it still sounds everywhere, this says why)
+    if not logged.before then
+        local function get(f) local v = nil pcall(function() v = f() end) return v end
+        local att = get(function() return audio.AttenuationSettings end)
+        local sound = get(function() return audio.Sound end)
+        log(string.format("Microwave turned on: sound %s, falloff was %s, UI sound %s, positioned %s, override %s",
+            Valid(sound) and get(function() return sound:GetFName():ToString() end) or "none",
+            Valid(att) and get(function() return att:GetFName():ToString() end) or "none",
+            tostring(get(function() return audio.bIsUISound end)), tostring(get(function() return audio.bAllowSpatialization end)),
+            tostring(get(function() return audio.bOverrideAttenuation end))))
+        logged.before = true
+    end
     pcall(function() audio.bIsUISound = false end)
     pcall(function() audio.bAllowSpatialization = true end)
     pcall(function() audio.bOverrideAttenuation = false end)
@@ -70,16 +82,19 @@ local function FixMicrowave(selfParam)
     LogOnce("fixed", "Microwave sound now comes from the microwave and fades with distance")
 end
 
--- The microwave's class is there once a level with one has loaded: hooked then
-local hooked = false
+-- The microwave's class only exists once a microwave has loaded (later than
+-- the world's start: 1.0.0 looked only then and never hooked). Looked for
+-- every 5 s until it's there - a name look-up, not a search.
+local hooked, tried = false, false
 local function Hook()
-    if hooked or not Find(MICROWAVE) then return end
+    if hooked or tried or not Find(MICROWAVE) then return end
+    tried = true   -- one try once the class is there (no retry spam if it fails)
     local any = false
     for _, fn in ipairs({ "MulticastTurnedOnEffect", "SGK TurnedOnEffect" }) do
         if pcall(GameHook, MICROWAVE .. ":" .. fn, FixMicrowave) then any = true end
     end
     hooked = any
-    if not any then log("Couldn't watch microwaves turning on - their sound is unchanged") end
+    log(any and "Watching microwaves" or "Couldn't watch microwaves turning on - their sound is unchanged")
 end
 
 pcall(function()
@@ -88,5 +103,10 @@ pcall(function()
     end)
 end)
 ExecuteInGameThread(function() pcall(Hook) end)
+LoopAsync(5000, function()
+    if hooked or tried then return true end
+    ExecuteInGameThread(function() pcall(Hook) end)
+    return false
+end)
 
 log("Loaded v" .. VERSION)
