@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.19 (patched for current game version)
+    MISERY Mod Menu v4.6.20 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -1272,7 +1272,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.19 ===")
+    Log("=== MISERY Mod Menu v4.6.20 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -6082,7 +6082,41 @@ end)
 -- sprinting sometimes is very slow: run it while it happens. The game sets
 -- the speed from the inventory's MovementSpeeds (one per state), or the held
 -- item's own MovementSpeeds when it has UseHoldableMovementSpeeds.
+-- .movecheck watch: the same, twice a second for 30 s, so it catches the
+-- slow sprint while it happens (typing .movecheck stops the character)
+local moveWatch = { untilClock = 0, running = false }
+local function MoveWatchLine()
+    local inv, char = GetInventory(), GetPlayerCharacter()
+    if not (inv and char) then return end
+    local function get(f) local v = nil pcall(function() v = f() end) return v end
+    local cm = get(function() return char.CharacterMovement end)
+    local speed = get(function() local v = char:GetVelocity() return math.sqrt(v.X * v.X + v.Y * v.Y) end)
+    local mode = get(function() return cm.MovementMode end)
+    Log(string.format("[movewatch] state %s, sprint key %s, max speed %s, moving at %s, stamina %s, mode %s, crouched %s",
+        tostring(get(function() return inv.CurrentCharacterState end)), tostring(get(function() return inv.SprintKeyDown end)),
+        tostring(get(function() return math.floor(cm.MaxWalkSpeed) end)), tostring(speed and math.floor(speed) or "?"),
+        tostring(get(function() return math.floor(inv.CurrentStamina) end)), tostring(mode),
+        tostring(get(function() return char.bIsCrouched end))))
+end
+
 RegisterConsoleCommandHandler(".movecheck", function(FullCommand, Parameters)
+    if string.lower(tostring((Parameters and Parameters[1]) or "")) == "watch" then
+        moveWatch.untilClock = os.clock() + 30
+        Log("[movewatch] Logging how you move twice a second for 30 s - sprint now, and keep going when it gets slow")
+        if not moveWatch.running then
+            moveWatch.running = true
+            LoopAsync(500, function()
+                if os.clock() > moveWatch.untilClock then
+                    moveWatch.running = false
+                    Log("[movewatch] Done")
+                    return true
+                end
+                ExecuteInGameThread(function() pcall(MoveWatchLine) end)
+                return false
+            end)
+        end
+        return true
+    end
     ExecuteInGameThread(function()
         local inv, char = GetInventory(), GetPlayerCharacter()
         if not (inv and char) then Log("[movecheck] Load into a world first") return end
@@ -8305,7 +8339,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.19 Loaded!")
+Log("  MISERY Mod Menu v4.6.20 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")

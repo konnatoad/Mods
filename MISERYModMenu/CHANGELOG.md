@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.20
+
+- `.movecheck watch`: logs how you move (state, sprint key, speed limit, real speed, stamina, crouched) twice a second for 30 s, so it catches the slow sprint while it happens. Typing `.movecheck` alone stops your character, so it only ever showed standing still
+
+---
+
 ## Version 4.6.19
 
 - `.movecheck` shows what decides how fast you move right now: your state, sprint key, stamina, the speed limit and how fast you really move, the game's speed for each state, and the item in your hands with its own speeds. For the bug where sprinting is sometimes very slow: run it while it happens
