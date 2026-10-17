@@ -227,12 +227,21 @@ end
 -- the mesh is not loaded, fail closed rather than spawn an orphan.
 -- Where the wreck stands, kept once it has been found (a position, not the
 -- object, which the game may delete)
-local wreck_location = nil
-local function remember_wreck(actor)
+local wreck_location, wreck_address = nil, nil
+-- The mesh's own place: in a generated level the wreck mesh can belong to a
+-- big level actor whose own location is somewhere else entirely
+local function remember_wreck(actor, component)
+    wreck_address = address_of(actor)
     pcall(function()
-        local l = actor:K2_GetActorLocation()
+        local l = component:K2_GetComponentLocation()
         wreck_location = { X = l.X, Y = l.Y, Z = l.Z }
     end)
+    if not wreck_location then
+        pcall(function()
+            local l = actor:K2_GetActorLocation()
+            wreck_location = { X = l.X, Y = l.Y, Z = l.Z }
+        end)
+    end
     return actor
 end
 
@@ -245,7 +254,7 @@ local function find_wreck_actor()
             local actor = as_object(raw)
             local ok_component, component = pcall(function() return actor and actor.StaticMeshComponent end)
             if ok_component and is_wreck_mesh(component) then
-                return remember_wreck(actor), component
+                return remember_wreck(actor, component), component
             end
         end
     end
@@ -260,7 +269,7 @@ local function find_wreck_actor()
             if is_wreck_mesh(component) then
                 local ok_owner, owner = pcall(function() return component:GetOwner() end)
                 if ok_owner and is_valid(owner) then
-                    return remember_wreck(owner), component
+                    return remember_wreck(owner, component), component
                 end
             end
         end
@@ -1070,6 +1079,9 @@ local function find_proxy_near(location)
     if not ok_scan or type(instances) ~= "table" then return nil end
     for _, raw in pairs(instances) do
         local candidate = as_object(raw)
+        -- attached to the wreck: it's the hold
+        local ok_parent, parent = pcall(function() return candidate and candidate:GetAttachParentActor() end)
+        if ok_parent and wreck_address and address_of(parent) == wreck_address then return candidate end
         if candidate and is_cargo_scale(candidate) then
             local ok, l = pcall(function() return candidate:K2_GetActorLocation() end)
             if ok and l then
@@ -1080,6 +1092,14 @@ local function find_proxy_near(location)
     end
     return nil
 end
+
+-- A world cabinet was just made in this game (the host's hold arrives as a
+-- cabinet when the player walks near): look for the hold 2 s later, once its
+-- place and size have arrived too
+pcall(NotifyOnNewObject, WORLD_CONTAINER_CLASS_PATH, function()
+    client.next_scan = math.min(client.next_scan, os.time() + 2)
+    client.delay = 5
+end)
 
 local function client_ensure(now, manual)
     if is_valid(active_actor) then return active_actor end
@@ -1096,8 +1116,12 @@ local function client_ensure(now, manual)
             client.next_scan, client.delay = now + 5, 5   -- far away: only the distance, every 5 s
             return nil
         end
+        -- near the wreck: looked for less and less often (each look still walks
+        -- every object), up to every 30 s; a cabinet appearing in this game
+        -- (the host's hold arriving as the player walks near) brings the next
+        -- look forward to 2 s later (see the NotifyOnNewObject below)
         client.next_scan = now + client.delay
-        client.delay = math.min(60, client.delay * 2)
+        client.delay = math.min(30, client.delay * 2)
         proxy = find_proxy_near(wreck_location)
     else
         client.next_scan = now + client.delay

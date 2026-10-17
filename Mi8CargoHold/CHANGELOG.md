@@ -2,6 +2,10 @@
 
 ---
 
+## 1.1.3 (2026-10-17)
+
+- In someone else's world the giant cabinet could show over the Mi-8 for minutes after walking back to it (1.1.2): the hold was looked for less and less often (up to once a minute), and the wreck's place was taken from the actor it belongs to, which in a generated level can stand somewhere else. Now the wreck mesh's own place is kept, the hold is also recognised by being attached to the wreck, near the wreck it's looked for at most every 30 s, and as soon as a cabinet appears in your game (the host's hold arriving as you walk near) it's looked for 2 s later
+
 ## 1.1.2 (2026-10-17)
 
 - In someone else's world, an FPS hitch about once a minute in dense areas: whenever the host's hold wasn't there (the game only sends it while you're near the Mi-8), the mod searched for it again, walking every object in the game twice and reading every mesh in the world. Now the wreck's place is remembered once found: far from it there's no searching at all (the hold can't be there), and near it only the world's cabinets are looked through
