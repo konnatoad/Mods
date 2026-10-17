@@ -2,6 +2,11 @@
 
 ---
 
+## 1.4.1 (2026-10-17)
+
+- A fridge was left with cells still marked as taken by an item that wasn't there (unusable). Most likely from 1.4.0 moving an item partly over where it was: the game clears an item's old cells after filling the new ones. Items are never moved partly over themselves any more (big items still get room made the other ways)
+- `.sort repair`: frees cells taken by an item that isn't there. Only the host's game can change a container, so the host opens it and runs it; a joined player sees what's wrong
+
 ## 1.4.0 (2026-10-17)
 
 - Big items are sorted too: two big items each over the other's place (the flour and sugar sacks) made 1.3.0 give up and leave every big item where it was, with gaps everywhere. Now an item can be moved partly over where it is, the item itself steps aside when that frees the way, and smaller items are moved out of a spot to make room for a big one. If the game refuses moving an item partly over itself, the mod notices and goes around it

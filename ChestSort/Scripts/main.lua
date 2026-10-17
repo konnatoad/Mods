@@ -15,8 +15,10 @@
 --   .sort                the same, from the console
 --   .sort stop           stop a sort that's running
 --   .sort check          what the mod sees in the open container (changes nothing)
+--   .sort repair         cells marked as taken by an item that isn't there
+--                        become free again (the host's game: run it as the host)
 ------------------------------------------------------------
-local VERSION = "1.4.0"
+local VERSION = "1.4.1"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -658,7 +660,9 @@ local function Step()
         end
     end
     grid.noRotate = s.noRotate
-    grid.selfOk = not s.noSelfOverlap
+    -- Never partly over itself: 1.4.0 did that, and a fridge was left with
+    -- cells still marked as taken by an item that had moved away (17 Oct)
+    grid.selfOk = false
     grid.room = s.room
     local levels = Levels(grid)
     local order, move, why
@@ -730,7 +734,11 @@ local function Start()
     local player, inv, why = OpenContainer()
     if not inv then log("Nothing to sort: " .. tostring(why)) return end
     local grid, bad = ReadGrid(inv)
-    if not grid then log("Can't sort " .. NameOf(inv) .. ": " .. bad) return end
+    if not grid then
+        log("Can't sort " .. NameOf(inv) .. ": " .. bad
+            .. (bad:find("isn't there", 1, true) and " - .sort repair (as the host) frees those cells" or ""))
+        return
+    end
     if #grid.items == 0 then log("It's empty") return end
     sorting = { player = player, inv = inv, invName = NameOf(inv), steps = 0, maxSteps = #grid.items * 10 + 50,
                 lastMove = nil, same = 0, moved = 0, level = 1 }
@@ -743,6 +751,55 @@ local function Start()
         end)
         return false
     end)
+end
+
+-- .sort repair: cells marked as taken by an item that isn't there (their
+-- item's top-left cell isn't that item any more) become empty again, like
+-- the container's other empty cells. Only the host's game can change a
+-- container, so in someone else's world it only shows what's wrong.
+local function Repair()
+    local _, inv, why = OpenContainer()
+    if not inv then log("Nothing open: " .. tostring(why)) return end
+    local arr = inv.Inventory
+    local n = 0
+    pcall(function() n = arr:GetArrayNum() end)
+    local occ, root = {}, {}
+    local template = nil   -- an empty cell, to copy what empty cells hold
+    for i = 1, n do
+        pcall(function()
+            local slot = arr[i]
+            occ[i - 1] = slot[F.occupied] == true
+            root[i - 1] = slot[F.rootIndex]
+            if not occ[i - 1] and not template then template = { root = slot[F.rootIndex] } end
+        end)
+    end
+    local bad = {}
+    for idx = 0, n - 1 do
+        local r = root[idx]
+        if occ[idx] and not (type(r) == "number" and occ[r] and root[r] == r) then table.insert(bad, idx) end
+    end
+    if #bad == 0 then log(NameOf(inv) .. ": no broken cells") return end
+    log(NameOf(inv) .. ": " .. #bad .. " cell(s) taken by an item that isn't there: " .. table.concat(bad, ", "))
+    local pc = LocalController()
+    local joined = false
+    pcall(function() joined = pc:HasAuthority() == false end)
+    if joined then log("Only the host can fix them: ask the host to open this container and type .sort repair") return end
+    local fixed = 0
+    for _, idx in ipairs(bad) do
+        local ok = pcall(function()
+            local slot = arr[idx + 1]
+            slot[F.occupied] = false
+            slot[F.rootIndex] = template and template.root or -1
+            local it = slot[F.item]
+            it[F.id] = FName("None")
+            it[F.amount] = 0
+        end)
+        if ok then fixed = fixed + 1 end
+    end
+    -- show it to everyone who has it open
+    pcall(function() inv:UpdateAllPlayersRootItems(true, {}) end)
+    pcall(function() inv:ServerForceRootItemUpdate() end)
+    log(string.format("Freed %d of %d cell(s) - close and open the container again", fixed, #bad))
 end
 
 local function Check()
@@ -795,6 +852,7 @@ RegisterConsoleCommandHandler(".sort", function(FullCommand, Parameters)
             if a == "stop" then
                 if sorting then Finish("Stopped") else log("Not sorting") end
             elseif a == "check" then Check()
+            elseif a == "repair" then Repair()
             else Start() end
         end)
         if not ok then log("Error: " .. tostring(err)) end
