@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.15 (patched for current game version)
+    MISERY Mod Menu v4.6.16 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -1272,7 +1272,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.15 ===")
+    Log("=== MISERY Mod Menu v4.6.16 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -6012,6 +6012,44 @@ RegisterConsoleCommandHandler(".invcheck", function(FullCommand, Parameters)
             table.insert(held, key .. "=" .. tostring(down))
         end
         Log("[invcheck] IsSplitKeyDown=" .. tostring(split) .. "  keys held now: " .. table.concat(held, " "))
+        -- the open containers' own rules: a count or weight limit or an item
+        -- restriction makes the game refuse a whole stack (Shift+click) or
+        -- take only part of it (drag)
+        local D = {
+            cells = "ContainerInventoryCells_13_269D7DB442A1056CD715DEA438F850A2",
+            useWeight = "UseWeight_16_3F94FD134C121CE317A6D2A0C2938171",
+            maxWeight = "MaxWeight_20_5CDB778F4D6FE3E65C8DD1A7E8722133",
+            restriction = "ContainerRestrictionType_23_EC5805D64D1B1EF6093FA8B19DBF48C5",
+            restrictionItems = "RestrictionItems_27_B3D5BDB6404ACC06A8D798BDB3047E0E",
+            type = "ContainerType_33_C2D0977F47C071D4354A4BB1817475AD",
+            useCount = "UseItemCountLimit_38_585327964096457C6B3EF697DA170C6F",
+            countLimit = "ItemCountLimit_42_1BB0344A44E3DB354AC3DB9A4917C186",
+        }
+        local shown = 0
+        pcall(function()
+            for _, w in ipairs(FindAllOf("BP_ContainerWindow_C") or {}) do
+                local visible = false
+                pcall(function() visible = w:IsVisible() end)
+                local cInv = nil
+                pcall(function() cInv = w.InventoryComponent end)
+                if visible and cInv and cInv:IsValid() then
+                    shown = shown + 1
+                    local function get(f) local v = nil pcall(function() v = f() end) return tostring(v) end
+                    local d = nil
+                    pcall(function() d = cInv.InventoryDetails end)
+                    local owner = get(function() return cInv:GetOwner():GetFName():ToString() end)
+                    local restricted = get(function() return d[D.restrictionItems]:GetArrayNum() end)
+                    Log(string.format("[invcheck] open container %s: items %s, weight %s; cells %s, weight limit %s (%s), "
+                        .. "count limit %s (%s), restriction type %s (%s items), container type %s",
+                        owner, get(function() return cInv.ItemCount end), get(function() return cInv.CurrentWeight end),
+                        get(function() return d[D.cells] end), get(function() return d[D.useWeight] end),
+                        get(function() return d[D.maxWeight] end), get(function() return d[D.useCount] end),
+                        get(function() return d[D.countLimit] end), get(function() return d[D.restriction] end),
+                        restricted, get(function() return d[D.type] end)))
+                end
+            end
+        end)
+        if shown == 0 then Log("[invcheck] No container open - open the workbench (or the box) and run .invcheck again") end
         if fix then
             local ok = pcall(function() inv.IsSplitKeyDown = false end)
             local after = nil
@@ -8190,7 +8228,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.15 Loaded!")
+Log("  MISERY Mod Menu v4.6.16 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")

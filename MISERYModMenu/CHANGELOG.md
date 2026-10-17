@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.16
+
+- `.invcheck` also lists the open containers' own rules: items and weight in them, cells, weight limit, item count limit, restriction type and restricted items. For finding out why Shift+click moves nothing into a workbench or box and a drag moves only part of a stack
+
+---
+
 ## Version 4.6.15
 
 - `.invcheck` shows what the game thinks about the inventory's keys: whether its split key is held (`IsSplitKeyDown`) and which of Shift / Ctrl / Alt are down right now. For the bug where a dragged stack moves only half and Shift+click quick move does nothing; `.invcheck fix` turns the split key off
