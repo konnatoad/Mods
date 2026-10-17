@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.22 (patched for current game version)
+    MISERY Mod Menu v4.6.23 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -358,6 +358,14 @@ function Coop.OnHostMessage(selfParam, msgParam)
     pcall(function() isLocal = pc:IsLocalController() end)
     if isLocal then return end
     local who = Coop.Name(pc)
+    -- out of the game's fly camera, back into their character: always allowed
+    -- (a player stuck in it can't do anything else)
+    if cmd == "UNFLY" then
+        local ok = Coop.EndFlyCamera and Coop.EndFlyCamera(pc)
+        Coop.Tell(pc, ok and "Back in your character" or "Couldn't find your character", ok and "ok" or "failed")
+        Log("[Co-op] " .. who .. ": out of the fly camera" .. (ok and "" or " - failed (character not found)"))
+        return
+    end
     if not Coop.allowJoined then
         Coop.Tell(pc, "The host doesn't give items or stats to other players", "denied")
         Log("[Co-op] " .. who .. " asked for " .. cmd:lower() .. " - turned off (Coop.allowJoined)")
@@ -1272,7 +1280,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.22 ===")
+    Log("=== MISERY Mod Menu v4.6.23 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -4652,7 +4660,7 @@ local function InstallCheatMenuHooks()
             RegisterHook(prefix .. evName, function(self, ...)
                 Log("[MenuBtn] " .. label .. " clicked")
                 if label == FLY_BTN_LABEL and _G.ToggleGhostMode then
-                    _G.ToggleGhostMode()
+                    _G.ToggleGhostMode(true)
                 end
             end)
         end)
@@ -7490,8 +7498,52 @@ local function GhostIsOn()
     return mode == 5   -- MOVE_Flying
 end
 
-_G.ToggleGhostMode = function()
+-- The game's own FLY button doesn't make the character fly: it swaps you
+-- into an admin camera (BP_SpectatorCamera_C) that keeps your character in
+-- "As BP SGKMaster Character". Possessing only works on the host, so a player
+-- who joined asks the host's Mod Menu (UNFLY). 4.6.18 looked only at the
+-- character's movement and refused, and they were stuck in it.
+local FLY_CAMERA = "BP_SpectatorCamera_C"
+local function FlyCamera(pc)
+    local pawn = nil
+    pcall(function() pawn = pc.Pawn end)
+    local cls = ""
+    pcall(function() cls = pawn:GetClass():GetFName():ToString() end)
+    return cls == FLY_CAMERA and pawn or nil
+end
+
+-- On the host (or alone): pc back into its character, the camera removed
+Coop.EndFlyCamera = function(pc)
+    local cam = FlyCamera(pc)
+    if not cam then return false end
+    local char = nil
+    pcall(function() char = cam["As BP SGKMaster Character"] end)
+    if not Coop.Valid(char) then return false end
+    local ok = pcall(function() pc:Possess(char) end)
+    if not ok then return false end
+    pcall(function()
+        local mc = char.CharacterMovement
+        mc.GravityScale = 1.0
+        mc:SetMovementMode(1, 0)
+    end)
+    pcall(function() char:SetActorEnableCollision(true) end)
+    pcall(function() cam:K2_DestroyActor() end)
+    return true
+end
+
+-- fromButton: the game's FLY button, whose own code takes the host (or a
+-- player alone) out of its camera by itself
+_G.ToggleGhostMode = function(fromButton)
     ExecuteInGameThread(function()
+        local pc = Coop.Controller()
+        if pc and FlyCamera(pc) then
+            if Coop.Joined() then
+                Coop.Send("UNFLY", "your character back (out of the fly camera)")
+            elseif not fromButton and Coop.EndFlyCamera(pc) then
+                Log("FLY CAMERA: OFF (back in your character)")
+            end
+            return
+        end
         local on = not GhostIsOn()
         if on and Coop.Refuse(".ghost") then return end
         isFlying = on
@@ -8367,7 +8419,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.22 Loaded!")
+Log("  MISERY Mod Menu v4.6.23 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")

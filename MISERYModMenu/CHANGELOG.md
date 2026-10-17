@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.23
+
+- Stuck in fly after joining someone's world: the menu's FLY button runs the game's own fly, which doesn't make your character fly but swaps you into an admin camera. The mod only looked at the character, saw no flying, and refused ("doesn't work in someone else's world"). Now FLY / `.ghost` / `.noclip` in that camera take you back into your character: alone or hosting directly, joined by asking the host's Mod Menu (the host needs 4.6.23 too; always allowed, even with `allowJoined` off)
+
+---
+
 ## Version 4.6.22
 
 - `.movecheck watch` also logs the movement keys held (W/A/S/D) and the way you move compared with the way you face. The look angle turned out not to matter (250 at -20 and at -77); in the last run the game stayed in Combat Jogging (state 6) with the sprint key held. Many games only allow sprinting straight ahead, which this shows
