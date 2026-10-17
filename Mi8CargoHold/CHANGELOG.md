@@ -2,6 +2,10 @@
 
 ---
 
+## 1.1.4 (2026-10-17)
+
+- Hosting: after an expedition (or any return to the world), a giant cabinet could stand over the Mi-8. The mod looked for the saved hold before the game had restored it, made a fresh one, and then the game restored the saved one too, beside it and not hidden. Every save kept both. Now a fresh hold is made only once no saved one has shown up for 10 s, and any extra cargo-sized cabinet at the wreck besides the live hold is removed (no loot bag: the mod's cargo file holds the items). That also clears copies already in a save
+
 ## 1.1.3 (2026-10-17)
 
 - In someone else's world the giant cabinet could show over the Mi-8 for minutes after walking back to it (1.1.2): the hold was looked for less and less often (up to once a minute), and the wreck's place was taken from the actor it belongs to, which in a generated level can stand somewhere else. Now the wreck mesh's own place is kept, the hold is also recognised by being attached to the wreck, near the wreck it's looked for at most every 30 s, and as soon as a cabinet appears in your game (the host's hold arriving as you walk near) it's looked for 2 s later

@@ -228,6 +228,7 @@ end
 -- Where the wreck stands, kept once it has been found (a position, not the
 -- object, which the game may delete)
 local wreck_location, wreck_address = nil, nil
+local first_miss = nil   -- hosting: when a saved hold was first not found (since the last load)
 -- The mesh's own place: in a generated level the wreck mesh can belong to a
 -- big level actor whose own location is somewhere else entirely
 local function remember_wreck(actor, component)
@@ -560,8 +561,51 @@ local function ensure_cargo_hold()
         end
         return nil
     end
+    -- No saved hold yet. After a load or a return from an expedition the game
+    -- may still be restoring it from the save: a fresh one made now left the
+    -- restored one standing beside it, a giant cabinet (1.1.3). Make one only
+    -- once none has shown up for 10 s.
+    local now = os.time()
+    if not first_miss then first_miss = now end
+    if now - first_miss < 10 then return nil end
     local proxy = spawn_cargo_hold(wreck, wreck_component)
     return proxy, wreck_component, proxy ~= nil
+end
+
+-- Hosting: other cargo-sized cabinets at the wreck besides the live hold are
+-- extra copies (a saved one the game restored after a fresh hold was made).
+-- They're removed without a loot bag: the cargo file is what holds the items,
+-- the hold's own is loaded from it.
+local function remove_duplicate_holds()
+    if not is_valid(active_actor) then return 0 end
+    local wreck_at = wreck_location
+    local ok_scan, instances = pcall(FindAllOf, WORLD_CONTAINER_CLASS)
+    if not ok_scan or type(instances) ~= "table" then return 0 end
+    local removed = 0
+    for _, raw in pairs(instances) do
+        local candidate = as_object(raw)
+        if candidate and is_valid(candidate) and address_of(candidate) ~= active_address then
+            local ok_parent, parent = pcall(function() return candidate:GetAttachParentActor() end)
+            local attached = ok_parent and wreck_address ~= nil and address_of(parent) == wreck_address
+            local near = false
+            if wreck_at and is_cargo_scale(candidate) then
+                local ok, l = pcall(function() return candidate:K2_GetActorLocation() end)
+                if ok and l then
+                    local x, y, z = l.X - wreck_at.X, l.Y - wreck_at.Y, l.Z - wreck_at.Z
+                    near = x * x + y * y + z * z < 2500 * 2500
+                end
+            end
+            if attached or near then
+                pcall(function() candidate.BP_MasterInventory.UseDestructionBag = false end)
+                pcall(function() candidate.BP_MasterInventory.ShouldSpawnBag = false end)
+                if pcall(function() candidate:K2_DestroyActor() end) then removed = removed + 1 end
+            end
+        end
+    end
+    if removed > 0 then
+        log(string.format("Removed %d extra copy(ies) of the Cargo Hold at the Mi-8 (a saved one restored beside the live one).", removed))
+    end
+    return removed
 end
 
 ------------------------------------------------------------------------------
@@ -1099,6 +1143,7 @@ end
 pcall(NotifyOnNewObject, WORLD_CONTAINER_CLASS_PATH, function()
     client.next_scan = math.min(client.next_scan, os.time() + 2)
     client.delay = 5
+    session.dedupe_at = os.time() + 3   -- hosting: a late-restored copy of the hold?
 end)
 
 local function client_ensure(now, manual)
@@ -1175,11 +1220,16 @@ lifecycle_ensure = function(manual)
         session.key, session.slot, session.level = key, slot, level
         session.paused, session.lost, session.component = false, false, nil
         session.load_transition = false
+        first_miss = nil
         session.stable, session.next_scan, session.delay = now, now + 5, 2
     end
     session.paused = false
     if persistence.ready and is_valid(active_actor) then
         if was_paused then active_actor:SetActorEnableCollision(true) end
+        if session.dedupe_at and now >= session.dedupe_at then
+            session.dedupe_at = nil
+            remove_duplicate_holds()
+        end
         return active_actor, session.component
     end
     if session.lost or persistence.error then
@@ -1214,6 +1264,10 @@ lifecycle_ensure = function(manual)
     if persistence.ready then
         proxy:SetActorEnableCollision(true)
         log("Cargo Hold ready automatically; use Enter. Native save/reload support active for '" .. slot .. "'.")
+        -- copies already standing (from saves made while 1.1.3 or older doubled
+        -- the hold), and again shortly in case one is still being restored
+        remove_duplicate_holds()
+        session.dedupe_at = now + 5
         return proxy, component
     end
     log("Cargo interaction locked because persistence validation failed; see UE4SS.log for details.")
