@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.25
+
+- Waiting for the cheat menu to load (every 2 s after the game starts) searched the game's objects from a background thread, which can crash UE4SS while a world loads or closes. The search runs on the game thread now
+
+---
+
 ## Version 4.6.24
 
 - `.movecheck save` (while moving is normal) and `.movecheck diff` (while the sprint is slow): saves every true/false and number the game's own Blueprints keep on your character, inventory and controller, then lists the ones that changed. The last `.movecheck watch` showed W only, straight ahead, and every speed at exactly 0.707 (1/sqrt 2) of normal, sprint 424 instead of 600: the game seems to count a second direction as held

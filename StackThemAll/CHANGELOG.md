@@ -2,6 +2,10 @@
 
 ---
 
+## 1.3.4 (2026-10-17)
+
+- A crash when a world loads or closes (joining, the host restarting or leaving): the retries while waiting for items to load ran on a background thread and searched every item in the world from there, which crashes UE4SS when it meets an object being deleted. They run on the game thread now
+
 ## 1.3.3 (2026-10-13)
 
 ### Category Sizes Now Apply to Every Item

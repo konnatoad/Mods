@@ -1,4 +1,12 @@
-ModName, ModVersion = "Stack Them All", "1.3.3"
+ModName, ModVersion = "Stack Them All", "1.3.4"
+
+-- Runs fn ms later on the game thread. ExecuteWithDelay alone runs it on a
+-- background thread, and the retries below search every item in the world
+-- (FindAllOf) while a world loads or closes: from a background thread that
+-- crashes UE4SS (a joined player's crash when the host restarted, 17 Oct)
+local function Later(ms, fn)
+    ExecuteWithDelay(ms, function() ExecuteInGameThread(fn) end)
+end
 local stackThemAllConfig = require("stackThemAllConfig")
 -- Your own settings go in StackThemAll\config.lua (start from config.example.lua),
 -- not in this file, so `git pull` can always update the mod. config.lua
@@ -309,7 +317,7 @@ local function refresh_loaded_items(isFirstTry)
     if isFirstTry then
         log("No items in the world yet, waiting for them to load...")
     end
-    ExecuteWithDelay(2000, function() refresh_loaded_items(false) end)
+    Later(2000, function() refresh_loaded_items(false) end)
 end
 
 local function try_init()
@@ -318,7 +326,7 @@ local function try_init()
     local masterItemList = StaticFindObject(masterItemListPath)
     if not masterItemList or not masterItemList:IsValid() then
         log("Waiting for Master Item List...")
-        ExecuteWithDelay(2000, try_init)
+        Later(2000, try_init)
         return
     end
 
@@ -372,7 +380,7 @@ local function try_init()
         log("Master list modification completed successfully.")
     else
         log("Master list modification failed or is not implemented.")
-        ExecuteWithDelay(2000, try_init)
+        Later(2000, try_init)
         return
     end
 
@@ -386,7 +394,7 @@ RegisterHook("/Script/Engine.PlayerController:ClientRestart", function(self, New
         return
     end
     isInitRunning = true
-    ExecuteWithDelay(3000, try_init)
+    Later(3000, try_init)
 end)
 
 -- Restarted in a world (.reloadmods, or the Mod Hub after a settings
@@ -397,6 +405,6 @@ ExecuteInGameThread(function()
     pcall(function() pc = FindFirstOf("PlayerController") end)
     if pc and pc:IsValid() and not isInitRunning then
         isInitRunning = true
-        ExecuteWithDelay(3000, try_init)
+        Later(3000, try_init)
     end
 end)

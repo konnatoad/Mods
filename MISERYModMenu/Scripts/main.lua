@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.24 (patched for current game version)
+    MISERY Mod Menu v4.6.25 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -1280,7 +1280,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.24 ===")
+    Log("=== MISERY Mod Menu v4.6.25 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -4816,8 +4816,14 @@ end
 -- Try immediately (in case mod loads after game started), then poll every 2s until success
 if not InstallCheatMenuHooks() then
     Log("[ModMenu] WD_CheatMenu_C not loaded yet — polling for it")
+    -- (the search runs on the game thread: FindAllOf from this background
+    -- loop could crash UE4SS while a world loads or closes)
+    local menuHooked = false
     LoopAsync(2000, function()
-        if InstallCheatMenuHooks() then return true end  -- stop loop on success
+        if menuHooked then return true end  -- stop loop on success
+        ExecuteInGameThread(function()
+            if not menuHooked then menuHooked = InstallCheatMenuHooks() == true end
+        end)
         return false
     end)
 end
@@ -8484,7 +8490,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.24 Loaded!")
+Log("  MISERY Mod Menu v4.6.25 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")
