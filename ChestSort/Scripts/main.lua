@@ -16,7 +16,7 @@
 --   .sort stop           stop a sort that's running
 --   .sort check          what the mod sees in the open container (changes nothing)
 ------------------------------------------------------------
-local VERSION = "1.0.0"
+local VERSION = "1.2.0"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -34,6 +34,9 @@ end
 local cfg = UserConfig()
 local SORT_KEY = type(cfg.key) == "string" and cfg.key:upper() or "S"
 local MOVE_MS = math.max(60, tonumber(cfg.moveDelayMs) or 120)   -- between moves (each goes to the host's game)
+-- Items are turned to lie flat (wider than tall) so they line up in even
+-- rows; false: every item keeps the way it's turned now
+local ROTATE = cfg.rotate ~= false
 
 -- The game's struct fields (Blueprint names carry their GUIDs)
 local F = {
@@ -159,6 +162,7 @@ local function ReadGrid(inv)
             return nil, item.id .. " at " .. item.root .. " isn't laid out as expected (" .. #item.cells
                 .. " cells in " .. item.w .. "x" .. item.h .. ")"
         end
+        item.cw, item.ch = item.w, item.h   -- its shape now (w, h become the planned shape)
         table.insert(grid.items, item)
     end
     return grid
@@ -194,6 +198,7 @@ local function Order(items)
         if a.h ~= b.h then return a.h < b.h end
         if a.id ~= b.id then return a.id < b.id end
         if a.amount ~= b.amount then return a.amount > b.amount end
+        if a.w ~= b.w then return a.w < b.w end
         return a.root < b.root
     end)
     return list
@@ -222,7 +227,69 @@ end
 -- Returns the ordered list (each with .target) or nil if it doesn't fit
 -- pin: items bigger than this many cells stay where they are (nil: none)
 local function Plan(grid, pin)
+    -- the shape each item will have: flat (wider than tall) when turning is
+    -- on, else as it is now; items left in place keep theirs
+    for _, it in ipairs(grid.items) do
+        local w, h = it.cw, it.ch
+        if ROTATE and not grid.noRotate and h > w and not (pin and w * h > pin) then w, h = h, w end
+        it.w, it.h = w, h
+    end
     local order = Order(grid.items)
+    -- Neat rows: each "shelf" holds one height of item, filled left to right
+    -- row by row; the next height starts a new shelf below. Smallest first,
+    -- so 1-cell items fill the top rows, then 2-cell, then 3-cell...
+    -- byHeight: one shelf per height instead of per shape (1x1, 2x1, 3x1
+    -- share rows, then 1x2, 2x2...): fewer half-empty rows, for a container
+    -- too small for a shelf per shape
+    local function shelves(byHeight)
+        local taken = {}
+        local list = {}
+        for _, it in ipairs(order) do
+            it.target = nil
+            if pin and it.w * it.h > pin then
+                it.target = it.root
+                Mark(grid, it.root, it.w, it.h, taken, true)
+            else
+                table.insert(list, it)
+            end
+        end
+        if byHeight then
+            table.sort(list, function(a, b)
+                if a.h ~= b.h then return a.h < b.h end
+                return false
+            end)
+            -- (table.sort isn't stable: keep the sorted order within a height)
+            local rank = {}
+            for i, it in ipairs(order) do rank[it] = i end
+            table.sort(list, function(a, b)
+                if a.h ~= b.h then return a.h < b.h end
+                return rank[a] < rank[b]
+            end)
+        end
+        local cols = grid.cols
+        local top, x, shelfH, shape = 0, 0, nil, nil
+        for _, it in ipairs(list) do
+            local key = byHeight and tostring(it.h) or (it.w .. "x" .. it.h)
+            if shape ~= key then
+                -- a new shape: a new shelf (below whatever the last one used)
+                if shelfH then top, x = top + shelfH, 0 end
+                shelfH, shape = it.h, key
+            end
+            while not it.target do
+                if x + it.w > cols then top, x = top + shelfH, 0 end
+                local idx = top * cols + x
+                if idx >= grid.cells then return false end
+                if Fits(grid, idx, it.w, it.h, taken) then
+                    it.target = idx
+                    Mark(grid, idx, it.w, it.h, taken, true)
+                    x = x + it.w
+                else
+                    x = x + 1
+                end
+            end
+        end
+        return true
+    end
     local function try(bigFromBottom)
         local taken = {}
         local list = {}
@@ -256,7 +323,7 @@ local function Plan(grid, pin)
         end
         return true
     end
-    if try(false) or try(true) then
+    if shelves(false) or shelves(true) or try(false) or try(true) then
         -- (the small ones of the second packing went in after the big ones:
         -- the moves still go smallest first)
         -- Identical items (same kind, amount, shape) can take each other's
@@ -309,7 +376,7 @@ local function ParkingSpot(grid, item, order, k, strict)
     local due = {}     -- cell -> the lowest order number whose target covers it
     for j = 1, #order do
         local o = order[j]
-        if o.root ~= o.target or j == k then
+        if o.root ~= o.target or o.cw ~= o.w or j == k then
             for r = o.target // grid.cols, o.target // grid.cols + o.h - 1 do
                 for c = o.target % grid.cols, o.target % grid.cols + o.w - 1 do
                     local i = r * grid.cols + c
@@ -318,27 +385,35 @@ local function ParkingSpot(grid, item, order, k, strict)
             end
         end
     end
-    local best, bestScore = nil, -1
-    for idx = 0, grid.cells - 1 do
-        if Fits(grid, idx, item.w, item.h, taken) then
-            local score, overK = math.huge, false
-            for r = idx // grid.cols, idx // grid.cols + item.h - 1 do
-                for c = idx % grid.cols, idx % grid.cols + item.w - 1 do
-                    local d = due[r * grid.cols + c]
-                    if d then
-                        if d < score then score = d end
-                        if d == k then overK = true end
+    -- in its planned shape first (a tall item turned flat may fit where it
+    -- doesn't standing), else as it is now
+    local shapes = { { item.w, item.h } }
+    if item.w ~= item.cw then table.insert(shapes, { item.cw, item.ch }) end
+    for _, shape in ipairs(shapes) do
+        local w, h = shape[1], shape[2]
+        local best, bestScore = nil, -1
+        for idx = 0, grid.cells - 1 do
+            if Fits(grid, idx, w, h, taken) then
+                local score, overK = math.huge, false
+                for r = idx // grid.cols, idx // grid.cols + h - 1 do
+                    for c = idx % grid.cols, idx % grid.cols + w - 1 do
+                        local d = due[r * grid.cols + c]
+                        if d then
+                            if d < score then score = d end
+                            if d == k then overK = true end
+                        end
                     end
                 end
-            end
-            local allowed = not overK and (not strict or score > k)
-            if allowed and score > bestScore then
-                best, bestScore = idx, score
-                if score == math.huge then break end
+                local allowed = not overK and (not strict or score > k)
+                if allowed and score > bestScore then
+                    best, bestScore = idx, score
+                    if score == math.huge then break end
+                end
             end
         end
+        if best then return best, w ~= item.cw end
     end
-    return best
+    return nil
 end
 
 -- Is w x h at idx free of everything (item itself included)?
@@ -358,12 +433,15 @@ end
 local function NextMove(grid, order)
     local pending = {}
     for k, it in ipairs(order) do
-        if it.root ~= it.target then table.insert(pending, k) end
+        if it.root ~= it.target or it.cw ~= it.w then table.insert(pending, k) end
     end
     if #pending == 0 then return nil, "done" end
     for _, k in ipairs(pending) do
         local it = order[k]
-        if AreaFree(grid, it.target, it.w, it.h) then return { from = it.root, to = it.target, item = it } end
+        -- (free of everything: an item turning onto its own cells may be refused)
+        if AreaFree(grid, it.target, it.w, it.h) then
+            return { from = it.root, to = it.target, item = it, turn = it.cw ~= it.w }
+        end
     end
     -- nothing can go straight: make room, trying the earliest items first.
     -- Never parked over the place of an earlier item still to place: two
@@ -379,8 +457,8 @@ local function NextMove(grid, order)
                 end
             end
             for _, b in ipairs(blockers) do
-                local to = ParkingSpot(grid, b, order, k, strict)
-                if to then return { from = b.root, to = to, item = b } end
+                local to, turn = ParkingSpot(grid, b, order, k, strict)
+                if to then return { from = b.root, to = to, item = b, turn = turn } end
             end
         end
     end
@@ -402,6 +480,27 @@ local function Step()
     if not Valid(actorNow) then Finish("Container closed - stopped") return end
     local grid, why = ReadGrid(s.inv)
     if not grid then Finish("Stopped: " .. why) return end
+    -- did the last move leave the item turned the way it should? The game's
+    -- "turned" flag on a move could be the new state or "turn it": the first
+    -- move that comes out wrong switches to the other reading, a second one
+    -- stops turning items
+    local e = s.expect
+    if e then
+        local it = grid.owner[e.to]
+        if it and it.root == e.to then
+            s.expect = nil
+            if it.cw ~= e.w and it.cw == e.h and it.ch == e.w then
+                if not s.toggle then
+                    s.toggle = true
+                    log("(the game turns items on a move when told to: switched to that)")
+                else
+                    s.noRotate = true
+                    log("Turning items doesn't work as expected here - they keep the way they're turned")
+                end
+            end
+        end
+    end
+    grid.noRotate = s.noRotate
     local levels = Levels(grid)
     local order, move, why
     while true do
@@ -428,7 +527,14 @@ local function Step()
     end
     s.steps = s.steps + 1
     if s.steps > s.maxSteps then Finish("Stopped after " .. s.maxSteps .. " moves - it didn't settle") return end
-    local from, to, what, rot = move.from, move.to, move.item, move.item.rotated
+    local from, to, what = move.from, move.to, move.item
+    -- turned after the move: as now, or the other way when it's to be turned
+    local turned = what.rotated
+    if move.turn then turned = not turned end
+    local rot = turned
+    if s.toggle then rot = move.turn == true end
+    local endW, endH = what.cw, what.ch
+    if move.turn then endW, endH = what.ch, what.cw end
     local key = from .. ">" .. to
     if key == s.lastMove then
         s.same = s.same + 1
@@ -438,6 +544,7 @@ local function Step()
     s.lastMove, s.same = key, 0
     local ok, err = Move(s.player, s.inv, from, to, rot)
     if not ok then Finish("Moving failed: " .. tostring(err)) return end
+    if not s.noRotate then s.expect = { to = to, w = endW, h = endH } end
     s.moved = s.moved + 1
 end
 

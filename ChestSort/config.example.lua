@@ -8,4 +8,8 @@ return {
     -- Time between moves in milliseconds (each move is done by the host's
     -- game). Lower is faster; raise it if moves get refused in co-op
     moveDelayMs = 120,
+
+    -- Turn items to lie flat (wider than tall) so they line up in even rows;
+    -- false: every item keeps the way it's turned now
+    rotate = true,
 }
