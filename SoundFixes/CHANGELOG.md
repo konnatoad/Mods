@@ -2,6 +2,11 @@
 
 ---
 
+## 1.0.2 (2026-10-17)
+
+- 1.0.1's log showed the microwave's own sound already fades with distance (`SC_MicrowaveLoop`, `SA_MediumSound`), so the sound the host hears everywhere comes from somewhere else
+- `.soundwatch`: for a minute, every sound the game starts through its play-a-sound functions goes to the log, with what started it and whether it's heard everywhere (2D) or from a place. The host runs it, a joined player turns the microwave on, and the log says which sound it is
+
 ## 1.0.1 (2026-10-17)
 
 - 1.0.0 did nothing: it looked for the microwave only when the world started, before any microwave had loaded, and never again. It now looks every 5 s until one has loaded ("Watching microwaves" in the log)

@@ -15,7 +15,7 @@
 -- Each player's copy fixes what that player hears: the host needs it for the
 -- host's ears.
 ------------------------------------------------------------
-local VERSION = "1.0.1"
+local VERSION = "1.0.2"
 
 local function log(msg)
     print("[SoundFixes] " .. tostring(msg) .. "\n")
@@ -109,4 +109,73 @@ LoopAsync(5000, function()
     return false
 end)
 
-log("Loaded v" .. VERSION)
+------------------------------------------------------------
+-- .soundwatch: for a minute, every sound the game starts through its
+-- "play a sound" functions goes to the log with what started it, and whether
+-- it's heard everywhere (2D) or from a place. For finding a sound heard where
+-- it shouldn't be: run it, make the sound happen, read the log.
+-- (1.0.1's microwave fix showed the microwave's own sound already fades
+-- with distance: on the host something else is heard everywhere)
+------------------------------------------------------------
+local STATICS = "/Script/Engine.GameplayStatics:"
+-- function = { where the sound is among the hook's values, where it comes from, how it's heard }
+local SOUND_CALLS = {
+    PlaySound2D = { sound = 2, from = 1, heard = "EVERYWHERE (2D)" },
+    SpawnSound2D = { sound = 2, from = 1, heard = "EVERYWHERE (2D)" },
+    PlaySoundAtLocation = { sound = 2, from = 1, heard = "from a place", att = 8 },
+    SpawnSoundAtLocation = { sound = 2, from = 1, heard = "from a place", att = 8 },
+    SpawnSoundAttached = { sound = 1, from = 2, heard = "attached", att = 11 },
+}
+local watch = { untilClock = 0, ids = {}, count = 0 }
+
+local function NameOfParam(p)
+    local obj = nil
+    pcall(function() obj = p:get() end)
+    if not Valid(obj) then return "none" end
+    local name = "?"
+    pcall(function() name = obj:GetFName():ToString() end)
+    local owner = nil
+    pcall(function() owner = obj:GetOwner() end)
+    if Valid(owner) then
+        pcall(function() name = name .. " of " .. owner:GetFName():ToString() end)
+    end
+    return name
+end
+
+local function StopWatch()
+    for path, id in pairs(watch.ids) do pcall(UnregisterHook, path, id[1], id[2]) end
+    watch.ids = {}
+    log("Sound watch off (" .. watch.count .. " sounds logged)")
+end
+
+local function StartWatch()
+    if next(watch.ids) then log("Sound watch is already on") return end
+    watch.untilClock, watch.count = os.clock() + 60, 0
+    for fn, how in pairs(SOUND_CALLS) do
+        local path = STATICS .. fn
+        local ok, pre, post = pcall(RegisterHook, path, function(_, ...)
+            if os.clock() > watch.untilClock then return end
+            local args = { ... }
+            watch.count = watch.count + 1
+            if watch.count > 200 then return end
+            local att = how.att and args[how.att] and NameOfParam(args[how.att]) or "-"
+            log(string.format("sound %s, %s, by %s, falloff %s (%s)", NameOfParam(args[how.sound]), how.heard,
+                NameOfParam(args[how.from]), att, fn))
+        end)
+        if ok then watch.ids[path] = { pre, post } end
+    end
+    log("Sound watch on for 60 s: make the sound happen now (.soundwatch again stops it)")
+    LoopAsync(61000, function()
+        ExecuteInGameThread(function() if next(watch.ids) then StopWatch() end end)
+        return true
+    end)
+end
+
+RegisterConsoleCommandHandler(".soundwatch", function()
+    ExecuteInGameThread(function()
+        if next(watch.ids) then StopWatch() else StartWatch() end
+    end)
+    return true
+end)
+
+log("Loaded v" .. VERSION .. " (.soundwatch logs the sounds the game starts, for a minute)")
