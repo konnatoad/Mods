@@ -2,6 +2,12 @@
 
 ---
 
+## 1.1.5 (2026-10-17)
+
+- With more than one Mi-8 wreck loaded (e.g. after an expedition) the mod took the first one it found, which could be the wrong helicopter. A joined player who restarted the mod then never found the host's hold again (hidden, read "Cabinet", wouldn't open), and the host could look for the saved hold at the wrong wreck
+- Joined: the host's hold is recognised by its size alone, no wreck is looked for (also the cheapest search); far from where it was last seen nothing is looked for
+- Hosting: with several wrecks loaded, the hold's is the one the saved hold is attached to (or the nearest to it); the log says when there's more than one
+
 ## 1.1.4 (2026-10-17)
 
 - Hosting: after an expedition (or any return to the world), a giant cabinet could stand over the Mi-8. The mod looked for the saved hold before the game had restored it, made a fresh one, and then the game restored the saved one too, beside it and not hidden. Every save kept both. Now a fresh hold is made only once no saved one has shown up for 10 s, and any extra cargo-sized cabinet at the wreck besides the live hold is removed (no loot bag: the mod's cargo file holds the items). That also clears copies already in a save

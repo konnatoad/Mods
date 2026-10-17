@@ -246,45 +246,120 @@ local function remember_wreck(actor, component)
     return actor
 end
 
-local function find_wreck_actor()
+local function is_cargo_scale(candidate)
+    local ok, scale = pcall(function() return candidate:GetActorScale3D() end)
+    if not ok or not scale then return false end
+    return math.abs(scale.X - CHOPPER_SCALE_X) < 0.05
+        and math.abs(scale.Y - CHOPPER_SCALE_Y) < 0.05
+        and math.abs(scale.Z - CHOPPER_SCALE_Z) < 0.05
+end
+
+-- Every Mi-8 wreck mesh loaded now: { actor, component }. There can be more
+-- than one (another area loaded, e.g. after an expedition), and the first one
+-- found could be the wrong helicopter.
+local function wreck_candidates()
+    local list, seen = {}, {}
+    local function add(actor, component)
+        local address = address_of(actor)
+        if address and not seen[address] then
+            seen[address] = true
+            table.insert(list, { actor = actor, component = component })
+        end
+    end
     local ok_actors, actors = pcall(FindAllOf, "StaticMeshActor")
-    local actor_count = 0
+    local actor_count, component_count = 0, 0
     if ok_actors and type(actors) == "table" then
         for _, raw in pairs(actors) do
             actor_count = actor_count + 1
             local actor = as_object(raw)
             local ok_component, component = pcall(function() return actor and actor.StaticMeshComponent end)
-            if ok_component and is_wreck_mesh(component) then
-                return remember_wreck(actor, component), component
-            end
+            if ok_component and is_wreck_mesh(component) then add(actor, component) end
         end
     end
     -- Generated-level actors can expose the mesh component without appearing
     -- under the StaticMeshActor query; find the component and use its owner.
-    local ok_components, components = pcall(FindAllOf, "StaticMeshComponent")
-    local component_count = 0
-    if ok_components and type(components) == "table" then
-        for _, raw in pairs(components) do
-            component_count = component_count + 1
-            local component = as_object(raw)
-            if is_wreck_mesh(component) then
-                local ok_owner, owner = pcall(function() return component:GetOwner() end)
-                if ok_owner and is_valid(owner) then
-                    return remember_wreck(owner, component), component
+    if #list == 0 then
+        local ok_components, components = pcall(FindAllOf, "StaticMeshComponent")
+        if ok_components and type(components) == "table" then
+            for _, raw in pairs(components) do
+                component_count = component_count + 1
+                local component = as_object(raw)
+                if is_wreck_mesh(component) then
+                    local ok_owner, owner = pcall(function() return component:GetOwner() end)
+                    if ok_owner and is_valid(owner) then add(owner, component) end
                 end
             end
         end
     end
-    log(string.format("Mi-8 wreck not found (StaticMeshActor=%d, StaticMeshComponent=%d).", actor_count, component_count))
-    local ok_player, position = pcall(function()
-        return UEHelpers.GetPlayerController().Pawn:K2_GetActorLocation()
-    end)
-    if ok_player and position then
-        local dx, dy, dz = position.X - WRECK_X, position.Y - WRECK_Y, position.Z - WRECK_Z
-        log(string.format("Player is %.0f cm from the last known Mi-8 location; the wreck may be streamed out.",
-            math.sqrt(dx * dx + dy * dy + dz * dz)))
+    return list, actor_count, component_count
+end
+
+local function place_of(component)
+    local ok, l = pcall(function() return component:K2_GetComponentLocation() end)
+    if ok and l then return { X = l.X, Y = l.Y, Z = l.Z } end
+    return nil
+end
+
+local function distance_between(a, b)
+    if not (a and b) then return math.huge end
+    local x, y, z = a.X - b.X, a.Y - b.Y, a.Z - b.Z
+    return math.sqrt(x * x + y * y + z * z)
+end
+
+local function find_wreck_actor()
+    local list, actor_count, component_count = wreck_candidates()
+    if #list == 0 then
+        log(string.format("Mi-8 wreck not found (StaticMeshActor=%d, StaticMeshComponent=%d).", actor_count, component_count))
+        local ok_player, position = pcall(function()
+            return UEHelpers.GetPlayerController().Pawn:K2_GetActorLocation()
+        end)
+        if ok_player and position then
+            local dx, dy, dz = position.X - WRECK_X, position.Y - WRECK_Y, position.Z - WRECK_Z
+            log(string.format("Player is %.0f cm from the last known Mi-8 location; the wreck may be streamed out.",
+                math.sqrt(dx * dx + dy * dy + dz * dz)))
+        end
+        return nil, nil
     end
-    return nil, nil
+    local pick = list[1]
+    if #list > 1 then
+        -- the hold (saved or live) says which wreck it belongs to: the one it's
+        -- attached to, else the nearest to it; no hold: the one used before,
+        -- else the nearest to the player
+        local by_address = {}
+        for _, w in ipairs(list) do by_address[address_of(w.actor)] = w end
+        local chosen, hold_at = nil, nil
+        local ok_scan, cabinets = pcall(FindAllOf, WORLD_CONTAINER_CLASS)
+        if ok_scan and type(cabinets) == "table" then
+            for _, raw in pairs(cabinets) do
+                local cabinet = as_object(raw)
+                if cabinet and is_cargo_scale(cabinet) then
+                    local ok_parent, parent = pcall(function() return cabinet:GetAttachParentActor() end)
+                    if ok_parent and by_address[address_of(parent)] then chosen = by_address[address_of(parent)] break end
+                    local ok, l = pcall(function() return cabinet:K2_GetActorLocation() end)
+                    if ok and l then hold_at = { X = l.X, Y = l.Y, Z = l.Z } end
+                end
+            end
+        end
+        local near = hold_at or wreck_location
+        if not chosen and not near then
+            pcall(function()
+                local l = UEHelpers.GetPlayerController().Pawn:K2_GetActorLocation()
+                near = { X = l.X, Y = l.Y, Z = l.Z }
+            end)
+        end
+        if not chosen and near then
+            local best = math.huge
+            for _, w in ipairs(list) do
+                local d = distance_between(place_of(w.component), near)
+                if d < best then best, chosen = d, w end
+            end
+        end
+        pick = chosen or pick
+        local at = place_of(pick.component)
+        log_once("wrecks-" .. #list, string.format("%d Mi-8 wrecks are loaded; the hold's is at %s.", #list,
+            at and string.format("%.0f,%.0f,%.0f", at.X, at.Y, at.Z) or "?"))
+    end
+    return remember_wreck(pick.actor, pick.component), pick.component
 end
 
 local function attach_proxy_to_wreck(proxy, wreck, wreck_component)
@@ -390,13 +465,6 @@ end
 -- On that load UE does not preserve our runtime-only component visibility or
 -- its attachment consistently. Recognise only our unusually scaled cabinet,
 -- then reclaim it before the player can interact with it as furniture.
-local function is_cargo_scale(candidate)
-    local ok, scale = pcall(function() return candidate:GetActorScale3D() end)
-    if not ok or not scale then return false end
-    return math.abs(scale.X - CHOPPER_SCALE_X) < 0.05
-        and math.abs(scale.Y - CHOPPER_SCALE_Y) < 0.05
-        and math.abs(scale.Z - CHOPPER_SCALE_Z) < 0.05
-end
 
 local function is_near_wreck(candidate, wreck)
     local ok, candidate_location, wreck_location = pcall(function()
@@ -1118,6 +1186,18 @@ local function distance_to(location)
     return math.sqrt(x * x + y * y + z * z)
 end
 
+-- The host's hold as it arrives here: a world cabinet scaled to the
+-- hold's distinctive size
+local function find_hold_by_size()
+    local ok_scan, instances = pcall(FindAllOf, WORLD_CONTAINER_CLASS)
+    if not ok_scan or type(instances) ~= "table" then return nil end
+    for _, raw in pairs(instances) do
+        local candidate = as_object(raw)
+        if candidate and is_valid(candidate) and is_cargo_scale(candidate) then return candidate end
+    end
+    return nil
+end
+
 local function find_proxy_near(location)
     local ok_scan, instances = pcall(FindAllOf, WORLD_CONTAINER_CLASS)
     if not ok_scan or type(instances) ~= "table" then return nil end
@@ -1154,27 +1234,24 @@ local function client_ensure(now, manual)
         client.next_scan, client.delay = now + 2, 5
     end
     if now < client.next_scan and not manual then return nil end
-    local proxy = nil
-    if wreck_location then
-        local distance = distance_to(wreck_location)
+    -- Far from where the hold was last seen: it can't be here (the game
+    -- sends far-away objects to nobody), so only the distance is checked
+    if client.seen_at then
+        local distance = distance_to(client.seen_at)
         if distance and distance > CLIENT_SEARCH_RADIUS and not manual then
-            client.next_scan, client.delay = now + 5, 5   -- far away: only the distance, every 5 s
+            client.next_scan, client.delay = now + 5, 5
             return nil
         end
-        -- near the wreck: looked for less and less often (each look still walks
-        -- every object), up to every 30 s; a cabinet appearing in this game
-        -- (the host's hold arriving as the player walks near) brings the next
-        -- look forward to 2 s later (see the NotifyOnNewObject below)
-        client.next_scan = now + client.delay
-        client.delay = math.min(30, client.delay * 2)
-        proxy = find_proxy_near(wreck_location)
-    else
-        client.next_scan = now + client.delay
-        client.delay = math.min(60, client.delay * 2)
-        local wreck = find_wreck_actor()
-        if not wreck then return nil end
-        proxy = find_saved_proxy(wreck)
     end
+    -- Looked for less and less often (each look walks every object), up to
+    -- every 30 s; a cabinet appearing in this game (the host's hold arriving
+    -- as the player walks near) brings the next look forward to 2 s later
+    -- (the NotifyOnNewObject below). The hold is the cabinet with the hold's
+    -- size: no wreck is looked for (1.1.3 took the first wreck found, which
+    -- with more than one loaded could be the wrong helicopter)
+    client.next_scan = now + client.delay
+    client.delay = math.min(30, client.delay * 2)
+    local proxy = find_hold_by_size()
     if not proxy then
         log_once("client-waiting", "In someone else's world: no Cargo Hold from the host yet. "
             .. "The host needs Mi8CargoHold installed too; still looking.")
@@ -1189,6 +1266,10 @@ local function client_ensure(now, manual)
     set_active(proxy, hitbox)
     register_interaction_hooks()
     client.delay = 5
+    pcall(function()
+        local l = proxy:K2_GetActorLocation()
+        client.seen_at = { X = l.X, Y = l.Y, Z = l.Z }
+    end)
     log(string.format("Joined the host's Cargo Hold: hidden=%d/%d interaction box=%s. Use Enter at the Mi-8; "
         .. "the host's game saves the cargo.", hidden, total,
         hitbox and "ok" or ("unavailable: " .. tostring(hitbox_error))))
