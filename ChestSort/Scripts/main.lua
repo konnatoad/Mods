@@ -16,7 +16,7 @@
 --   .sort stop           stop a sort that's running
 --   .sort check          what the mod sees in the open container (changes nothing)
 ------------------------------------------------------------
-local VERSION = "1.3.0"
+local VERSION = "1.4.0"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -245,13 +245,16 @@ end
 -- Returns the ordered list (each with .target) or nil if it doesn't fit
 -- pin: items bigger than this many cells stay where they are (nil: none)
 local function Plan(grid, pin)
-    -- the shape each item will have: flat (wider than tall) when turning is
-    -- on, else as it is now; items left in place keep theirs
-    for _, it in ipairs(grid.items) do
-        local w, h = it.cw, it.ch
-        if ROTATE and not grid.noRotate and h > w and not (pin and w * h > pin) then w, h = h, w end
-        it.w, it.h = w, h
+    -- Each item keeps the way it's turned; only if the container is too
+    -- full for that are tall items turned flat (wider than tall) to fit
+    local function shapes(flat)
+        for _, it in ipairs(grid.items) do
+            local w, h = it.cw, it.ch
+            if flat and h > w and not (pin and w * h > pin) then w, h = h, w end
+            it.w, it.h = w, h
+        end
     end
+    shapes(false)
     local order = Order(grid.items)
     -- Neat rows: each "shelf" holds one height of item, filled left to right
     -- row by row; the next height starts a new shelf below. Smallest first,
@@ -345,7 +348,16 @@ local function Plan(grid, pin)
         end
         return true
     end
-    if shelves("shape") or shelves("height") or shelves("mixed") or try(false) or try(true) then
+    local function any()
+        return shelves("shape") or shelves("height") or shelves("mixed") or try(false) or try(true)
+    end
+    local fits = any()
+    if not fits and ROTATE and not grid.noRotate then
+        shapes(true)
+        order = Order(grid.items)
+        fits = any()
+    end
+    if fits then
         -- (the small ones of the second packing went in after the big ones:
         -- the moves still go smallest first)
         -- Identical items (same kind, amount, shape) can take each other's
@@ -392,9 +404,17 @@ end
 -- still to fill if there is one, else over the targets that are filled
 -- last; never over the target of order[k] (the one being made room for).
 -- strict: only spots outside the targets of order[1..k]
-local function ParkingSpot(grid, item, order, k, strict)
-    local taken = {}   -- (not over its own cells either: a move onto itself may be refused)
-    for i in pairs(grid.owner) do taken[i] = true end
+local function ParkingSpot(grid, item, order, k, strict, avoid)
+    local taken = {}   -- (over its own cells only if the game allows that, see Step)
+    for i, o in pairs(grid.owner) do
+        if o ~= item or not grid.selfOk then taken[i] = true end
+    end
+    for i in pairs(avoid or {}) do taken[i] = true end
+    -- (a place being cleared for another item stays free for it)
+    local room = grid.room
+    if room and room.owner ~= item.id .. "@" .. item.root then
+        for i in pairs(room.cells) do taken[i] = true end
+    end
     local due = {}     -- cell -> the lowest order number whose target covers it
     for j = 1, #order do
         local o = order[j]
@@ -415,7 +435,7 @@ local function ParkingSpot(grid, item, order, k, strict)
         local w, h = shape[1], shape[2]
         local best, bestScore = nil, -1
         for idx = 0, grid.cells - 1 do
-            if Fits(grid, idx, w, h, taken) then
+            if Fits(grid, idx, w, h, taken) and not (idx == item.root and w == item.cw) then
                 local score, overK = math.huge, false
                 for r = idx // grid.cols, idx // grid.cols + h - 1 do
                     for c = idx % grid.cols, idx % grid.cols + w - 1 do
@@ -438,14 +458,30 @@ local function ParkingSpot(grid, item, order, k, strict)
     return nil
 end
 
--- Is w x h at idx free of everything (item itself included)?
-local function AreaFree(grid, idx, w, h)
+-- Is w x h at idx free for item? Its own cells count as free when the game
+-- allows moving an item partly over where it is (grid.selfOk). Returns
+-- free, overItself
+local function AreaFree(grid, idx, w, h, item)
+    local overSelf = false
     for r = idx // grid.cols, idx // grid.cols + h - 1 do
         for c = idx % grid.cols, idx % grid.cols + w - 1 do
-            if grid.owner[r * grid.cols + c] then return false end
+            local o = grid.owner[r * grid.cols + c]
+            if o then
+                if o == item and grid.selfOk then overSelf = true else return false end
+            end
         end
     end
-    return true
+    return true, overSelf
+end
+
+-- Does w x h at idx overlap item's cells?
+local function OverItself(grid, idx, w, h, item)
+    for r = idx // grid.cols, idx // grid.cols + h - 1 do
+        for c = idx % grid.cols, idx % grid.cols + w - 1 do
+            if grid.owner[r * grid.cols + c] == item then return true end
+        end
+    end
+    return false
 end
 
 -- The next move: { from, to, item, why } or nil, why.
@@ -458,29 +494,128 @@ local function NextMove(grid, order)
         if it.root ~= it.target or it.cw ~= it.w then table.insert(pending, k) end
     end
     if #pending == 0 then return nil, "done" end
+    -- a place cleared for an item only matters while the same item waits for room
+    local first = order[pending[1]]
+    if grid.room and grid.room.forK ~= first.id .. "@" .. first.target then grid.room = nil end
+    local function inRoom(idx, w, h, item)
+        local room = grid.room
+        if not room or room.owner == item.id .. "@" .. item.root then return false end
+        for r = idx // grid.cols, idx // grid.cols + h - 1 do
+            for c = idx % grid.cols, idx % grid.cols + w - 1 do
+                if room.cells[r * grid.cols + c] then return true end
+            end
+        end
+        return false
+    end
     for _, k in ipairs(pending) do
         local it = order[k]
         -- (free of everything: an item turning onto its own cells may be refused)
-        if AreaFree(grid, it.target, it.w, it.h) then
-            return { from = it.root, to = it.target, item = it, turn = it.cw ~= it.w }
+        local free, overSelf = AreaFree(grid, it.target, it.w, it.h, it)
+        if free and inRoom(it.target, it.w, it.h, it) then free = false end
+        if free then
+            return { from = it.root, to = it.target, item = it, turn = it.cw ~= it.w, overSelf = overSelf }
         end
     end
-    -- nothing can go straight: make room, trying the earliest items first.
-    -- Never parked over the place of an earlier item still to place: two
-    -- items could then keep swapping
-    for _, strict in ipairs({ true }) do
-        for _, k in ipairs(pending) do
-            local it = order[k]
-            local blockers, seen = {}, {}
-            for r = it.target // grid.cols, it.target // grid.cols + it.h - 1 do
-                for c = it.target % grid.cols, it.target % grid.cols + it.w - 1 do
-                    local o = grid.owner[r * grid.cols + c]
-                    if o and not seen[o] then seen[o] = true table.insert(blockers, o) end
+    -- nothing can go straight: make room.
+    -- Only the first item still to place gets room made (the ones before it
+    -- are in their places and never move again): each thing in its way goes
+    -- anywhere free that's not over its place, least in the way of the rest
+    -- first. So every item is placed after a few moves and nothing can keep
+    -- swapping (1.3.0 and older gave up on mostly empty containers and left
+    -- the big items where they were)
+    local k = pending[1]
+    local it = order[k]
+    local blockers, seen = {}, {}
+    for r = it.target // grid.cols, it.target // grid.cols + it.h - 1 do
+        for c = it.target % grid.cols, it.target % grid.cols + it.w - 1 do
+            local o = grid.owner[r * grid.cols + c]
+            if o and not seen[o] then seen[o] = true table.insert(blockers, o) end
+        end
+    end
+    local function park(b, to, turn)
+        local w, h = b.cw, b.ch
+        if turn then w, h = b.ch, b.cw end
+        return { from = b.root, to = to, item = b, turn = turn, overSelf = OverItself(grid, to, w, h, b) }
+    end
+    for _, strict in ipairs({ true, false }) do
+        for _, b in ipairs(blockers) do
+            local to, turn = ParkingSpot(grid, b, order, k, strict)
+            if to then return park(b, to, turn) end
+        end
+    end
+    -- Nothing in the way can go anywhere (two big items each over the
+    -- other's place, no free room): the item itself moves aside, but only
+    -- where that lets something in the way move next (else they'd swap back
+    -- and forth)
+    if not seen[it] then
+        local to, turn = ParkingSpot(grid, it, order, k, false)
+        if to then
+            local w, h = it.cw, it.ch
+            if turn then w, h = it.ch, it.cw end
+            local saved = {}
+            for i, o in pairs(grid.owner) do if o == it then saved[i] = true grid.owner[i] = nil end end
+            for r = to // grid.cols, to // grid.cols + h - 1 do
+                for c = to % grid.cols, to % grid.cols + w - 1 do grid.owner[r * grid.cols + c] = it end
+            end
+            local helps = false
+            for _, b in ipairs(blockers) do
+                if ParkingSpot(grid, b, order, k, false) then helps = true break end
+            end
+            for i, o in pairs(grid.owner) do if o == it then grid.owner[i] = nil end end
+            for i in pairs(saved) do grid.owner[i] = it end
+            if helps then return park(it, to, turn) end
+        end
+    end
+    -- Still stuck: clear a place for something in the way by moving smaller
+    -- items out of it first (the place with the fewest cells to clear; the
+    -- items already sorted, the item being placed and its place untouched)
+    local placed = {}
+    for j = 1, k - 1 do placed[order[j]] = true end
+    local inTarget = {}
+    Mark(grid, it.target, it.w, it.h, inTarget, true)
+    local best = nil
+    for _, b in ipairs(blockers) do
+        if b ~= it then
+            local shapes = { { b.w, b.h } }
+            if b.w ~= b.cw then table.insert(shapes, { b.cw, b.ch }) end
+            for _, shape in ipairs(shapes) do
+                local w, h = shape[1], shape[2]
+                for idx = 0, grid.cells - 1 do
+                    local r0, c0 = idx // grid.cols, idx % grid.cols
+                    if c0 + w <= grid.cols and (r0 + h - 1) * grid.cols + c0 + w - 1 < grid.cells then
+                        local ok, occupants, cost, seenO = true, {}, 0, {}
+                        for r = r0, r0 + h - 1 do
+                            for c = c0, c0 + w - 1 do
+                                local i = r * grid.cols + c
+                                local o = grid.owner[i]
+                                if grid.blocked[i] or inTarget[i] or o == b or o == it or (o and placed[o]) then ok = false end
+                                if ok and o and not seenO[o] then
+                                    seenO[o] = true
+                                    table.insert(occupants, o)
+                                    cost = cost + o.cw * o.ch
+                                end
+                            end
+                        end
+                        if ok and #occupants > 0 and (not best or cost < best.cost) then
+                            best = { cost = cost, occupants = occupants, idx = idx, w = w, h = h, b = b }
+                        end
+                    end
                 end
             end
-            for _, b in ipairs(blockers) do
-                local to, turn = ParkingSpot(grid, b, order, k, strict)
-                if to then return { from = b.root, to = to, item = b, turn = turn } end
+        end
+    end
+    if best then
+        local avoid = {}
+        Mark(grid, best.idx, best.w, best.h, avoid, true)
+        local cells = {}
+        for i in pairs(avoid) do cells[i] = true end
+        Mark(grid, it.target, it.w, it.h, avoid, true)
+        for _, o in ipairs(best.occupants) do
+            local to, turn = ParkingSpot(grid, o, order, k, false, avoid)
+            if to then
+                local m = park(o, to, turn)
+                m.room = { cells = cells, owner = best.b.id .. "@" .. best.b.root, forK = it.id .. "@" .. it.target }
+                return m
             end
         end
     end
@@ -512,8 +647,8 @@ local function Step()
         if it and it.root == e.to then
             s.expect = nil
             if it.cw ~= e.w and it.cw == e.h and it.ch == e.w then
-                if not s.toggle then
-                    s.toggle = true
+                if not s.toggleTried then
+                    s.toggle, s.toggleTried = not s.toggle, true
                     log("(the game turns items on a move when told to: switched to that)")
                 else
                     s.noRotate = true
@@ -523,6 +658,8 @@ local function Step()
         end
     end
     grid.noRotate = s.noRotate
+    grid.selfOk = not s.noSelfOverlap
+    grid.room = s.room
     local levels = Levels(grid)
     local order, move, why
     while true do
@@ -535,6 +672,7 @@ local function Step()
         order = Plan(grid, pin or nil)
         if order then
             move, why = NextMove(grid, order)
+            s.room = move and move.room or grid.room
             if move or why == "done" then break end
         end
         s.level = s.level + 1   -- not enough room: the next biggest items stay put
@@ -560,7 +698,24 @@ local function Step()
     local key = from .. ">" .. to
     if key == s.lastMove then
         s.same = s.same + 1
-        if s.same >= 6 then Finish("The game refused moving " .. what.id .. " from " .. from .. " to " .. to .. " - stopped") return end
+        if s.same >= 6 then
+            if move.overSelf and not s.noSelfOverlap then
+                -- the game doesn't move an item partly over itself: not again
+                s.noSelfOverlap, s.lastMove, s.same = true, nil, 0
+                log("(the game won't move an item partly over where it is: going around that)")
+                return
+            end
+            -- a turned item refused when only moved: the game may read the
+            -- "turned" flag as "turn it" (the item wouldn't fit turned). Tried
+            -- once; refused again means that wasn't it
+            if what.rotated and not move.turn and not s.toggleTried and not s.noRotate then
+                s.toggleTried, s.toggle, s.lastMove, s.same, s.toggleFlip = true, not s.toggle, nil, 0, key
+                return
+            end
+            if s.toggleFlip == key then s.toggle = not s.toggle end
+            Finish("The game refused moving " .. what.id .. " from " .. from .. " to " .. to .. " - stopped")
+            return
+        end
         return   -- the last move may still be on its way (the host's game does it)
     end
     s.lastMove, s.same = key, 0

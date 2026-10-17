@@ -2,6 +2,12 @@
 
 ---
 
+## 1.4.0 (2026-10-17)
+
+- Big items are sorted too: two big items each over the other's place (the flour and sugar sacks) made 1.3.0 give up and leave every big item where it was, with gaps everywhere. Now an item can be moved partly over where it is, the item itself steps aside when that frees the way, and smaller items are moved out of a spot to make room for a big one. If the game refuses moving an item partly over itself, the mod notices and goes around it
+- Items keep the way they're turned; tall items are only turned flat when the container is too full to sort them as they are (1.2.0 turned every one)
+- Pressing S on a sorted container changes nothing (it moved the big items again each time)
+
 ## 1.3.0 (2026-10-17)
 
 - Sorted by what the items are first: each kind gets its own rows (weapons, magazines, ammo, grenades and other holdables, medicine, food, drink, equipment, artifacts, resources...), then by size within the kind. 1.2.0 sorted only by size, so ammo boxes and grenades of the same size ended up mixed. The kind is the start of the game's item ID (Ammo_..., Holdable_...). A smaller container shares rows between sizes of a kind, and one too small for that shares rows between kinds (still in kind order)

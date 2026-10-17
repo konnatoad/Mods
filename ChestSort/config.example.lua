@@ -9,7 +9,7 @@ return {
     -- game). Lower is faster; raise it if moves get refused in co-op
     moveDelayMs = 120,
 
-    -- Turn items to lie flat (wider than tall) so they line up in even rows;
-    -- false: every item keeps the way it's turned now
+    -- Items keep the way they're turned; when the container is too full to
+    -- sort them like that, tall items are turned flat to fit. false: never turn
     rotate = true,
 }
