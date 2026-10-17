@@ -34,7 +34,7 @@
 -- of the file (nothing is streamed through the game), jumping to the host's
 -- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.5.12"
+local VERSION = "0.5.13"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -993,20 +993,27 @@ end
 -- size, just in front of it, casting no shadows (cheap). Returns it or nil
 local function MakeLight(actor)
     if LIGHT_CD <= 0 then return nil end
-    local light, err = AddComponent(actor, "/Script/Engine.RectLightComponent", function(l)
+    -- Cheap: a spot light (0.5.9-0.5.12's rectangle light, the most
+    -- expensive kind, cost a lot of FPS), set before it starts so the engine
+    -- never prepares what it doesn't need: no shadows, no bounce light
+    -- (Lumen), no fog or see-through lighting, no specular
+    local light, err = AddComponent(actor, "/Script/Engine.SpotLightComponent", function(l)
         pcall(function() l.Mobility = 2 end)   -- movable: it's added while the game runs
+        pcall(function() l.CastShadows = false end)
+        pcall(function() l.CastStaticShadows = false end)
+        pcall(function() l.CastDynamicShadows = false end)
+        pcall(function() l.bAffectTranslucentLighting = false end)
+        pcall(function() l.bAffectGlobalIllumination = false end)
+        pcall(function() l.IndirectLightingIntensity = 0 end)
+        pcall(function() l.VolumetricScatteringIntensity = 0 end)
+        pcall(function() l.SpecularScale = 0 end)
+        pcall(function() l.bUseInverseSquaredFalloff = true end)
+        pcall(function() l.AttenuationRadius = LIGHT_M * 100 end)
+        pcall(function() l.OuterConeAngle = 70 end)
+        pcall(function() l.InnerConeAngle = 25 end)
+        pcall(function() l.SourceRadius = 20 end)
     end)
-    if not light then
-        light, err = AddComponent(actor, "/Script/Engine.SpotLightComponent", function(l)
-            pcall(function() l.Mobility = 2 end)
-        end)
-        if light then
-            pcall(function() light:SetOuterConeAngle(70) end)
-            pcall(function() light:SetInnerConeAngle(20) end)
-        end
-    end
     if not light then log("  no light from the screen: " .. tostring(err)) return nil end
-    pcall(function() light:SetMobility(2) end)
     pcall(function() light:SetCastShadows(false) end)
     pcall(function() light:SetIntensityUnits(1) end)   -- candelas
     pcall(function() light:SetIntensity(LIGHT_CD) end)
@@ -1032,7 +1039,7 @@ LightOf = function(entry)
     return same and light or nil
 end
 
--- The flicker: one loop while a TV is on, 8 times a second. level is how
+-- The flicker: one loop while a TV is on, 4 times a second. level is how
 -- bright the picture is now (0-1), heading for target; at a scene cut the
 -- target (and the colour) changes, quickly, like a cut on a real TV
 local flicker = { running = false, level = 0.7, target = 0.7, cutAt = 0,
@@ -1047,19 +1054,20 @@ local function FlickerTick()
         local warm = math.random() * 0.3                -- 0: cool blue-white, 0.3: warmer
         flicker.aim = { R = 0.72 + warm, G = 0.82 + warm * 0.3, B = 1.0 - warm }
     end
-    flicker.level = flicker.level + (flicker.target - flicker.level) * 0.45
-    for _, c in ipairs({ "R", "G", "B" }) do
-        flicker.color[c] = flicker.color[c] + (flicker.aim[c] - flicker.color[c]) * 0.45
-    end
-    local wobble = 1 + (math.random() - 0.5) * 0.12    -- the picture moving within a scene
+    flicker.level = flicker.level + (flicker.target - flicker.level) * 0.6
+    local wobble = 1 + (math.random() - 0.5) * 0.1     -- the picture moving within a scene
     pcall(function() light:SetIntensity(LIGHT_CD * flicker.level * wobble) end)
-    pcall(function() light:SetLightColor({ R = flicker.color.R, G = flicker.color.G, B = flicker.color.B, A = 1 }, true) end)
+    -- the colour only at a cut (each change costs the renderer a little)
+    if flicker.color ~= flicker.aim then
+        flicker.color = flicker.aim
+        pcall(function() light:SetLightColor({ R = flicker.color.R, G = flicker.color.G, B = flicker.color.B, A = 1 }, true) end)
+    end
 end
 
 local function StartFlicker()
     if not FLICKER or flicker.running then return end
     flicker.running = true
-    LoopAsync(125, function()
+    LoopAsync(250, function()
         if not (tv and tv.lightPath) then flicker.running = false return true end
         ExecuteInGameThread(function() pcall(FlickerTick) end)
         return false
@@ -1077,6 +1085,7 @@ local function SetLight(value)
         local light = LightOf(entry)
         if light then
             pcall(function() light:SetIntensity(cd) end)
+            pcall(function() light:SetVisibility(cd > 0, false) end)   -- 0: not drawn at all
             n = n + 1
         end
     end

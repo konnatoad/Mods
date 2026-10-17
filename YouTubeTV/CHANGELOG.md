@@ -2,6 +2,10 @@
 
 ---
 
+## 0.5.13 (2026-10-17)
+
+- The screen's light cost a lot of FPS: it was a rectangle light, the most expensive kind. Now it's a spot light with everything costly off from the start (shadows, bounce light, fog and see-through lighting, specular), its brightness changes 4 times a second instead of 8 and its colour only at a scene cut. `lightBrightness = 0` in config.lua turns it off completely
+
 ## 0.5.12 (2026-10-17)
 
 - 0.5.11 broke turning a TV off (an error instead of off)
