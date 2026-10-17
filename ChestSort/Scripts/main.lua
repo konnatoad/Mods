@@ -18,7 +18,7 @@
 --   .sort repair         cells marked as taken by an item that isn't there
 --                        become free again (the host's game: run it as the host)
 ------------------------------------------------------------
-local VERSION = "1.5.2"
+local VERSION = "1.5.3"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -897,9 +897,8 @@ end
 ------------------------------------------------------------
 -- The game's quick move does nothing for many stacks (100 wood into the
 -- workbench; its own bug, host or not). The click is seen on the item's
--- icon; half a second later, if the stack is still where it was, the mod
--- moves the whole stack into the first free place in the open container
--- with the game's own move (the same as dragging it there).
+-- icon, and the mod moves the whole stack into the first free place in the
+-- open container with the game's own move (the same as dragging it there).
 local ICON_CLASS = "/Game/SurvivalGameKitV2/Blueprints/Widgets/BP_InventoryItemIcon.BP_InventoryItemIcon_C"
 local quick = { hooked = false }
 
@@ -929,8 +928,11 @@ local function QuickMoveCheck(player, src, dst, root, id, amount)
                     player:ServerMoveItem({ [F.slotInv] = src, [F.slotIndex] = root },
                         { [F.slotInv] = dst, [F.slotIndex] = idx }, shape[3], false, 0)
                 end)
-                log(string.format("Quick move: the game didn't move %s x%s - %s", id, tostring(amount),
-                    ok and ("moved it to cell " .. idx) or ("moving failed: " .. tostring(err))))
+                quick.moves = (quick.moves or 0) + 1
+                if quick.moves <= 5 or not ok then
+                    log(string.format("Quick move: %s x%s %s", id, tostring(amount),
+                        ok and ("to cell " .. idx) or ("failed: " .. tostring(err))))
+                end
                 return
             end
         end
@@ -972,13 +974,10 @@ local function OnIconClicked(selfParam)
     if not it then return skip("no item at cell " .. idx .. " of " .. NameOf(src) .. (bad and (" (" .. bad .. ")") or "")) end
     if quick.clicks <= 5 then log("Quick move: watching " .. it.id .. " x" .. tostring(it.amount)) end
     local root, id, amount = it.root, it.id, it.amount
-    local checked = false
-    LoopAsync(500, function()
-        if checked then return true end
-        checked = true
-        ExecuteInGameThread(function() pcall(QuickMoveCheck, player, src, dst, root, id, amount) end)
-        return true
-    end)
+    -- right away (on the next frame): 1.5.x waited half a second to see
+    -- whether the game moved it, which felt slow. If the game moves it too,
+    -- whichever move comes second finds the cell empty and does nothing
+    ExecuteInGameThread(function() pcall(QuickMoveCheck, player, src, dst, root, id, amount) end)
 end
 
 local function HookIcons()
