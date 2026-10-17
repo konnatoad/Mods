@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.2 (2026-10-17)
+
+- `.sort repair` works for a joined player too. In co-op each player's game keeps its own copy of an open container's cells (the host's game sends them), so the broken cells may be only in the joined player's copy, or in the host's too. A joined player's `.sort repair` now frees them in its own copy and asks the host's Chest Sort (1.4.2) to free them in the host's and send the container again; the host's answer shows in the console. The log says whether each change stuck
+
 ## 1.4.1 (2026-10-17)
 
 - A fridge was left with cells still marked as taken by an item that wasn't there (unusable). Most likely from 1.4.0 moving an item partly over where it was: the game clears an item's old cells after filling the new ones. Items are never moved partly over themselves any more (big items still get room made the other ways)

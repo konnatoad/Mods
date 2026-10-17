@@ -18,7 +18,7 @@
 --   .sort repair         cells marked as taken by an item that isn't there
 --                        become free again (the host's game: run it as the host)
 ------------------------------------------------------------
-local VERSION = "1.4.1"
+local VERSION = "1.4.2"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -81,18 +81,8 @@ local function LocalController()
     return pc
 end
 
--- Your inventory component (it does the moves) and the open container's,
--- or nil, why. The container is the one of the thing you're using (the
--- game's InteractedActor) with the most cells.
-local function OpenContainer()
-    local pc = LocalController()
-    if not pc then return nil, nil, "no player" end
-    local player = nil
-    pcall(function() player = pc.Character.PlayerInventory end)
-    if not Valid(player) then return nil, nil, "no player inventory" end
-    local actor = nil
-    pcall(function() actor = player.InteractedActor end)
-    if not Valid(actor) then return player, nil, "no container open" end
+-- The container of an actor: its inventory component with the most cells
+local function ContainerOf(actor)
     local best, bestCells = nil, -1
     local cls = StaticFindObject(INVENTORY_CLASS)
     local function consider(comp)
@@ -109,6 +99,22 @@ local function OpenContainer()
     elseif list then
         pcall(function() list:ForEach(function(_, e) consider(e:get()) end) end)
     end
+    return best
+end
+
+-- Your inventory component (it does the moves) and the open container's,
+-- or nil, why. The container is the one of the thing you're using (the
+-- game's InteractedActor) with the most cells.
+local function OpenContainer()
+    local pc = LocalController()
+    if not pc then return nil, nil, "no player" end
+    local player = nil
+    pcall(function() player = pc.Character.PlayerInventory end)
+    if not Valid(player) then return nil, nil, "no player inventory" end
+    local actor = nil
+    pcall(function() actor = player.InteractedActor end)
+    if not Valid(actor) then return player, nil, "no container open" end
+    local best = ContainerOf(actor)
     if not best then return player, nil, NameOf(actor) .. " has no container" end
     return player, best
 end
@@ -755,22 +761,26 @@ end
 
 -- .sort repair: cells marked as taken by an item that isn't there (their
 -- item's top-left cell isn't that item any more) become empty again, like
--- the container's other empty cells. Only the host's game can change a
--- container, so in someone else's world it only shows what's wrong.
-local function Repair()
-    local _, inv, why = OpenContainer()
-    if not inv then log("Nothing open: " .. tostring(why)) return end
+-- the container's other empty cells.
+-- In co-op each player's game keeps its own copy of an open container's
+-- cells (the host's game sends them), so a joined player's copy can be broken
+-- while the host's is fine, or both: a joined player's .sort repair fixes its
+-- own copy and asks the host's Chest Sort to fix the host's and send it again.
+
+-- Fixes inv's broken cells. Returns the broken cells, how many were freed
+-- (read back to check the change stuck)
+local function RepairCells(inv)
     local arr = inv.Inventory
     local n = 0
     pcall(function() n = arr:GetArrayNum() end)
     local occ, root = {}, {}
-    local template = nil   -- an empty cell, to copy what empty cells hold
+    local emptyRoot = nil   -- what an empty cell holds as its top-left cell
     for i = 1, n do
         pcall(function()
             local slot = arr[i]
             occ[i - 1] = slot[F.occupied] == true
             root[i - 1] = slot[F.rootIndex]
-            if not occ[i - 1] and not template then template = { root = slot[F.rootIndex] } end
+            if not occ[i - 1] and emptyRoot == nil then emptyRoot = slot[F.rootIndex] end
         end)
     end
     local bad = {}
@@ -778,29 +788,83 @@ local function Repair()
         local r = root[idx]
         if occ[idx] and not (type(r) == "number" and occ[r] and root[r] == r) then table.insert(bad, idx) end
     end
-    if #bad == 0 then log(NameOf(inv) .. ": no broken cells") return end
-    log(NameOf(inv) .. ": " .. #bad .. " cell(s) taken by an item that isn't there: " .. table.concat(bad, ", "))
-    local pc = LocalController()
-    local joined = false
-    pcall(function() joined = pc:HasAuthority() == false end)
-    if joined then log("Only the host can fix them: ask the host to open this container and type .sort repair") return end
     local fixed = 0
     for _, idx in ipairs(bad) do
-        local ok = pcall(function()
+        pcall(function()
             local slot = arr[idx + 1]
             slot[F.occupied] = false
-            slot[F.rootIndex] = template and template.root or -1
+            slot[F.rootIndex] = emptyRoot or -1
             local it = slot[F.item]
             it[F.id] = FName("None")
             it[F.amount] = 0
         end)
-        if ok then fixed = fixed + 1 end
+        local now = true
+        pcall(function() now = arr[idx + 1][F.occupied] end)
+        if now == false then fixed = fixed + 1 end
     end
-    -- show it to everyone who has it open
-    pcall(function() inv:UpdateAllPlayersRootItems(true, {}) end)
-    pcall(function() inv:ServerForceRootItemUpdate() end)
-    log(string.format("Freed %d of %d cell(s) - close and open the container again", fixed, #bad))
+    return bad, fixed
 end
+
+local function Joined()
+    local pc = LocalController()
+    local joined = false
+    pcall(function() joined = pc:HasAuthority() == false end)
+    return joined, pc
+end
+
+local function Repair()
+    local _, inv, why = OpenContainer()
+    if not inv then log("Nothing open: " .. tostring(why)) return end
+    local joined, pc = Joined()
+    local bad, fixed = RepairCells(inv)
+    if #bad == 0 then
+        log(NameOf(inv) .. ": no broken cells" .. (joined and " in your copy" or ""))
+    else
+        log(string.format("%s: freed %d of %d cell(s) taken by an item that isn't there (%s)%s", NameOf(inv), fixed, #bad,
+            table.concat(bad, ", "), joined and " in your copy" or ""))
+    end
+    if joined then
+        local ok = pcall(function() pc:ServerNotifyLoadedWorld(FName("CHESTSORT_REPAIR")) end)
+        log(ok and "Asked the host's Chest Sort to fix its copy and send it again (the host needs 1.4.2)"
+            or "Couldn't ask the host")
+    else
+        pcall(function() inv:UpdateAllPlayersRootItems(true, {}) end)
+    end
+    if #bad > 0 then log("Close the container and open it again") end
+end
+
+-- Hosting: a joined player's .sort repair. Their open container is fixed
+-- here and sent to them again; the answer shows in their console
+local function OnPlayerAsks(selfParam, nameParam)
+    local name = ""
+    pcall(function() name = nameParam:get():ToString() end)
+    if name ~= "CHESTSORT_REPAIR" then return end
+    local pc = nil
+    pcall(function() pc = selfParam:get() end)
+    if not Valid(pc) then return end
+    local isLocal, authority = true, false
+    pcall(function() isLocal = pc:IsLocalController() end)
+    pcall(function() authority = pc:HasAuthority() end)
+    if isLocal or not authority then return end
+    ExecuteInGameThread(function()
+        local player, actor, inv = nil, nil, nil
+        pcall(function() player = pc.Character.PlayerInventory end)
+        pcall(function() actor = player.InteractedActor end)
+        if Valid(actor) then inv = ContainerOf(actor) end
+        local text
+        if not inv then
+            text = "[ChestSort] The host's game doesn't see a container open for you #CS:none"
+        else
+            local bad, fixed = RepairCells(inv)
+            pcall(function() inv:ServerUpdateItemSlots(player) end)
+            pcall(function() inv:UpdateAllPlayersRootItems(true, {}) end)
+            text = string.format("[ChestSort] Host: %d broken cell(s) in its copy, %d freed; sent it to you again #CS:ok", #bad, fixed)
+            log(string.format("A player's repair: %s, %d broken cell(s), %d freed", NameOf(inv), #bad, fixed))
+        end
+        pcall(function() pc:ClientMessage(text, FName("None"), 0.0) end)
+    end)
+end
+pcall(RegisterHook, "/Script/Engine.PlayerController:ServerNotifyLoadedWorld", OnPlayerAsks)
 
 local function Check()
     local player, inv, why = OpenContainer()
