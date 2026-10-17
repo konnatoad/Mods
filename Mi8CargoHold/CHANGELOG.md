@@ -2,6 +2,10 @@
 
 ---
 
+## 1.1.6 (2026-10-17)
+
+- Joining someone's game crashed, inside UE4SS while a mod searched the game's objects, a second after this mod's first search for the host's hold (the stack doesn't say which mod's search it was). Joining makes and removes thousands of objects, and walking them then can hit one that's half made. In someone else's world this mod now doesn't search for the first 15 s after joining, also not when cabinets appear
+
 ## 1.1.5 (2026-10-17)
 
 - With more than one Mi-8 wreck loaded (e.g. after an expedition) the mod took the first one it found, which could be the wrong helicopter. A joined player who restarted the mod then never found the host's hold again (hidden, read "Cabinet", wouldn't open), and the host could look for the saved hold at the wrong wreck

@@ -1221,6 +1221,7 @@ end
 -- cabinet when the player walks near): look for the hold 2 s later, once its
 -- place and size have arrived too
 pcall(NotifyOnNewObject, WORLD_CONTAINER_CLASS_PATH, function()
+    -- (during a join's quiet time this only moves a search that waits anyway)
     client.next_scan = math.min(client.next_scan, os.time() + 2)
     client.delay = 5
     session.dedupe_at = os.time() + 3   -- hosting: a late-restored copy of the hold?
@@ -1234,6 +1235,11 @@ local function client_ensure(now, manual)
         client.next_scan, client.delay = now + 2, 5
     end
     if now < client.next_scan and not manual then return nil end
+    -- Just joined: no searching for the first 15 s. Joining makes and removes
+    -- thousands of objects, and a search walking them then crashed UE4SS
+    -- (1.1.5, a second after its first search during a join)
+    if not client.since then client.since = now end
+    if now - client.since < 15 and not manual then return nil end
     -- Far from where the hold was last seen: it can't be here (the game
     -- sends far-away objects to nobody), so only the distance is checked
     if client.seen_at then
@@ -1280,6 +1286,7 @@ lifecycle_ensure = function(manual)
     local now = os.time()
     local key, slot, level = current_session(now)
     if slot == CLIENT then return client_ensure(now, manual) end
+    client.since = nil   -- (hosting or loading: the next join starts its quiet time again)
     if not key then
         session.stable = 0
         session.paused = true
