@@ -2,6 +2,10 @@
 
 ---
 
+## 0.6.6 (2026-10-17)
+
+- Its hooks are never removed any more, only left idle. Removing a hook (UnregisterHook) in this UE4SS can free its Lua function while the hook stays, and the game then aborts the next time that function runs ("Ref was not function": a host's crash mid game, 17 Oct)
+
 ## 0.6.5 (2026-10-17)
 
 - The camera's angle limits (yaw and pitch, min and max): `.view limits` shows them now, the buffer and recordings keep them as columns (`lim.YawMin` ...), and while the buffer is on the log gets a line each time they change, with the time. The view sometimes sticks at exactly 359 / 0 yaw though it normally passes 359.5: this shows whether something narrows the limits when it happens

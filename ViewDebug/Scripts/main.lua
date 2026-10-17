@@ -36,7 +36,7 @@
 -- restarted (Mod Hub), so they can't run into the old copy: shared/GameHooks
 local RegisterHook = require("GameHooks").ForMod("ViewDebug")
 
-local VERSION = "0.6.5"
+local VERSION = "0.6.6"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
@@ -385,12 +385,17 @@ local INPUT_FUNCTIONS = {
 }
 local mouse = { yaw = 0, pitch = 0, calls = 0, users = 0, hooks = {}, fired = {} }
 
+-- The hooks stay once made (idle while nobody uses them): removing a hook
+-- (UnregisterHook) in this UE4SS frees its Lua function but can leave the
+-- hook in place, and the game aborts the next time the function runs ("Ref
+-- was not function", 17 Oct)
 local function MouseAcquire()
     mouse.users = mouse.users + 1
-    if mouse.users > 1 then return end
+    if mouse.users > 1 or #mouse.hooks > 0 then return end
     for _, f in ipairs(INPUT_FUNCTIONS) do
         local path, axis = f[1], f[2]
         local ok, pre, post = pcall(RegisterHook, path, function(self, Val)
+            if mouse.users <= 0 then return end
             local v = nil
             pcall(function() v = Val:get() end)
             if type(v) == "number" then
@@ -410,9 +415,6 @@ end
 local function MouseRelease()
     if mouse.users == 0 then return end
     mouse.users = mouse.users - 1
-    if mouse.users > 0 then return end
-    for _, h in ipairs(mouse.hooks) do pcall(UnregisterHook, h[1], h[2], h[3]) end
-    mouse.hooks = {}
 end
 
 ------------------------------------------------------------
@@ -483,16 +485,10 @@ local function TickerAdd(name, ms, fn, set)
     return true
 end
 
--- Stop running it; the hook goes when nothing uses it (removed on a later
--- frame, never from inside the hook itself)
+-- Stop running it. The hook stays (removing hooks can crash this UE4SS,
+-- see MouseAcquire) and does nothing while nobody uses it
 local function TickerRemove(name)
     ticker.users[name] = nil
-    ExecuteInGameThread(function()
-        if next(ticker.users) == nil and ticker.hook then
-            pcall(UnregisterHook, ticker.hook[1], ticker.hook[2], ticker.hook[3])
-            ticker.hook = nil
-        end
-    end)
 end
 
 ------------------------------------------------------------

@@ -15,7 +15,7 @@
 -- Each player's copy fixes what that player hears: the host needs it for the
 -- host's ears.
 ------------------------------------------------------------
-local VERSION = "1.1.0"
+local VERSION = "1.1.1"
 
 local function log(msg)
     print("[SoundFixes] " .. tostring(msg) .. "\n")
@@ -168,7 +168,7 @@ local SOUND_CALLS = {
     SpawnSoundAtLocation = { sound = 2, from = 1, heard = "from a place", att = 8 },
     SpawnSoundAttached = { sound = 1, from = 2, heard = "attached", att = 11 },
 }
-local watch = { untilClock = 0, ids = {}, count = 0 }
+local watch = { untilClock = 0, on = false, hooked = false, count = 0 }
 
 local function NameOfParam(p)
     local obj = nil
@@ -184,38 +184,43 @@ local function NameOfParam(p)
     return name
 end
 
+-- The hooks stay once made and only stop logging: removing a hook
+-- (UnregisterHook) in this UE4SS frees its Lua function but can leave the
+-- hook in place, and the next time the game plays that kind of sound the
+-- game aborts ("Ref was not function"; a host's crash, 17 Oct)
 local function StopWatch()
-    for path, id in pairs(watch.ids) do pcall(UnregisterHook, path, id[1], id[2]) end
-    watch.ids = {}
+    watch.on = false
     log("Sound watch off (" .. watch.count .. " sounds logged)")
 end
 
 local function StartWatch()
-    if next(watch.ids) then log("Sound watch is already on") return end
-    watch.untilClock, watch.count = os.clock() + 60, 0
-    for fn, how in pairs(SOUND_CALLS) do
-        local path = STATICS .. fn
-        local ok, pre, post = pcall(RegisterHook, path, function(_, ...)
-            if os.clock() > watch.untilClock then return end
-            local args = { ... }
-            watch.count = watch.count + 1
-            if watch.count > 200 then return end
-            local att = how.att and args[how.att] and NameOfParam(args[how.att]) or "-"
-            log(string.format("sound %s, %s, by %s, falloff %s (%s)", NameOfParam(args[how.sound]), how.heard,
-                NameOfParam(args[how.from]), att, fn))
-        end)
-        if ok then watch.ids[path] = { pre, post } end
+    if watch.on then log("Sound watch is already on") return end
+    watch.on, watch.untilClock, watch.count = true, os.clock() + 60, 0
+    if not watch.hooked then
+        watch.hooked = true
+        for fn, how in pairs(SOUND_CALLS) do
+            pcall(RegisterHook, STATICS .. fn, function(_, ...)
+                if not watch.on or os.clock() > watch.untilClock then return end
+                local args = { ... }
+                watch.count = watch.count + 1
+                if watch.count > 200 then return end
+                local att = how.att and args[how.att] and NameOfParam(args[how.att]) or "-"
+                log(string.format("sound %s, %s, by %s, falloff %s (%s)", NameOfParam(args[how.sound]), how.heard,
+                    NameOfParam(args[how.from]), att, fn))
+            end)
+        end
     end
     log("Sound watch on for 60 s: make the sound happen now (.soundwatch again stops it)")
+    local started = watch.untilClock
     LoopAsync(61000, function()
-        ExecuteInGameThread(function() if next(watch.ids) then StopWatch() end end)
+        ExecuteInGameThread(function() if watch.on and watch.untilClock == started then StopWatch() end end)
         return true
     end)
 end
 
 RegisterConsoleCommandHandler(".soundwatch", function()
     ExecuteInGameThread(function()
-        if next(watch.ids) then StopWatch() else StartWatch() end
+        if watch.on then StopWatch() else StartWatch() end
     end)
     return true
 end)

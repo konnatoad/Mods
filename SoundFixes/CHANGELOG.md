@@ -2,6 +2,10 @@
 
 ---
 
+## 1.1.1 (2026-10-17)
+
+- `.soundwatch` no longer removes its hooks after its minute, it only stops logging. Removing a hook (UnregisterHook) in this UE4SS can free its Lua function while the hook stays, and the game then aborts the next time it plays that kind of sound ("Ref was not function": very likely the host's crash mid game, 17 Oct)
+
 ## 1.1.0 (2026-10-17)
 
 - Found with the host's `.soundwatch`: the microwave's door sound (`MicrowaveOpenSound_Cue`) and start-cooking sound (`MicrowaveStartCookSound_Cue`) are played at the microwave but have no falloff of their own, so they're heard at full volume everywhere. Each gets the game's falloff for small sounds once it has loaded (the log says so), so they fade with distance however the game plays them. (The microwave's hum already faded; 1.0.x changed only that)
