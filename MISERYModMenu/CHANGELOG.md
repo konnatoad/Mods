@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.19
+
+- `.movecheck` shows what decides how fast you move right now: your state, sprint key, stamina, the speed limit and how fast you really move, the game's speed for each state, and the item in your hands with its own speeds. For the bug where sprinting is sometimes very slow: run it while it happens
+
+---
+
 ## Version 4.6.18
 
 - In someone else's world, a player who got into fly / ghost couldn't get out: turning it off was refused like turning it on ("the host's game moves your character"). `.noclip` and keybinds didn't check at all, so that's how one got in. Now every way (`.ghost`, `.noclip`, the FLY button, keybinds) goes through one switch that goes by whether the character really flies (the game's own FLY button can start it too): in someone else's world it still won't turn on, but it always turns off. `.walk` works as before

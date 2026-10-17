@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.18 (patched for current game version)
+    MISERY Mod Menu v4.6.19 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -1272,7 +1272,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.18 ===")
+    Log("=== MISERY Mod Menu v4.6.19 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -6078,6 +6078,60 @@ RegisterConsoleCommandHandler(".invcheck", function(FullCommand, Parameters)
     return true
 end)
 
+-- .movecheck: what decides how fast you move, right now. For the bug where
+-- sprinting sometimes is very slow: run it while it happens. The game sets
+-- the speed from the inventory's MovementSpeeds (one per state), or the held
+-- item's own MovementSpeeds when it has UseHoldableMovementSpeeds.
+RegisterConsoleCommandHandler(".movecheck", function(FullCommand, Parameters)
+    ExecuteInGameThread(function()
+        local inv, char = GetInventory(), GetPlayerCharacter()
+        if not (inv and char) then Log("[movecheck] Load into a world first") return end
+        local function get(f) local v = nil pcall(function() v = f() end) return v end
+        local enum = StaticFindObject("/Game/SurvivalGameKitV2/Blueprints/Other/Enum/E_CharacterState.E_CharacterState")
+        local lib = StaticFindObject("/Script/Engine.Default__KismetNodeHelperLibrary")
+        local function StateName(n)
+            local name = get(function() return lib:GetEnumeratorUserFriendlyName(enum, n):ToString() end)
+            return tostring(n) .. (name and ("=" .. name) or "")
+        end
+        local function Speeds(map)
+            local parts = {}
+            pcall(function()
+                map:ForEach(function(k, v)
+                    local key, value = k, v
+                    pcall(function() key = k:get() end)
+                    pcall(function() value = v:get() end)
+                    table.insert(parts, StateName(key) .. ":" .. string.format("%.0f", tonumber(value) or -1))
+                end)
+            end)
+            return #parts > 0 and table.concat(parts, " ") or "(couldn't read)"
+        end
+        local state = get(function() return inv.CurrentCharacterState end)
+        local cm = get(function() return char.CharacterMovement end)
+        local speedNow = get(function()
+            local v = char:GetVelocity()
+            return math.sqrt(v.X * v.X + v.Y * v.Y)
+        end)
+        Log(string.format("[movecheck] state %s, sprint key %s, stamina %s / %s, joined %s",
+            state and StateName(state) or "?", tostring(get(function() return inv.SprintKeyDown end)),
+            tostring(get(function() return math.floor(inv.CurrentStamina) end)),
+            tostring(get(function() return math.floor(inv.MaxStamina) end)), tostring(Coop.Joined())))
+        Log(string.format("[movecheck] max speed now %s, moving at %s, movement mode %s",
+            tostring(get(function() return math.floor(cm.MaxWalkSpeed) end)),
+            tostring(speedNow and math.floor(speedNow) or "?"), tostring(get(function() return cm.MovementMode end))))
+        Log("[movecheck] speeds by state: " .. Speeds(get(function() return inv.MovementSpeeds end)))
+        local held = get(function() return inv.NewHoldingItem end)
+        if held and get(function() return held:IsValid() end) then
+            local name = get(function() return held:GetFName():ToString() end) or "?"
+            local own = get(function() return held.UseHoldableMovementSpeeds end)
+            Log("[movecheck] holding " .. name .. ", its own speeds " .. tostring(own)
+                .. (own and (": " .. Speeds(get(function() return held.MovementSpeeds end))) or ""))
+        else
+            Log("[movecheck] holding nothing")
+        end
+    end)
+    return true
+end)
+
 RegisterConsoleCommandHandler(".dumpinv", function(FullCommand, Parameters)
     local arg = string.lower(Parameters[1] or "")
     if arg == "on" or arg == "1" or arg == "true" then
@@ -8251,7 +8305,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.18 Loaded!")
+Log("  MISERY Mod Menu v4.6.19 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")
