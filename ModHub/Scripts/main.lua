@@ -75,6 +75,8 @@ local INFO = {
       about = "A small panel with your exact survival numbers (health, stamina, hunger, thirst, radiation, ...), off until you switch it on. Only reads your own numbers, so it's safe in co-op.",
       commands = { { ".stats", "Panel on / off" }, { ".stats move", "Next position on the screen" },
                    { ".stats scan", "If a stat is missing: list the numbers" } } },
+    { name = "SoundFixes", title = "Sound Fixes",
+      about = "Game sounds heard where they shouldn't be. A microwave now sounds from the microwave and fades with distance (a joined player's was heard by the host everywhere)." },
     { name = "WhistleRange", title = "Whistle Range",
       about = "Co-op: players who joined get whistles (and see players) from as far away as the host does. Only the host needs it.",
       commands = { { ".whistle", "The range and the players it's applied to" },

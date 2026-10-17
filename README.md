@@ -67,6 +67,7 @@ Every mod has a `CHANGELOG.md`; in game, `.mods` → pick a mod → **Changelog*
 | **WhistleRange** *(new)* | Joined players get whistles (and see the other players) from as far away as the host does | Only the host needs it |
 | **ViewDebug** *(new, testing)* | `.view hud`: your view's angles on screen, live; `.view buffer`: keeps the last 25 s of your view's angles, `.view dump` saves them, `.view read` shows where your aim got stuck to find why the weapon gets stuck at an angle after slow mouse moves. Changes nothing | Only reads your own view |
 | **NotSoShaky** | Softer camera shake when you're hit | Only your view |
+| **SoundFixes** *(new)* | Game sounds heard where they shouldn't be: a microwave a joined player turns on is no longer heard by the host everywhere | Each player's copy fixes what they hear; the host needs it |
 | **MISERY_StructuralFreedom** | Relaxed building support rules; normal placement rules still apply | Everyone needs it |
 
 UE4SS's own mods are switched on or off in `mods.txt`; leave them as they are:
@@ -100,6 +101,7 @@ changes nothing in the host's world.
 | RandomEmissions | The host's game picks the emission times; your siren plays when the host's does |
 | StackThemAll, MISERY_StructuralFreedom | Everyone needs them, with the same settings |
 | WhistleRange | The host's copy widens how far players' characters (and their whistles) are sent; yours does nothing in someone else's world |
+| SoundFixes | Fixes what you hear: the host needs it so a joined player's microwave isn't heard everywhere |
 | ModHub, HeadBob, ReticleSize, SurvivalStats, NotSoShaky, ViewDebug | Only change your own game |
 
 ## Settings
