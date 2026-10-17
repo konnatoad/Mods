@@ -13,8 +13,10 @@ local randomMax = 3600
 local isSirenEnabled = true
 -- Minimum random time in seconds left until siren
 local sirenMin = 120
--- Maximum random time in seconds left until siren
-local sirenMax = 300
+-- Maximum random time in seconds left until siren. The siren is 2 minutes
+-- long: started up to 5 minutes before (1.2.6 and older), it ended long
+-- before the emission and felt like a false alarm
+local sirenMax = 150
 -- Volume of siren
 local sirenVolume = 3.0
 ----------------------------------
@@ -185,6 +187,7 @@ local function OnUnloadPreviousLevels()
 	local gm = GlobalManager()
 	if not gm then return end
 	gm.TimeUntilEmmision = math.random(randomMin, randomMax)
+	log(string.format("Next emission in %.0f min, siren %d s before it", gm.TimeUntilEmmision / 60, sirenThreshold))
 end
 
 -- The host's siren, on a player who joined

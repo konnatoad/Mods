@@ -127,7 +127,7 @@ By hand: copy the mod's `config.example.lua` to `config.lua` and change it; a li
 |---|---|
 | WorldTweaks | `dayLength = 22.0`, `nightLength = 4.0`, `season = ""` (`"winter"` etc. to force one), `nightSkyLight = 7.5` (game default 20.0, lower is darker, `false` keeps the game's) |
 | BackpackWeightFix | `checkEverySeconds = 30` (`.fixweight` runs it right now) |
-| RandomEmissions | `randomMin = 1800`, `randomMax = 3600` (seconds), `isSirenEnabled = true`, `sirenMin = 120`, `sirenMax = 300`, `sirenVolume = 3.0` |
+| RandomEmissions | `randomMin = 1800`, `randomMax = 3600` (seconds), `isSirenEnabled = true`, `sirenMin = 120`, `sirenMax = 150`, `sirenVolume = 3.0` |
 | MISERYModMenu | `allowJoined = true` (hosting: give items and stats to players who ask), `newLook = true` (false: the game's colours), `newLayout = true` (false: the game's layout) |
 | WhistleRange | `rangeMeters = 0` (how far players' characters reach joined players; 0 = no limit, Unreal's own is 150) |
 | ViewDebug | `hudMs = 100` (how often `.view hud` updates), `sampleMs = 16` (how often `.view rec` reads the angles), `maxSeconds = 60` (a recording stops by itself), `bufferSeconds = 25` (how much `.view buffer` keeps), `markKey = ""` (a hotkey that saves the buffer, like `"F12"`; off by default) |

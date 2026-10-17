@@ -2,6 +2,11 @@
 
 ---
 
+## 1.2.7 (2026-10-17)
+
+- The siren felt like a false alarm, with the real emission coming well after it: the siren is 2 minutes long but started up to 5 minutes before the emission, so it could end 3 minutes early. It now starts 2 to 2.5 minutes before (`sirenMax` 300 -> 150), so it ends at most 30 s before the emission. A `config.lua` with its own `sirenMax` still decides (only the host's counts in co-op)
+- Hosting: the log says when the next emission is set and when its siren will sound
+
 ## 1.2.6 (2026-10-17)
 
 - Two sirens could sound on top of each other. This mod never starts a second siren while its own still sounds, and if the game itself starts a siren while this mod's sounds, this mod's stops

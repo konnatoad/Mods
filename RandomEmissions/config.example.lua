@@ -8,6 +8,6 @@ return {
     -- Siren warning before it, between these many seconds before
     isSirenEnabled = true,
     sirenMin = 120,
-    sirenMax = 300,
+    sirenMax = 150,   -- the siren is 2 minutes long: it ends at most 30 s before the emission
     sirenVolume = 3.0,
 }
