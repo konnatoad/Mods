@@ -18,7 +18,7 @@
 --   .sort repair         cells marked as taken by an item that isn't there
 --                        become free again (the host's game: run it as the host)
 ------------------------------------------------------------
-local VERSION = "1.5.1"
+local VERSION = "1.5.2"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -959,12 +959,8 @@ local function OnIconClicked(selfParam)
     if not held then return skip("Shift isn't held") end
     if not (player and dst) then return skip(tostring(why)) end
     local src, idx = nil, nil
-    -- (an output parameter: UE4SS fills the table passed for it)
-    pcall(function()
-        local out = {}
-        local r = icon:GetInventory(out)
-        src = Valid(r) and r or out.Inventory
-    end)
+    -- the icon's container (GetInventory gives a copy of its cells instead)
+    pcall(function() src = icon.GridInven end)
     pcall(function() idx = icon.ItemIndex end)
     if not Valid(src) or type(idx) ~= "number" then return skip("couldn't tell which item (" .. tostring(idx) .. ")") end
     -- only from your side into the open container (the other way works)

@@ -2,6 +2,10 @@
 
 ---
 
+## 1.5.2 (2026-10-18)
+
+- The Shift+click fix couldn't tell which container a clicked item is in (the icon's GetInventory gives a copy of the cells, not the container): it uses the icon's own container now
+
 ## 1.5.1 (2026-10-18)
 
 - The Shift+click fix never ran: with the inventory screen open the player's input doesn't see keys, so Shift never counted as held. It now uses the game's own quick-move key flag. The first few clicks log why one was skipped, if it was
