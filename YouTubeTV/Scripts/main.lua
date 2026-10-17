@@ -33,7 +33,7 @@
 -- of the file (nothing is streamed through the game), jumping to the host's
 -- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.5.8"
+local VERSION = "0.5.9"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -800,6 +800,7 @@ local function Stop()
     pcall(function() tv.player:Close() end)
     if tv.hud and tv.hud.panel then pcall(function() tv.hud.panel:RemoveFromParent() end) end
     if Valid(tv.panel) then pcall(function() tv.panel:SetVisibility(false, false) end) end
+    if tv.light and Valid(tv.light) then pcall(function() tv.light:SetVisibility(false, false) end) end
     if tv.mesh and tv.oldMaterial then pcall(function() tv.mesh:SetMaterial(tv.slot, tv.oldMaterial) end) end
     if tv.addr and not tv.hud then kept[tv.addr] = tv end   -- the HUD test's are left alone too
     tv = nil
@@ -877,6 +878,13 @@ end
 local CUBE = "/Engine/BasicShapes/Cube.Cube"
 local SCREEN_WIDTH = math.max(0.2, math.min(1.2, tonumber(cfg.screenWidth) or 0.8))     -- of the TV's front
 local SCREEN_HEIGHT = math.max(0.2, math.min(1.2, tonumber(cfg.screenHeight) or 0.75))
+-- A real TV glows: the picture shows in a dark room (an unlit material, the
+-- engine's own one for 3D widgets), and it lights the room in front of it
+local GLOW = cfg.glowScreen ~= false
+local GLOW_MATERIAL = "/Engine/EngineMaterials/Widget3DPassThrough_Opaque.Widget3DPassThrough_Opaque"
+local GLOW_PARAM = "SlateUI"
+local LIGHT_CD = math.max(0, tonumber(cfg.lightBrightness) or 30)     -- candelas (0 = no light)
+local LIGHT_M = math.max(1, tonumber(cfg.lightDistance) or 5)          -- it reaches this far
 
 local function LoadObject(path)
     local obj = Find(path)
@@ -942,9 +950,25 @@ local function MakePanel(actor, mesh, material, param, texture, face)
     local panel, err = AddComponent(actor, "/Script/Engine.StaticMeshComponent")
     if not panel then return nil, err end
     pcall(function() panel:SetCollisionEnabled(0) end)   -- you walk and shoot through it
+    pcall(function() panel:SetCastShadow(false) end)
     pcall(function() panel:SetStaticMesh(cube) end)
+    -- the glowing material if it's there and has its texture slot (it then
+    -- has a default texture in it); else the TV's own (lit: dark in a dark room)
     local dmi = nil
-    pcall(function() dmi = panel:CreateDynamicMaterialInstance(0, material, FName("YouTubeTVScreen")) end)
+    if GLOW then
+        local glow = LoadObject(GLOW_MATERIAL)
+        if glow then
+            pcall(function() dmi = panel:CreateDynamicMaterialInstance(0, glow, FName("YouTubeTVScreen")) end)
+            local has = false
+            pcall(function() has = Valid(dmi:K2_GetTextureParameterValue(FName(GLOW_PARAM))) end)
+            if has then param = GLOW_PARAM else dmi = nil end
+        end
+        if dmi then log("  the screen glows (unlit material)")
+        else log("  the glowing screen material isn't in this game - the picture is lit like the TV") end
+    end
+    if not dmi then
+        pcall(function() dmi = panel:CreateDynamicMaterialInstance(0, material, FName("YouTubeTVScreen")) end)
+    end
     if not Valid(dmi) then
         pcall(function() panel:K2_DestroyComponent(panel) end)
         return nil, "couldn't make the screen's material"
@@ -958,6 +982,33 @@ local function MakePanel(actor, mesh, material, param, texture, face)
     return panel, placed, dmi
 end
 
+-- The light the screen gives off: a soft rectangle of light the screen's
+-- size, just in front of it, casting no shadows (cheap). Returns it or nil
+local function MakeLight(actor)
+    if LIGHT_CD <= 0 then return nil end
+    local light, err = AddComponent(actor, "/Script/Engine.RectLightComponent", function(l)
+        pcall(function() l.Mobility = 2 end)   -- movable: it's added while the game runs
+    end)
+    if not light then
+        light, err = AddComponent(actor, "/Script/Engine.SpotLightComponent", function(l)
+            pcall(function() l.Mobility = 2 end)
+        end)
+        if light then
+            pcall(function() light:SetOuterConeAngle(70) end)
+            pcall(function() light:SetInnerConeAngle(20) end)
+        end
+    end
+    if not light then log("  no light from the screen: " .. tostring(err)) return nil end
+    pcall(function() light:SetMobility(2) end)
+    pcall(function() light:SetCastShadows(false) end)
+    pcall(function() light:SetIntensityUnits(1) end)   -- candelas
+    pcall(function() light:SetIntensity(LIGHT_CD) end)
+    pcall(function() light:SetAttenuationRadius(LIGHT_M * 100) end)
+    pcall(function() light:SetLightColor({ R = 0.75, G = 0.85, B = 1.0, A = 1.0 }, true) end)   -- a screen's cool white
+    log(string.format("  light from the screen: %s, %g cd, reaching %g m", ClassName(light), LIGHT_CD, LIGHT_M))
+    return light
+end
+
 -- Puts the panel where placed says (also after .tv turn / mirror / size)
 PlacePanel = function(panel, placed)
     local rot = { Pitch = placed.rot.Pitch, Yaw = placed.rot.Yaw, Roll = placed.turn }
@@ -966,6 +1017,15 @@ PlacePanel = function(panel, placed)
     local w, h = placed.width / 100, placed.height / 100
     if placed.turn % 180 ~= 0 then w, h = h, w end
     pcall(function() panel:SetWorldScale3D({ X = 0.004, Y = placed.mirror and -w or w, Z = h }) end)
+    -- its light, 3 cm in front of it, shining out
+    local light = placed.light
+    if light and Valid(light) then
+        local fx, fy = Turn(3, 0, placed.rot.Yaw)
+        local at = { X = placed.where.X + fx, Y = placed.where.Y + fy, Z = placed.where.Z }
+        pcall(function() light:K2_SetWorldLocationAndRotation(at, { Pitch = 0, Yaw = placed.rot.Yaw, Roll = 0 }, false, {}, false) end)
+        pcall(function() light:SetSourceWidth(w * 100) end)
+        pcall(function() light:SetSourceHeight(h * 100) end)
+    end
 end
 
 ------------------------------------------------------------
@@ -1092,6 +1152,7 @@ local function OnActor(actor, aimed, play)
                 if where then p.where, p.rot, p.width, p.height, p.face = where, rot, width, height, face end
             end
             pcall(function() tv.panel:SetVisibility(true, false) end)
+            if tv.light and Valid(tv.light) then pcall(function() tv.light:SetVisibility(true, false) end) end
             PlacePanel(tv.panel, tv.placed)
         end
         log("  (the same player, sound and screen as before)")
@@ -1104,6 +1165,8 @@ local function OnActor(actor, aimed, play)
     local panel, placed, dmi = MakePanel(actor, screen.mesh, screen.mat, param, texture, play.face)
     if panel then
         tv.panel, tv.placed, tv.dmi = panel, placed, dmi
+        tv.light = MakeLight(actor)
+        placed.light = tv.light
         PlacePanel(panel, placed)
         log(string.format("  screen panel on the front, %.0f x %.0f cm (.tv turn / .tv mirror / .tv size if it's off)",
             placed.width, placed.height))

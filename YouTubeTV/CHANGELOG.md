@@ -2,6 +2,10 @@
 
 ---
 
+## 0.5.9 (2026-10-17)
+
+- A TV glows like a real one: the picture is drawn unlit (the engine's own material for 3D screens), so it shows in a dark room, and a soft light the screen's size shines out from it into the room (no shadows, cheap). `lightBrightness` (candelas, 0 = no light), `lightDistance` (metres) and `glowScreen` in config.lua. Without that material the picture is lit like the TV, as before
+
 ## 0.5.8 (2026-10-16)
 
 - A crash some time after using a TV's E menu: the mod kept the last E menu it saw and looked at it on every E press (to see whether TURN ON TV was selected). Once the game had deleted that menu, the next E press anywhere read the deleted menu, which crashes UE4SS. Now only the menu's address is kept, and on E the menu is looked up among the game's menus; a deleted one isn't touched (`.tv learn` the same)
