@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.18
+
+- In someone else's world, a player who got into fly / ghost couldn't get out: turning it off was refused like turning it on ("the host's game moves your character"). `.noclip` and keybinds didn't check at all, so that's how one got in. Now every way (`.ghost`, `.noclip`, the FLY button, keybinds) goes through one switch that goes by whether the character really flies (the game's own FLY button can start it too): in someone else's world it still won't turn on, but it always turns off. `.walk` works as before
+
+---
+
 ## Version 4.6.17
 
 - `.invcheck` found no open container in 4.6.16 (it looked for a visible container window). It now reads what you're using straight from the game (the workbench, a box...) and lists each of its containers' rules

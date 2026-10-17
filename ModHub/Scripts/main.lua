@@ -1174,7 +1174,13 @@ end
 local function Recolor()
     local chosen = ui.rows and ui.rows[hub.sel]
     if chosen and ui.p and ui.p.scroll then
-        pcall(function() ui.p.scroll:ScrollWidgetIntoView(chosen.bg, false, 0, 0) end)
+        if hub.sel == 1 then
+            -- the first row: the top of the page, so the text above it (a
+            -- mod's commands) shows. Scrolling to the row hid it on long pages
+            pcall(function() ui.p.scroll:SetScrollOffset(0) end)
+        else
+            pcall(function() ui.p.scroll:ScrollWidgetIntoView(chosen.bg, false, 0, 0) end)
+        end
     end
     for i, r in ipairs(ui.rows or {}) do
         local lit = i == hub.sel

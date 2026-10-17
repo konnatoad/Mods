@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.17 (patched for current game version)
+    MISERY Mod Menu v4.6.18 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -809,7 +809,7 @@ local function LoadBindings()
                     local success = SafeRegisterKeyBind(keyEnum, {}, function()
                         SafeExecuteInGameThread(function()
                             local binding = customBindings[keyName]
-                            if binding and CommandHandlers[binding.command] and not Coop.Refuse("." .. binding.command) then
+                            if binding and CommandHandlers[binding.command] and (binding.command == "ghost" or not Coop.Refuse("." .. binding.command)) then
                                 CommandHandlers[binding.command](binding.arg)
                             end
                         end)
@@ -1272,7 +1272,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.17 ===")
+    Log("=== MISERY Mod Menu v4.6.18 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -1395,7 +1395,7 @@ RegisterConsoleCommandHandler(".bind", function(FullCommand, Parameters)
     RegisterKeyBindAsync(keyEnum, {}, function()
         ExecuteInGameThread(function()
             local binding = customBindings[keyName]
-            if binding and CommandHandlers[binding.command] and not Coop.Refuse("." .. binding.command) then
+            if binding and CommandHandlers[binding.command] and (binding.command == "ghost" or not Coop.Refuse("." .. binding.command)) then
                 CommandHandlers[binding.command](binding.arg)
             end
         end)
@@ -7244,14 +7244,7 @@ end
 
 -- Noclip (same as ghost but different name)
 RegisterConsoleCommandHandler(".noclip", function(FullCommand, Parameters)
-    isFlying = not isFlying
-    ExecuteInGameThread(function()
-        if SetGhostMode(isFlying) then
-            Log("NOCLIP: " .. (isFlying and "ON" or "OFF"))
-        else
-            isFlying = not isFlying
-        end
-    end)
+    _G.ToggleGhostMode()
     return true
 end)
 
@@ -7368,14 +7361,28 @@ end)
 
 -- Global toggle so the menu FLY button hook (installed lexically earlier in
 -- the file) can reach it.
+-- Every way to ghost (.ghost, .noclip, the FLY button, keybinds) comes here.
+-- On or off goes by whether the character really flies (the game's own FLY
+-- button can start it without this mod knowing). In someone else's world it
+-- can't be turned on (the host's game moves your character), but it can
+-- always be turned off: 4.6.17 refused that too, and a player who got into
+-- fly there couldn't get out.
+local function GhostIsOn()
+    if isFlying then return true end
+    local mode = nil
+    pcall(function() mode = GetPlayerCharacter().CharacterMovement.MovementMode end)
+    return mode == 5   -- MOVE_Flying
+end
+
 _G.ToggleGhostMode = function()
-    if Coop.Refuse(".ghost") then return end
-    isFlying = not isFlying
     ExecuteInGameThread(function()
-        if SetGhostMode(isFlying) then
-            Log("GHOST MODE: " .. (isFlying and "ON" or "OFF"))
+        local on = not GhostIsOn()
+        if on and Coop.Refuse(".ghost") then return end
+        isFlying = on
+        if SetGhostMode(on) then
+            Log("GHOST MODE: " .. (on and "ON" or "OFF"))
         else
-            isFlying = not isFlying
+            isFlying = not on
         end
     end)
 end
@@ -8244,7 +8251,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.17 Loaded!")
+Log("  MISERY Mod Menu v4.6.18 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")
@@ -8394,14 +8401,7 @@ CommandHandlers["god"] = function()
 end
 
 CommandHandlers["ghost"] = function()
-    isFlying = not isFlying
-    ExecuteInGameThread(function()
-        if SetGhostMode(isFlying) then
-            Log("GHOST MODE: " .. (isFlying and "ON" or "OFF"))
-        else
-            isFlying = not isFlying
-        end
-    end)
+    _G.ToggleGhostMode()
 end
 
 CommandHandlers["walk"] = function()

@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.14 (2026-10-17)
+
+- A mod's page jumped down to its first button, so on a long page the commands listed above it were out of view. With the first row selected the page now stays at the top; moving down scrolls as before
+
 ## 1.4.13 (2026-10-14)
 
 - Lists the experimental YouTube TV mod and its `.tv` commands
