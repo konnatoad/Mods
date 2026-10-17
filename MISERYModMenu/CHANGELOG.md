@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.22
+
+- `.movecheck watch` also logs the movement keys held (W/A/S/D) and the way you move compared with the way you face. The look angle turned out not to matter (250 at -20 and at -77); in the last run the game stayed in Combat Jogging (state 6) with the sprint key held. Many games only allow sprinting straight ahead, which this shows
+
+---
+
 ## Version 4.6.21
 
 - `.movecheck watch` also logs where you look up/down (the controller's and the camera's pitch) and how strong the movement input is. The slow sprint moved at exactly 0.707 of normal (424 instead of 600, jogging 176 instead of 250): moving along a view tilted 45 degrees keeps exactly that much, so this shows whether the slow moments are a tilted view
