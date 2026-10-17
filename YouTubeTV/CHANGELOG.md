@@ -2,6 +2,10 @@
 
 ---
 
+## 0.5.12 (2026-10-17)
+
+- 0.5.11 broke turning a TV off (an error instead of off)
+
 ## 0.5.11 (2026-10-17)
 
 - The screen's light is like a real TV's: dimmer (60 cd at its brightest, reaching 4 m) and changing with the picture - a new scene every few seconds, brighter or darker and a bit warmer or cooler, with a slight flicker in between. `lightFlicker = false` in config.lua for a steady light

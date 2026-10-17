@@ -34,7 +34,7 @@
 -- of the file (nothing is streamed through the game), jumping to the host's
 -- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.5.11"
+local VERSION = "0.5.12"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -594,6 +594,7 @@ local plateWorks = nil
 local CheckPlate   -- (below OpenAt)
 local Broadcast    -- (co-op, below)
 local PlacePanel   -- (the screen, below)
+local LightOf      -- (its light, below)
 
 -- Opens a downloaded video on a TV (entry = tv: its media component, player
 -- and whether it's a Media Plate) at seconds in. Returns the point it starts
@@ -1021,7 +1022,7 @@ end
 -- An entry's light, looked up by its name (a hash lookup): a light deleted
 -- with its world is never touched, only not found (touching a deleted object
 -- crashes UE4SS)
-local function LightOf(entry)
+LightOf = function(entry)
     if not (entry and entry.lightPath) then return nil end
     local light = nil
     pcall(function() light = StaticFindObject(entry.lightPath) end)
