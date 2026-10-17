@@ -12,4 +12,8 @@ return {
     -- Items keep the way they're turned; when the container is too full to
     -- sort them like that, tall items are turned flat to fit. false: never turn
     rotate = true,
+
+    -- Shift+click on a stack in your inventory with a container open: when the
+    -- game doesn't move it (its own bug), the mod moves the whole stack
+    quickMoveFix = true,
 }

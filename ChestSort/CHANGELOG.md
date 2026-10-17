@@ -2,6 +2,10 @@
 
 ---
 
+## 1.5.0 (2026-10-18)
+
+- Quick move fix: Shift+click on a stack in your inventory with a container open (like 100 wood into the workbench) did nothing - the game's own bug, host or not. When the game doesn't move it, the mod moves the whole stack into the first free place in the container half a second later, with the game's own move (the same as dragging it there), so it works in co-op too. `quickMoveFix = false` in config.lua turns it off
+
 ## 1.4.2 (2026-10-17)
 
 - `.sort repair` works for a joined player too. In co-op each player's game keeps its own copy of an open container's cells (the host's game sends them), so the broken cells may be only in the joined player's copy, or in the host's too. A joined player's `.sort repair` now frees them in its own copy and asks the host's Chest Sort (1.4.2) to free them in the host's and send the container again; the host's answer shows in the console. The log says whether each change stuck

@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.18 (2026-10-18)
+
+- Chest Sort's page mentions its Shift+click fix
+
 ## 1.4.17 (2026-10-17)
 
 - Chest Sort's page lists `.sort repair`

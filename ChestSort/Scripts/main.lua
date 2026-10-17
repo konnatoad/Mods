@@ -18,10 +18,14 @@
 --   .sort repair         cells marked as taken by an item that isn't there
 --                        become free again (the host's game: run it as the host)
 ------------------------------------------------------------
-local VERSION = "1.4.2"
+local VERSION = "1.5.0"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
+
+-- Hooks on the game's Blueprint functions are undone when the mod is
+-- restarted (Mod Hub), so they can't run into the old copy: shared/GameHooks
+local RegisterHook = require("GameHooks").ForMod("ChestSort")
 
 local function UserConfig()
     local path = MOD_DIR .. "config.lua"
@@ -39,6 +43,10 @@ local MOVE_MS = math.max(60, tonumber(cfg.moveDelayMs) or 120)   -- between move
 -- Items are turned to lie flat (wider than tall) so they line up in even
 -- rows; false: every item keeps the way it's turned now
 local ROTATE = cfg.rotate ~= false
+-- Shift+click (quick move) of a stack from your inventory into the open
+-- container: when the game doesn't move it (its own bug with stacks), the
+-- mod moves the whole stack itself. false: off
+local QUICK_MOVE_FIX = cfg.quickMoveFix ~= false
 
 -- The game's struct fields (Blueprint names carry their GUIDs)
 local F = {
@@ -883,6 +891,106 @@ local function Check()
     end
     if not order then log("  sorted it doesn't pack - S sorts the smaller items around the biggest") end
 end
+
+------------------------------------------------------------
+-- Quick move fix: Shift+click on a stack in your inventory
+------------------------------------------------------------
+-- The game's quick move does nothing for many stacks (100 wood into the
+-- workbench; its own bug, host or not). The click is seen on the item's
+-- icon; half a second later, if the stack is still where it was, the mod
+-- moves the whole stack into the first free place in the open container
+-- with the game's own move (the same as dragging it there).
+local ICON_CLASS = "/Game/SurvivalGameKitV2/Blueprints/Widgets/BP_InventoryItemIcon.BP_InventoryItemIcon_C"
+local quick = { hooked = false }
+
+local function KeyDown(pc, name)
+    local down = false
+    pcall(function() down = pc:IsInputKeyDown({ KeyName = FName(name) }) end)
+    return down == true
+end
+
+local function QuickMoveCheck(player, src, dst, root, id, amount)
+    if not (Valid(player) and Valid(src) and Valid(dst)) then return end
+    local sg = ReadGrid(src)
+    if not sg then return end
+    local it = sg.owner[root]
+    -- moved (or changed) by the game: nothing to do
+    if not it or it.root ~= root or it.id ~= id or it.amount ~= amount then return end
+    local dg, why = ReadGrid(dst)
+    if not dg then log("Quick move: can't read the container (" .. tostring(why) .. ")") return end
+    local taken = {}
+    for i in pairs(dg.owner) do taken[i] = true end
+    local shapes = { { it.cw, it.ch, it.rotated } }
+    if ROTATE and it.cw ~= it.ch then table.insert(shapes, { it.ch, it.cw, not it.rotated }) end
+    for _, shape in ipairs(shapes) do
+        for idx = 0, dg.cells - 1 do
+            if Fits(dg, idx, shape[1], shape[2], taken) then
+                local ok, err = pcall(function()
+                    player:ServerMoveItem({ [F.slotInv] = src, [F.slotIndex] = root },
+                        { [F.slotInv] = dst, [F.slotIndex] = idx }, shape[3], false, 0)
+                end)
+                log(string.format("Quick move: the game didn't move %s x%s - %s", id, tostring(amount),
+                    ok and ("moved it to cell " .. idx) or ("moving failed: " .. tostring(err))))
+                return
+            end
+        end
+    end
+    log("Quick move: no free room for " .. id .. " in the container")
+end
+
+local function OnIconClicked(selfParam)
+    if not QUICK_MOVE_FIX or sorting then return end
+    local icon = nil
+    pcall(function() icon = selfParam:get() end)
+    if not Valid(icon) then return end
+    local pc = LocalController()
+    if not pc then return end
+    if not (KeyDown(pc, "LeftShift") or KeyDown(pc, "RightShift")) then return end
+    if not KeyDown(pc, "LeftMouseButton") then return end
+    local player, dst = OpenContainer()
+    if not (player and dst) then return end
+    local src, idx = nil, nil
+    -- (an output parameter: UE4SS fills the table passed for it)
+    pcall(function()
+        local out = {}
+        local r = icon:GetInventory(out)
+        src = Valid(r) and r or out.Inventory
+    end)
+    pcall(function() idx = icon.ItemIndex end)
+    if not Valid(src) or type(idx) ~= "number" then return end
+    -- only from your side into the open container (the other way works)
+    local same = false
+    pcall(function() same = src:GetAddress() == dst:GetAddress() end)
+    if same then return end
+    local sg = ReadGrid(src)
+    local it = sg and sg.owner[idx]
+    if not it then return end
+    local root, id, amount = it.root, it.id, it.amount
+    local checked = false
+    LoopAsync(500, function()
+        if checked then return true end
+        checked = true
+        ExecuteInGameThread(function() pcall(QuickMoveCheck, player, src, dst, root, id, amount) end)
+        return true
+    end)
+end
+
+local function HookIcons()
+    if quick.hooked or not QUICK_MOVE_FIX then return quick.hooked end
+    local fn = nil
+    pcall(function() fn = StaticFindObject(ICON_CLASS .. ":OnMouseButtonDown") end)
+    if not Valid(fn) then return false end
+    quick.hooked = pcall(RegisterHook, ICON_CLASS .. ":OnMouseButtonDown", OnIconClicked)
+    if quick.hooked then log("Quick move fix on (Shift+click stacks into a container)") end
+    return quick.hooked
+end
+-- the icon's Blueprint loads with the inventory screen: looked for until then
+ExecuteInGameThread(function() pcall(HookIcons) end)
+LoopAsync(3000, function()
+    if quick.hooked or not QUICK_MOVE_FIX then return true end
+    ExecuteInGameThread(function() pcall(HookIcons) end)
+    return false
+end)
 
 ------------------------------------------------------------
 -- Keys and commands
