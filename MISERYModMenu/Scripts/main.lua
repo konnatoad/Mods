@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.16 (patched for current game version)
+    MISERY Mod Menu v4.6.17 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -1272,7 +1272,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.16 ===")
+    Log("=== MISERY Mod Menu v4.6.17 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -6025,31 +6025,47 @@ RegisterConsoleCommandHandler(".invcheck", function(FullCommand, Parameters)
             useCount = "UseItemCountLimit_38_585327964096457C6B3EF697DA170C6F",
             countLimit = "ItemCountLimit_42_1BB0344A44E3DB354AC3DB9A4917C186",
         }
+        -- the containers of what you're using now (the game keeps it as the
+        -- inventory's InteractedActor: the workbench, a box...)
+        local function Describe(label, cInv)
+            local function get(f) local v = nil pcall(function() v = f() end) return tostring(v) end
+            local d = nil
+            pcall(function() d = cInv.InventoryDetails end)
+            Log(string.format("[invcheck] %s: items %s, weight %s; cells %s, weight limit %s (%s), "
+                .. "count limit %s (%s), restriction type %s (%s items), container type %s",
+                label, get(function() return cInv.ItemCount end), get(function() return cInv.CurrentWeight end),
+                get(function() return d[D.cells] end), get(function() return d[D.useWeight] end),
+                get(function() return d[D.maxWeight] end), get(function() return d[D.useCount] end),
+                get(function() return d[D.countLimit] end), get(function() return d[D.restriction] end),
+                get(function() return d[D.restrictionItems]:GetArrayNum() end), get(function() return d[D.type] end)))
+        end
+        local actor = nil
+        pcall(function() actor = inv.InteractedActor end)
         local shown = 0
-        pcall(function()
-            for _, w in ipairs(FindAllOf("BP_ContainerWindow_C") or {}) do
-                local visible = false
-                pcall(function() visible = w:IsVisible() end)
-                local cInv = nil
-                pcall(function() cInv = w.InventoryComponent end)
-                if visible and cInv and cInv:IsValid() then
+        if actor and actor:IsValid() then
+            local name = "?"
+            pcall(function() name = actor:GetFName():ToString() end)
+            local cls = StaticFindObject("/Game/SurvivalGameKitV2/Components/BP_MasterInventory.BP_MasterInventory_C")
+            local function Each(comp)
+                pcall(function() if type(comp) ~= "table" and comp.get then comp = comp:get() end end)
+                if comp and comp:IsValid() then
                     shown = shown + 1
-                    local function get(f) local v = nil pcall(function() v = f() end) return tostring(v) end
-                    local d = nil
-                    pcall(function() d = cInv.InventoryDetails end)
-                    local owner = get(function() return cInv:GetOwner():GetFName():ToString() end)
-                    local restricted = get(function() return d[D.restrictionItems]:GetArrayNum() end)
-                    Log(string.format("[invcheck] open container %s: items %s, weight %s; cells %s, weight limit %s (%s), "
-                        .. "count limit %s (%s), restriction type %s (%s items), container type %s",
-                        owner, get(function() return cInv.ItemCount end), get(function() return cInv.CurrentWeight end),
-                        get(function() return d[D.cells] end), get(function() return d[D.useWeight] end),
-                        get(function() return d[D.maxWeight] end), get(function() return d[D.useCount] end),
-                        get(function() return d[D.countLimit] end), get(function() return d[D.restriction] end),
-                        restricted, get(function() return d[D.type] end)))
+                    local cname = "?"
+                    pcall(function() cname = comp:GetFName():ToString() end)
+                    Describe(name .. " / " .. cname, comp)
                 end
             end
-        end)
-        if shown == 0 then Log("[invcheck] No container open - open the workbench (or the box) and run .invcheck again") end
+            local list = nil
+            pcall(function() list = actor:K2_GetComponentsByClass(cls) end)
+            if type(list) == "table" then
+                for _, c in pairs(list) do pcall(Each, c) end
+            elseif list then
+                pcall(function() list:ForEach(function(_, e) pcall(Each, e:get()) end) end)
+            end
+            if shown == 0 then Log("[invcheck] " .. name .. " has no container of its own") end
+        else
+            Log("[invcheck] Not using anything - open the workbench (or the box) and run .invcheck again")
+        end
         if fix then
             local ok = pcall(function() inv.IsSplitKeyDown = false end)
             local after = nil
@@ -8228,7 +8244,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.16 Loaded!")
+Log("  MISERY Mod Menu v4.6.17 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")

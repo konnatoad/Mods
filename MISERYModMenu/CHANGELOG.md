@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.17
+
+- `.invcheck` found no open container in 4.6.16 (it looked for a visible container window). It now reads what you're using straight from the game (the workbench, a box...) and lists each of its containers' rules
+
+---
+
 ## Version 4.6.16
 
 - `.invcheck` also lists the open containers' own rules: items and weight in them, cells, weight limit, item count limit, restriction type and restricted items. For finding out why Shift+click moves nothing into a workbench or box and a drag moves only part of a stack
