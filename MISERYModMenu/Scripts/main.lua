@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.14 (patched for current game version)
+    MISERY Mod Menu v4.6.15 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -1272,7 +1272,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.14 ===")
+    Log("=== MISERY Mod Menu v4.6.15 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -5994,6 +5994,36 @@ RegisterConsoleCommandHandler(".loadclass", function(FullCommand, Parameters)
 end)
 
 -- Toggle verbose FS_InvItem dump in the AttemptToAddItem hook
+-- .invcheck [fix]: what the game thinks about the inventory's modifier keys.
+-- For the bug where a dragged stack splits in half and Shift+click quick
+-- move does nothing: the inventory's IsSplitKeyDown may stay on after a
+-- missed key release. "fix" turns it off.
+RegisterConsoleCommandHandler(".invcheck", function(FullCommand, Parameters)
+    local fix = string.lower(tostring((Parameters and Parameters[1]) or "")) == "fix"
+    ExecuteInGameThread(function()
+        local inv, pc = GetInventory(), GetPlayerController()
+        if not inv then Log("[invcheck] No inventory found - load into a world first") return end
+        local split = nil
+        pcall(function() split = inv.IsSplitKeyDown end)
+        local held = {}
+        for _, key in ipairs({ "LeftShift", "RightShift", "LeftControl", "LeftAlt" }) do
+            local down = nil
+            pcall(function() down = pc:IsInputKeyDown({ KeyName = FName(key) }) end)
+            table.insert(held, key .. "=" .. tostring(down))
+        end
+        Log("[invcheck] IsSplitKeyDown=" .. tostring(split) .. "  keys held now: " .. table.concat(held, " "))
+        if fix then
+            local ok = pcall(function() inv.IsSplitKeyDown = false end)
+            local after = nil
+            pcall(function() after = inv.IsSplitKeyDown end)
+            Log("[invcheck] fix: IsSplitKeyDown set to false (" .. (ok and "ok" or "failed") .. "), now " .. tostring(after))
+        elseif split == true then
+            Log("[invcheck] The game thinks the split key is held. .invcheck fix turns it off - then try dragging again")
+        end
+    end)
+    return true
+end)
+
 RegisterConsoleCommandHandler(".dumpinv", function(FullCommand, Parameters)
     local arg = string.lower(Parameters[1] or "")
     if arg == "on" or arg == "1" or arg == "true" then
@@ -8160,7 +8190,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.14 Loaded!")
+Log("  MISERY Mod Menu v4.6.15 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")
