@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.16 (2026-10-17)
+
+- Lists the new Chest Sort mod
+
 ## 1.4.15 (2026-10-17)
 
 - Lists the new Sound Fixes mod

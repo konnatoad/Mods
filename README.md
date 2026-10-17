@@ -67,6 +67,7 @@ Every mod has a `CHANGELOG.md`; in game, `.mods` → pick a mod → **Changelog*
 | **WhistleRange** *(new)* | Joined players get whistles (and see the other players) from as far away as the host does | Only the host needs it |
 | **ViewDebug** *(new, testing)* | `.view hud`: your view's angles on screen, live; `.view buffer`: keeps the last 25 s of your view's angles, `.view dump` saves them, `.view read` shows where your aim got stuck to find why the weapon gets stuck at an angle after slow mouse moves. Changes nothing | Only reads your own view |
 | **NotSoShaky** | Softer camera shake when you're hit | Only your view |
+| **ChestSort** *(new)* | With a container open, S sorts it: the smallest items first (1-slot items in the top rows, then 2-slot, 3-slot...), the same kind together | Works in someone else's world: the host's game does each move |
 | **SoundFixes** *(new)* | Game sounds heard where they shouldn't be: a microwave a joined player turns on is no longer heard by the host everywhere | Each player's copy fixes what they hear; the host needs it |
 | **MISERY_StructuralFreedom** | Relaxed building support rules; normal placement rules still apply | Everyone needs it |
 
@@ -101,6 +102,7 @@ changes nothing in the host's world.
 | RandomEmissions | The host's game picks the emission times; your siren plays when the host's does |
 | StackThemAll, MISERY_StructuralFreedom | Everyone needs them, with the same settings |
 | WhistleRange | The host's copy widens how far players' characters (and their whistles) are sent; yours does nothing in someone else's world |
+| ChestSort | Sorts the host's containers too: each move is the game's own "move item", done by the host's game (the host doesn't need the mod) |
 | SoundFixes | Fixes what you hear: the host needs it so a joined player's microwave isn't heard everywhere |
 | ModHub, HeadBob, ReticleSize, SurvivalStats, NotSoShaky, ViewDebug | Only change your own game |
 
@@ -131,6 +133,7 @@ By hand: copy the mod's `config.example.lua` to `config.lua` and change it; a li
 | MISERYModMenu | `allowJoined = true` (hosting: give items and stats to players who ask), `newLook = true` (false: the game's colours), `newLayout = true` (false: the game's layout) |
 | WhistleRange | `rangeMeters = 0` (how far players' characters reach joined players; 0 = no limit, Unreal's own is 150) |
 | ViewDebug | `hudMs = 100` (how often `.view hud` updates), `sampleMs = 16` (how often `.view rec` reads the angles), `maxSeconds = 60` (a recording stops by itself), `bufferSeconds = 25` (how much `.view buffer` keeps), `markKey = ""` (a hotkey that saves the buffer, like `"F12"`; off by default) |
+| ChestSort | `key = "S"` (sorts the open container), `moveDelayMs = 120` (time between moves) |
 | StackThemAll | stack size per category: `Ammo_StackSize = 1000`, and 100 for Food, Drink, Consumable, Resource, Plant, Object, BuildPart and Artifact; `onlyStacksChanges = false`; `aphapeticallySorted = true` |
 
 StackThemAll's per-item values (e.g. `Resource_Rubles = 250`) are in `StackThemAll\scripts\stackConfig.lua`.
@@ -144,6 +147,7 @@ Press `~` in game to open the console. `.mods` shows every mod's commands too.
 | Command | Effect |
 |---|---|
 | `.mods` | Mod Hub (or PageUp): the loaded mods, their keys, commands and changelogs; opens their menus |
+| `.sort` | Sorts the open container (or S with the inventory screen open); `.sort stop` stops it, `.sort check` shows what it would do |
 | `.reloadmods` | Restarts the mods whose `main.lua` changed since they loaded (or `.reloadmods <Name>` for one mod) |
 | `.radshield [on\|off]` | Radiation Shield on / off (same as HOME) |
 | `.radshield 75` | 75% less radiation, and switches it on (saved) |
