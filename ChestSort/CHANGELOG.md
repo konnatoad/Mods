@@ -2,6 +2,10 @@
 
 ---
 
+## 1.5.1 (2026-10-18)
+
+- The Shift+click fix never ran: with the inventory screen open the player's input doesn't see keys, so Shift never counted as held. It now uses the game's own quick-move key flag. The first few clicks log why one was skipped, if it was
+
 ## 1.5.0 (2026-10-18)
 
 - Quick move fix: Shift+click on a stack in your inventory with a container open (like 100 wood into the workbench) did nothing - the game's own bug, host or not. When the game doesn't move it, the mod moves the whole stack into the first free place in the container half a second later, with the game's own move (the same as dragging it there), so it works in co-op too. `quickMoveFix = false` in config.lua turns it off

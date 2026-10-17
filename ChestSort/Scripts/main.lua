@@ -18,7 +18,7 @@
 --   .sort repair         cells marked as taken by an item that isn't there
 --                        become free again (the host's game: run it as the host)
 ------------------------------------------------------------
-local VERSION = "1.5.0"
+local VERSION = "1.5.1"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -945,10 +945,19 @@ local function OnIconClicked(selfParam)
     if not Valid(icon) then return end
     local pc = LocalController()
     if not pc then return end
-    if not (KeyDown(pc, "LeftShift") or KeyDown(pc, "RightShift")) then return end
-    if not KeyDown(pc, "LeftMouseButton") then return end
-    local player, dst = OpenContainer()
-    if not (player and dst) then return end
+    -- the quick move key (Shift): the game's own flag. With the inventory
+    -- screen open the player's input doesn't see keys (1.5.0 asked it, so the
+    -- fix never ran)
+    local player, dst, why = OpenContainer()
+    local held = false
+    pcall(function() held = player.QuickMoveKeyDown == true end)
+    if not held then held = KeyDown(pc, "LeftShift") or KeyDown(pc, "RightShift") end
+    quick.clicks = (quick.clicks or 0) + 1
+    local function skip(reason)
+        if quick.clicks <= 5 then log("Quick move: click " .. quick.clicks .. " skipped: " .. reason) end
+    end
+    if not held then return skip("Shift isn't held") end
+    if not (player and dst) then return skip(tostring(why)) end
     local src, idx = nil, nil
     -- (an output parameter: UE4SS fills the table passed for it)
     pcall(function()
@@ -957,14 +966,15 @@ local function OnIconClicked(selfParam)
         src = Valid(r) and r or out.Inventory
     end)
     pcall(function() idx = icon.ItemIndex end)
-    if not Valid(src) or type(idx) ~= "number" then return end
+    if not Valid(src) or type(idx) ~= "number" then return skip("couldn't tell which item (" .. tostring(idx) .. ")") end
     -- only from your side into the open container (the other way works)
     local same = false
     pcall(function() same = src:GetAddress() == dst:GetAddress() end)
     if same then return end
-    local sg = ReadGrid(src)
+    local sg, bad = ReadGrid(src)
     local it = sg and sg.owner[idx]
-    if not it then return end
+    if not it then return skip("no item at cell " .. idx .. " of " .. NameOf(src) .. (bad and (" (" .. bad .. ")") or "")) end
+    if quick.clicks <= 5 then log("Quick move: watching " .. it.id .. " x" .. tostring(it.amount)) end
     local root, id, amount = it.root, it.id, it.amount
     local checked = false
     LoopAsync(500, function()
