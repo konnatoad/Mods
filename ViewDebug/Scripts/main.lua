@@ -25,6 +25,8 @@
 --   .view stop            stop recording / the buffer
 --   .view mark [note]     mark this moment (markKey in config.lua adds a hotkey)
 --   .view watch           print the main angles to the log 4 times a second
+--   .view limits          the camera's angle limits now (yaw / pitch min and
+--                         max); the buffer records them and logs each change
 --
 -- Settings: config.lua (see config.example.lua).
 -- Only reads while recording, buffering, showing or watching, every frame
@@ -34,7 +36,7 @@
 -- restarted (Mod Hub), so they can't run into the old copy: shared/GameHooks
 local RegisterHook = require("GameHooks").ForMod("ViewDebug")
 
-local VERSION = "0.6.4"
+local VERSION = "0.6.5"
 local MOD_DIR = "./ue4ss/Mods/ViewDebug/"
 
 local function log(msg)
@@ -223,6 +225,20 @@ local function Fmt(n)
     return string.format("%.4f", n)
 end
 
+-- The camera's angle limits: the camera keeps your view's yaw and pitch
+-- between these. The yaw sometimes stuck at exactly 359 / 0 (14 Oct buffer)
+-- though it normally passes 359.5: something may narrow them now and then.
+local LIMITS = { "ViewYawMin", "ViewYawMax", "ViewPitchMin", "ViewPitchMax" }
+local function LimitsText(pcm)
+    local v = {}
+    for _, f in ipairs(LIMITS) do
+        local n = nil
+        pcall(function() n = pcm[f] end)
+        v[f] = type(n) == "number" and string.format("%.3f", n) or "?"
+    end
+    return string.format("yaw %s .. %s, pitch %s .. %s", v.ViewYawMin, v.ViewYawMax, v.ViewPitchMin, v.ViewPitchMax)
+end
+
 local traced = false
 local function Build(pc)
     -- The first look-up logs each step: if the game crashes, the last line says where
@@ -276,6 +292,9 @@ local function Build(pc)
         add("cam.Y", function() return pcm.CameraCachePrivate.POV.Rotation.Yaw end, pcm)
         add("cam.R", function() return pcm.CameraCachePrivate.POV.Rotation.Roll end, pcm)
         add("cam.FOV", function() return pcm.CameraCachePrivate.POV.FOV end, pcm)
+        for _, f in ipairs(LIMITS) do
+            add("lim." .. f:gsub("^View", ""), function() return pcm[f] end, pcm)
+        end
     end
 
     -- Every part's angle and position relative to what it hangs on: your
@@ -720,6 +739,14 @@ local function Sample()
     local v = {}
     for i, col in ipairs(r.set.cols) do v[i] = Read(col) end
     local row = { t = now - r.start, set = r.set, v = v }
+    -- the camera's limits: one log line each time they change
+    if Valid(r.set.pcm) then
+        local limits = LimitsText(r.set.pcm)
+        if limits ~= r.lastLimits then
+            log(string.format("Camera limits %s at %.2f s: %s", r.lastLimits and "changed" or "are", row.t, limits))
+            r.lastLimits = limits
+        end
+    end
     -- columns 1-2 are ctrl.P / ctrl.Y in every look-up
     if r.lastV then
         row.dPitch = (v[1] and r.lastV[1]) and Wrap(v[1] - r.lastV[1]) or nil
@@ -1382,8 +1409,13 @@ RegisterConsoleCommandHandler(".view", function(FullCommand, Parameters)
             if rec then Finish("stopped") else log("Not recording") end
         elseif a == "watch" then Watch()
         elseif a == "hud" or a == "show" then HudToggle()
+        elseif a == "limits" or a == "limit" then
+            local pc, pcm = LocalController(), nil
+            pcall(function() pcm = pc.PlayerCameraManager end)
+            if Valid(pcm) then log("Camera limits now: " .. LimitsText(pcm))
+            else log("No camera - load into a world first") end
         else
-            log(".view | .view hud | .view buffer [seconds] | .view dump | .view dumps | .view read [n] | .view raw [s] | .view next / prev | .view close | .view rec [seconds] | .view stop | .view mark [note] | .view watch | .view scan")
+            log(".view | .view hud | .view buffer [seconds] | .view dump | .view dumps | .view read [n] | .view raw [s] | .view next / prev | .view close | .view rec [seconds] | .view stop | .view mark [note] | .view watch | .view limits | .view scan")
         end
     end)
     return true

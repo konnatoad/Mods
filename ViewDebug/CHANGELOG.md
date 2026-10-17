@@ -2,6 +2,10 @@
 
 ---
 
+## 0.6.5 (2026-10-17)
+
+- The camera's angle limits (yaw and pitch, min and max): `.view limits` shows them now, the buffer and recordings keep them as columns (`lim.YawMin` ...), and while the buffer is on the log gets a line each time they change, with the time. The view sometimes sticks at exactly 359 / 0 yaw though it normally passes 359.5: this shows whether something narrows the limits when it happens
+
 ## 0.6.4 (2026-10-14)
 
 - Restarting this mod from the Mod Hub ("Restart changed mods") could crash the game: UE4SS removes a restarted mod's hooks on engine functions, but its hooks on the game's own functions stayed, still pointing into the old copy of the mod, and the next time the game ran one UE4SS crashed. They're now written down (`hooks.txt` in the mod's folder) and removed when the mod loads again in the same game session (shared `GameHooks` module)
