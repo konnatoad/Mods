@@ -2,6 +2,10 @@
 
 ---
 
+## 0.5.14 (2026-10-17)
+
+- The light's flicker is off by default (a steady light): it still cost FPS and added little. `lightFlicker = true` in config.lua brings it back
+
 ## 0.5.13 (2026-10-17)
 
 - The screen's light cost a lot of FPS: it was a rectangle light, the most expensive kind. Now it's a spot light with everything costly off from the start (shadows, bounce light, fog and see-through lighting, specular), its brightness changes 4 times a second instead of 8 and its colour only at a scene cut. `lightBrightness = 0` in config.lua turns it off completely

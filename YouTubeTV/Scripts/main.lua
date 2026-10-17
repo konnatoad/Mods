@@ -34,7 +34,7 @@
 -- of the file (nothing is streamed through the game), jumping to the host's
 -- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.5.13"
+local VERSION = "0.5.14"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -890,8 +890,8 @@ local LIGHT_CD = math.max(0, tonumber(cfg.lightBrightness) or 60)      -- candel
 local LIGHT_M = math.max(1, tonumber(cfg.lightDistance) or 4)          -- it reaches this far
 -- Like a real screen the light changes with the picture: a new scene every
 -- few seconds (brighter or darker, a bit warmer or cooler) and a slight
--- flicker in between. false: a steady light
-local FLICKER = cfg.lightFlicker ~= false
+-- flicker in between. Off unless lightFlicker = true: a steady light
+local FLICKER = cfg.lightFlicker == true   -- off by default: it cost FPS for little
 
 local function LoadObject(path)
     local obj = Find(path)

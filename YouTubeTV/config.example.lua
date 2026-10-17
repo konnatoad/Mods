@@ -45,8 +45,9 @@ return {
     glowScreen = true,
     lightBrightness = 60,
     lightDistance = 4,
-    -- the light changes with the picture like a real TV (scene cuts, flicker)
-    lightFlicker = true,
+    -- the light changes with the picture like a real TV (scene cuts,
+    -- flicker); costs FPS, so off by default
+    lightFlicker = false,
 
     -- TURN ON TV / TURN OFF TV in the game's E menu on a TV (false = off;
     -- .tv on / .tv off still work)
