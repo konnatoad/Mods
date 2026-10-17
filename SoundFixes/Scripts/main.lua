@@ -15,7 +15,7 @@
 -- Each player's copy fixes what that player hears: the host needs it for the
 -- host's ears.
 ------------------------------------------------------------
-local VERSION = "1.0.2"
+local VERSION = "1.1.0"
 
 local function log(msg)
     print("[SoundFixes] " .. tostring(msg) .. "\n")
@@ -27,6 +27,13 @@ local GameHook = require("GameHooks").ForMod("SoundFixes")
 
 local MICROWAVE = "/Game/SurvivalGameKitV2/Blueprints/BuildParts/Furniture/BP_MicrowavePower.BP_MicrowavePower_C"
 local FALLOFF = "/Game/SurvivalGameKitV2/Sounds/Attenuation/SA_MediumSmallSound.SA_MediumSmallSound"
+-- The microwave's door and start-cooking sounds: played at the microwave but
+-- with no falloff of their own, so heard at full volume everywhere (the
+-- host's .soundwatch, 17 Oct). They get the falloff on the sound itself.
+local NO_FALLOFF_SOUNDS = {
+    "/Game/Sounds/SFXrecorded/BuildParts/microwave/MicrowaveOpenSound_Cue.MicrowaveOpenSound_Cue",
+    "/Game/Sounds/SFXrecorded/BuildParts/microwave/MicrowaveStartCookSound_Cue.MicrowaveStartCookSound_Cue",
+}
 
 local function Valid(obj)
     if obj == nil then return false end
@@ -82,6 +89,36 @@ local function FixMicrowave(selfParam)
     LogOnce("fixed", "Microwave sound now comes from the microwave and fades with distance")
 end
 
+-- Gives each sound without a falloff the falloff, once it has loaded (a name
+-- look-up). Returns true when all of them are done
+local soundsFixed = {}
+local function FixSounds()
+    local falloff, all = nil, true
+    for _, path in ipairs(NO_FALLOFF_SOUNDS) do
+        if not soundsFixed[path] then
+            local sound = Find(path)
+            if not sound then
+                all = false
+            else
+                falloff = falloff or Falloff()
+                if not falloff then return false end
+                local had, override = nil, nil
+                pcall(function() had = sound.AttenuationSettings end)
+                pcall(function() override = sound.bOverrideAttenuation end)
+                if Valid(had) or override == true then
+                    log(path:match("%.([%w_]+)$") .. " already has a falloff - left alone")
+                elseif pcall(function() sound.AttenuationSettings = falloff end) then
+                    log(path:match("%.([%w_]+)$") .. " now fades with distance (it was heard everywhere)")
+                else
+                    log("Couldn't give " .. path:match("%.([%w_]+)$") .. " a falloff")
+                end
+                soundsFixed[path] = true
+            end
+        end
+    end
+    return all
+end
+
 -- The microwave's class only exists once a microwave has loaded (later than
 -- the world's start: 1.0.0 looked only then and never hooked). Looked for
 -- every 5 s until it's there - a name look-up, not a search.
@@ -102,10 +139,15 @@ pcall(function()
         ExecuteInGameThread(function() pcall(Hook) end)
     end)
 end)
-ExecuteInGameThread(function() pcall(Hook) end)
+local soundsDone = false
+ExecuteInGameThread(function() pcall(Hook) soundsDone = FixSounds() end)
 LoopAsync(5000, function()
-    if hooked or tried then return true end
-    ExecuteInGameThread(function() pcall(Hook) end)
+    if (hooked or tried) and soundsDone then return true end
+    ExecuteInGameThread(function()
+        pcall(Hook)
+        local ok, done = pcall(FixSounds)
+        soundsDone = ok and done
+    end)
     return false
 end)
 
