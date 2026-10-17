@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.24
+
+- `.movecheck save` (while moving is normal) and `.movecheck diff` (while the sprint is slow): saves every true/false and number the game's own Blueprints keep on your character, inventory and controller, then lists the ones that changed. The last `.movecheck watch` showed W only, straight ahead, and every speed at exactly 0.707 (1/sqrt 2) of normal, sprint 424 instead of 600: the game seems to count a second direction as held
+
+---
+
 ## Version 4.6.23
 
 - Stuck in fly after joining someone's world: the menu's FLY button runs the game's own fly, which doesn't make your character fly but swaps you into an admin camera. The mod only looked at the character, saw no flying, and refused ("doesn't work in someone else's world"). Now FLY / `.ghost` / `.noclip` in that camera take you back into your character: alone or hosting directly, joined by asking the host's Mod Menu (the host needs 4.6.23 too; always allowed, even with `allowJoined` off)

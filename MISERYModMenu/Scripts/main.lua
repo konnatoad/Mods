@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.23 (patched for current game version)
+    MISERY Mod Menu v4.6.24 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -1280,7 +1280,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.23 ===")
+    Log("=== MISERY Mod Menu v4.6.24 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -6135,8 +6135,73 @@ local function MoveWatchLine()
         heading and string.format("%.0f", heading) or "-"))
 end
 
+-- .movecheck save / .movecheck diff: every simple value (true/false and
+-- numbers) the game's own Blueprints keep on your character, inventory and
+-- controller, saved while moving is normal, then compared while it's slow.
+-- The slow sprint is exactly 1/sqrt(2) of every speed (17 Oct): something
+-- the game counts as a second direction held. Only those value types are read
+-- (reading every kind of property crashed before)
+moveWatch.SIMPLE = { BoolProperty = true, FloatProperty = true, DoubleProperty = true, IntProperty = true,
+                     ByteProperty = true, EnumProperty = true }
+function moveWatch.Values()
+    local out = {}
+    local inv, char = GetInventory(), GetPlayerCharacter()
+    local pc = nil
+    pcall(function() pc = char.Controller end)
+    for label, obj in pairs({ character = char, inventory = inv, controller = pc }) do
+        pcall(function()
+            local cls = obj:GetClass()
+            for _ = 1, 8 do
+                if not cls or not cls:IsValid() then break end
+                local path = ""
+                pcall(function() path = cls:GetFullName() end)
+                if path:find(" /Script/", 1, true) then break end   -- the engine's own classes: not the game's
+                cls:ForEachProperty(function(prop)
+                    local name, kind = "", ""
+                    pcall(function() name = prop:GetFName():ToString() end)
+                    pcall(function() kind = prop:GetClass():GetFName():ToString() end)
+                    if moveWatch.SIMPLE[kind] and not name:find("^Timeline") and not name:find("^UberGraph") then
+                        local v = nil
+                        pcall(function() v = obj[name] end)
+                        if type(v) == "number" or type(v) == "boolean" then out[label .. "." .. name] = v end
+                    end
+                end)
+                local super = nil
+                pcall(function() super = cls:GetSuperStruct() end)
+                cls = super
+            end
+        end)
+    end
+    return out
+end
+
 RegisterConsoleCommandHandler(".movecheck", function(FullCommand, Parameters)
-    if string.lower(tostring((Parameters and Parameters[1]) or "")) == "watch" then
+    local sub = string.lower(tostring((Parameters and Parameters[1]) or ""))
+    if sub == "save" or sub == "diff" then
+        ExecuteInGameThread(function()
+            local now = moveWatch.Values()
+            local n = 0
+            for _ in pairs(now) do n = n + 1 end
+            if sub == "save" then
+                moveWatch.saved = now
+                Log("[movecheck] Saved " .. n .. " values. When the sprint is slow: .movecheck diff")
+                return
+            end
+            if not moveWatch.saved then Log("[movecheck] .movecheck save first (while moving is normal)") return end
+            local names = {}
+            for k, v in pairs(now) do if moveWatch.saved[k] ~= v then table.insert(names, k) end end
+            table.sort(names)
+            Log("[movecheck] " .. #names .. " of " .. n .. " values differ from the saved ones:")
+            for _, k in ipairs(names) do
+                local a, b = moveWatch.saved[k], now[k]
+                if type(a) == "number" then a = string.format("%.3f", a):gsub("%.?0+$", "") end
+                if type(b) == "number" then b = string.format("%.3f", b):gsub("%.?0+$", "") end
+                Log(string.format("[movecheck]   %s: %s -> %s", k, tostring(a), tostring(b)))
+            end
+        end)
+        return true
+    end
+    if sub == "watch" then
         moveWatch.untilClock = os.clock() + 30
         Log("[movewatch] Logging how you move twice a second for 30 s - sprint now, and keep going when it gets slow")
         if not moveWatch.running then
@@ -8419,7 +8484,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.23 Loaded!")
+Log("  MISERY Mod Menu v4.6.24 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")
