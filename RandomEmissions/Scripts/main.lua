@@ -51,6 +51,8 @@ do
     sirenVolume = number(user.sirenVolume, sirenVolume)
 end
 
+local function log(msg) print("[RandomEmissions] " .. tostring(msg) .. "\n") end
+
 local sirenThreshold = math.random(sirenMin, sirenMax)
 local sirenCue = nil
 local siren = nil
@@ -110,8 +112,23 @@ local function TellPlayers()
     end)
 end
 
-local function PlaySiren()
+-- Is this mod's siren still sounding?
+local function SirenSounding()
+    if not (siren and Valid(siren)) then return false end
+    local playing = false
+    pcall(function() playing = siren:IsPlaying() end)
+    return playing == true
+end
+
+local playingOwn = false   -- (our own SpawnSound2D call, so the watch below ignores it)
+local function PlaySiren(why)
     if not isSirenEnabled or isSirenPlaying then
+        return
+    end
+    -- never two of ours at once: two sirens on top of each other (17 Oct)
+    if SirenSounding() then
+        isSirenPlaying = true
+        log("Siren (" .. why .. "): one is already sounding - not starting another")
         return
     end
 
@@ -119,10 +136,32 @@ local function PlaySiren()
     local world = UEHelpers.GetWorld()
     local cue = GetSirenCue()
 
+    playingOwn = true
     pcall(function()
         siren = gs:SpawnSound2D(world, cue, sirenVolume, 1.0, 0.0, nil, false, false)
 		isSirenPlaying = true
     end)
+    playingOwn = false
+    log("Siren started (" .. why .. ")")
+end
+
+-- The game's own siren: if the game starts a siren itself while ours sounds,
+-- ours stops (two on top of each other otherwise). Only 2D sounds are looked
+-- at, and only their name
+local function OnGame2DSound(_, worldContext, sound)
+    if playingOwn then return end
+    local name = ""
+    pcall(function() name = sound:get():GetFName():ToString() end)
+    if not name:lower():find("siren", 1, true) then return end
+    if SirenSounding() then
+        pcall(function() siren:Stop() end)
+        log("The game itself started a siren (" .. name .. ") - this mod's stops so there's only one")
+    else
+        log("The game itself started a siren (" .. name .. ")")
+    end
+end
+for _, fn in ipairs({ "SpawnSound2D", "PlaySound2D" }) do
+    pcall(RegisterHook, "/Script/Engine.GameplayStatics:" .. fn, OnGame2DSound)
 end
 
 -- Every CHECK_EVERY_MS (it used to run Lua on every frame)
@@ -131,7 +170,7 @@ local function OnTick()
 	if not gm then return end
 	if gm.TimeUntilEmmision > 1.0 and gm.TimeUntilEmmision < sirenThreshold and not isSirenPlaying
 	   and not Joined() then
-		PlaySiren()
+		PlaySiren(string.format("%.0f s before the emission", gm.TimeUntilEmmision))
 		TellPlayers()
 	end
 end
@@ -158,7 +197,7 @@ local function OnClientMessage(selfParam, textParam)
 	end
 	if not text:find("#RE:siren", 1, true) or not Joined() then return end
 	isSirenPlaying = false   -- each warning from the host plays once
-	PlaySiren()
+	PlaySiren("the host's started")
 end
 pcall(RegisterHook, "/Script/Engine.PlayerController:ClientMessage", OnClientMessage)
 

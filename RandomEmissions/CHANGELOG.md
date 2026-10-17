@@ -2,6 +2,11 @@
 
 ---
 
+## 1.2.6 (2026-10-17)
+
+- Two sirens could sound on top of each other. This mod never starts a second siren while its own still sounds, and if the game itself starts a siren while this mod's sounds, this mod's stops
+- The log says each time a siren starts and why (the timer, so many seconds before the emission; or the host's), and when the game starts one itself - so the next emission shows where a second siren comes from
+
 ## 1.2.5 (2026-10-14)
 
 - Restarting this mod from the Mod Hub ("Restart changed mods") could crash the game: UE4SS removes a restarted mod's hooks on engine functions, but its hooks on the game's own functions stayed, still pointing into the old copy of the mod, and the next time the game ran one UE4SS crashed. They're now written down (`hooks.txt` in the mod's folder) and removed when the mod loads again in the same game session (shared `GameHooks` module)
