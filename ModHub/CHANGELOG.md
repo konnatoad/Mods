@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.17 (2026-10-17)
+
+- Chest Sort's page lists `.sort repair`
+
 ## 1.4.16 (2026-10-17)
 
 - Lists the new Chest Sort mod
