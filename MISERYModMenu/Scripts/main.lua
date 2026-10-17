@@ -1,5 +1,5 @@
 --[[
-    MISERY Mod Menu v4.6.20 (patched for current game version)
+    MISERY Mod Menu v4.6.21 (patched for current game version)
 
     Cheats auto-enable on game start!
 
@@ -1272,7 +1272,7 @@ RegisterConsoleCommandHandler(".invfuncs", function(FullCommand, Parameters)
 end)
 
 SafeRegisterCommand(".help", function(FullCommand, Parameters)
-    Log("=== MISERY Mod Menu v4.6.20 ===")
+    Log("=== MISERY Mod Menu v4.6.21 ===")
     Log("")
     Log("Cheats auto-enable on game start!")
     Log("")
@@ -6092,11 +6092,21 @@ local function MoveWatchLine()
     local cm = get(function() return char.CharacterMovement end)
     local speed = get(function() local v = char:GetVelocity() return math.sqrt(v.X * v.X + v.Y * v.Y) end)
     local mode = get(function() return cm.MovementMode end)
-    Log(string.format("[movewatch] state %s, sprint key %s, max speed %s, moving at %s, stamina %s, mode %s, crouched %s",
+    -- where you look up/down (the controller's and the camera's) and how long
+    -- the movement input is: moving along a tilted view keeps only cos(pitch)
+    -- of the speed (the slow sprint ran at exactly 0.707 of normal, 17 Oct)
+    local pc = get(function() return char.Controller end)
+    local function pitch(v) if type(v) ~= "number" then return "?" end if v > 180 then v = v - 360 end return string.format("%.0f", v) end
+    local ctrlPitch = get(function() return pc.ControlRotation.Pitch end)
+    local camPitch = get(function() return pc.PlayerCameraManager:GetCameraRotation().Pitch end)
+    local input = get(function() local v = cm:GetLastInputVector() return math.sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z) end)
+    Log(string.format("[movewatch] state %s, sprint key %s, max speed %s, moving at %s, stamina %s, mode %s, crouched %s, "
+        .. "look pitch ctrl %s cam %s, input %s",
         tostring(get(function() return inv.CurrentCharacterState end)), tostring(get(function() return inv.SprintKeyDown end)),
         tostring(get(function() return math.floor(cm.MaxWalkSpeed) end)), tostring(speed and math.floor(speed) or "?"),
         tostring(get(function() return math.floor(inv.CurrentStamina) end)), tostring(mode),
-        tostring(get(function() return char.bIsCrouched end))))
+        tostring(get(function() return char.bIsCrouched end)), pitch(ctrlPitch), pitch(camPitch),
+        input and string.format("%.2f", input) or "?"))
 end
 
 RegisterConsoleCommandHandler(".movecheck", function(FullCommand, Parameters)
@@ -8339,7 +8349,7 @@ end)
 
 -- Startup
 Log("================================")
-Log("  MISERY Mod Menu v4.6.20 Loaded!")
+Log("  MISERY Mod Menu v4.6.21 Loaded!")
 Log("================================")
 Log("Cheats auto-enable on game start")
 Log("")

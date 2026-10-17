@@ -2,6 +2,12 @@
 
 ---
 
+## Version 4.6.21
+
+- `.movecheck watch` also logs where you look up/down (the controller's and the camera's pitch) and how strong the movement input is. The slow sprint moved at exactly 0.707 of normal (424 instead of 600, jogging 176 instead of 250): moving along a view tilted 45 degrees keeps exactly that much, so this shows whether the slow moments are a tilted view
+
+---
+
 ## Version 4.6.20
 
 - `.movecheck watch`: logs how you move (state, sprint key, speed limit, real speed, stamina, crouched) twice a second for 30 s, so it catches the slow sprint while it happens. Typing `.movecheck` alone stops your character, so it only ever showed standing still
