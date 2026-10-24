@@ -2,6 +2,13 @@
 
 ---
 
+## 1.1.7 (2026-10-24)
+
+### Updated for MISERY's Anniversary Update
+- The update replaced the Mi-8 wreck with a new model, so the host's mod no longer found the wreck: the saved hold stayed a plain giant cabinet where the old wreck stood, and neither the host nor joined players could open it. The new model is recognised (the old one still is too)
+- Hosting: the saved hold is taken over wherever it is (the hold's size is its alone) and moved onto the wreck, with its items. Any other copy of the hold, also one left where the old wreck stood, is removed
+- The interaction box is sized from the wreck's own model (along the fuselage whichever way the model points, at most 18 x 5.6 x 5 m), not the old wreck's measurements
+
 ## 1.1.6 (2026-10-17)
 
 - Joining someone's game crashed, inside UE4SS while a mod searched the game's objects, a second after this mod's first search for the host's hold (the stack doesn't say which mod's search it was). Joining makes and removes thousands of objects, and walking them then can hit one that's half made. In someone else's world this mod now doesn't search for the first 15 s after joining, also not when cabinets appear

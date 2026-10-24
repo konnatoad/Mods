@@ -17,7 +17,9 @@ local RegisterHook = require("GameHooks").ForMod("Mi8CargoHold")
 local UEHelpers = require("UEHelpers")
 local CargoPersistence = require("CargoPersistence")
 
-local WRECK_MESH_NAME = "sm_mi8_broken_chopper"
+-- The wreck's mesh: the anniversary update (24 Oct 2026) replaced the old
+-- SM_Mi8_Broken_Chopper with a new model, SM_MI-8
+local WRECK_MESH_NAMES = { "/sm_mi-8.sm_mi-8", "sm_mi8_broken_chopper" }
 -- Last scanned wreck location, used only to explain a failed lookup.
 local WRECK_X, WRECK_Y, WRECK_Z = 20605.9, 29400.5, -42.0
 
@@ -34,8 +36,13 @@ local ENTRY_UPDATE_TEXT = WIDGETS .. "BP_InteractContextMenuEntry.BP_InteractCon
 local CONTAINER_WINDOW_CREATE = WIDGETS .. "BP_InventoryHUD.BP_InventoryHUD_C:CreateContainerWindow"
 local STORAGE_CAN_PICKUP = "/Game/SurvivalGameKitV2/Blueprints/BuildParts/BP_MasterStorageBuildPart.BP_MasterStorageBuildPart_C:CanPickup"
 
--- Half-extents (cm) of the invisible interaction box around the fuselage.
+-- Half-extents (cm) of the invisible interaction box around the fuselage,
+-- when the wreck's own size can't be read (the old wreck's size). Otherwise
+-- the box is the model's own box, kept to at most BOX_MAX_LONG along the
+-- fuselage, BOX_MAX_WIDE across and BOX_MAX_HIGH up (the rotor's sweep
+-- would make it a lid over everything nearby)
 local BOX_X, BOX_Y, BOX_Z = 700.0, 220.0, 180.0
+local BOX_MAX_LONG, BOX_MAX_WIDE, BOX_MAX_HIGH = 900.0, 280.0, 250.0
 -- Proxy actor scale; box extents are divided by it so the final volume
 -- matches the half-extents above.
 local CHOPPER_SCALE_X, CHOPPER_SCALE_Y, CHOPPER_SCALE_Z = 14.0, 5.5, 4.0
@@ -218,7 +225,11 @@ local function is_wreck_mesh(component)
         if not is_valid(component) then return false end
         local mesh = component.StaticMesh
         if not is_valid(mesh) then return false end
-        return string.lower(tostring(mesh:GetFullName())):find(WRECK_MESH_NAME, 1, true) ~= nil
+        local name = string.lower(tostring(mesh:GetFullName()))
+        for _, wanted in ipairs(WRECK_MESH_NAMES) do
+            if name:find(wanted, 1, true) then return true end
+        end
+        return false
     end)
     return ok and matched == true
 end
@@ -429,13 +440,46 @@ end
 -- Query-only box around the fuselage that the player's interaction trace can
 -- hit. It ignores every channel except Visibility and the game's interaction
 -- trace channel, so it never blocks movement.
-local function create_interaction_hitbox(proxy, math_lib)
+-- The box's size and middle (cm, in the wreck's own axes) from the wreck
+-- model's bounds; the old fixed box when they can't be read. The hold is
+-- snapped onto the wreck mesh, so the model's axes are the hold's axes
+local function wreck_box(wreck_component)
+    local box = { x = BOX_X, y = BOX_Y, z = BOX_Z, cx = 0.0, cy = 0.0, cz = 0.0 }
+    pcall(function()
+        local bounds = wreck_component.StaticMesh:GetBounds()
+        local scale = wreck_component:K2_GetComponentScale()
+        local o, e = bounds.Origin, bounds.BoxExtent
+        local x, y, z = math.abs(e.X * scale.X), math.abs(e.Y * scale.Y), math.abs(e.Z * scale.Z)
+        if x < 50 or y < 50 or z < 20 then return end
+        if x >= y then
+            x, y = math.min(x, BOX_MAX_LONG), math.min(y, BOX_MAX_WIDE)
+        else
+            x, y = math.min(x, BOX_MAX_WIDE), math.min(y, BOX_MAX_LONG)
+        end
+        z = math.min(z, BOX_MAX_HIGH)
+        box = { x = x, y = y, z = z, cx = o.X * scale.X, cy = o.Y * scale.Y,
+                -- up from the bottom of the model, not round the rotor's sweep
+                cz = (o.Z - e.Z) * scale.Z + z }
+    end)
+    return box
+end
+local last_box = { x = BOX_X, y = BOX_Y, z = BOX_Z }
+local function box_text() return string.format("%.0fx%.0fx%.0f cm", last_box.x, last_box.y, last_box.z) end
+
+local function create_interaction_hitbox(proxy, math_lib, wreck_component)
+    -- joined: the wreck is what the host's hold hangs on
+    if not is_valid(wreck_component) then
+        pcall(function() wreck_component = proxy:GetAttachParent() end)
+    end
+    local size = wreck_box(wreck_component)
+    last_box = size
     local ok_class, box_class = pcall(StaticFindObject, "/Script/Engine.BoxComponent")
     if not ok_class or not is_valid(box_class) then
         return nil, "BoxComponent class was unavailable"
     end
     local ok_add, box = pcall(function()
-        local relative = math_lib:MakeTransform(math_lib:MakeVector(0.0, 0.0, 0.0),
+        local relative = math_lib:MakeTransform(math_lib:MakeVector(size.cx / CHOPPER_SCALE_X,
+                size.cy / CHOPPER_SCALE_Y, size.cz / CHOPPER_SCALE_Z),
             math_lib:MakeRotator(0.0, 0.0, 0.0), math_lib:MakeVector(1.0, 1.0, 1.0))
         return proxy:AddComponentByClass(box_class, false, relative, false)
     end)
@@ -444,7 +488,7 @@ local function create_interaction_hitbox(proxy, math_lib)
     end
     local ok_configure, configure_err = pcall(function()
         -- Extents are local; the proxy's scale is applied on top.
-        box:SetBoxExtent(math_lib:MakeVector(BOX_X / CHOPPER_SCALE_X, BOX_Y / CHOPPER_SCALE_Y, BOX_Z / CHOPPER_SCALE_Z), true)
+        box:SetBoxExtent(math_lib:MakeVector(size.x / CHOPPER_SCALE_X, size.y / CHOPPER_SCALE_Y, size.z / CHOPPER_SCALE_Z), true)
         box:SetGenerateOverlapEvents(false)
         box:SetCollisionEnabled(1) -- QueryOnly
         box:SetCollisionResponseToAllChannels(ECR_IGNORE)
@@ -466,33 +510,30 @@ end
 -- its attachment consistently. Recognise only our unusually scaled cabinet,
 -- then reclaim it before the player can interact with it as furniture.
 
-local function is_near_wreck(candidate, wreck)
-    local ok, candidate_location, wreck_location = pcall(function()
-        return candidate:K2_GetActorLocation(), wreck:K2_GetActorLocation()
-    end)
-    if not ok or not candidate_location or not wreck_location then return false end
-    local x, y, z = candidate_location.X - wreck_location.X,
-        candidate_location.Y - wreck_location.Y, candidate_location.Z - wreck_location.Z
-    -- The huge cabinet in a legacy save can be offset above the rotor; this
-    -- radius is deliberately far smaller than the distance to normal furniture.
-    return x*x + y*y + z*z < 2500 * 2500
-end
-
-local function find_saved_proxy(wreck)
+-- A loaded save can lose its attachment, and a game update can move the
+-- wreck (the anniversary update's new Mi-8 model: the saved hold stayed where
+-- the old wreck was, a giant cabinet nobody could open). No ordinary cabinet
+-- has the hold's scale, so any cabinet with it is the hold, wherever it is;
+-- the nearest one to the wreck if there are several.
+local function find_saved_proxy(wreck, wreck_component)
     local ok_scan, instances = pcall(FindAllOf, WORLD_CONTAINER_CLASS)
     if not ok_scan or type(instances) ~= "table" then return nil end
-    local scaled_candidate = nil
+    local at = place_of(wreck_component)
+    local scaled_candidate, best = nil, math.huge
     for _, raw in pairs(instances) do
         local candidate = as_object(raw)
         local ok_parent, parent = pcall(function() return candidate and candidate:GetAttachParentActor() end)
         if ok_parent and same_object(parent, wreck) then
             return candidate
         end
-        -- A loaded save can lose its attachment. Never claim an ordinary
-        -- cabinet: require both our distinctive scale and wreck proximity.
-        if candidate and is_cargo_scale(candidate) and is_near_wreck(candidate, wreck) then
-            scaled_candidate = candidate
+        if candidate and is_cargo_scale(candidate) then
+            local ok, l = pcall(function() return candidate:K2_GetActorLocation() end)
+            local d = (ok and l and at) and distance_between({ X = l.X, Y = l.Y, Z = l.Z }, at) or (math.huge / 2)
+            if d < best then scaled_candidate, best = candidate, d end
         end
+    end
+    if scaled_candidate and best > 2500 and best < math.huge / 2 then
+        log(string.format("Found the saved Cargo Hold %.0f m from the Mi-8 (the wreck moved); moving it onto the wreck.", best / 100))
     end
     return scaled_candidate
 end
@@ -518,7 +559,7 @@ local function reclaim_saved_proxy(proxy, wreck, wreck_component)
         pcall(function() proxy:SetActorEnableCollision(false) end)
         return nil
     end
-    local hitbox, hitbox_error = create_interaction_hitbox(proxy, math_lib)
+    local hitbox, hitbox_error = create_interaction_hitbox(proxy, math_lib, wreck_component)
     local inventory = configure_capacity(proxy)
     if inventory then
         pcall(function() inventory.UseDestructionBag = false end)
@@ -529,7 +570,7 @@ local function reclaim_saved_proxy(proxy, wreck, wreck_component)
     set_active(proxy, hitbox)
     log(string.format("Reclaimed saved Cargo Hold: hidden=%d/%d collision-disabled=%d/%d interaction box=%s.",
         hidden, total, disabled_collision, total,
-        hitbox and string.format("%.0fx%.0fx%.0f cm", BOX_X, BOX_Y, BOX_Z) or ("unavailable: " .. tostring(hitbox_error))))
+        hitbox and box_text() or ("unavailable: " .. tostring(hitbox_error))))
     return proxy
 end
 
@@ -591,7 +632,7 @@ local function spawn_cargo_hold(wreck, wreck_component)
         return nil
     end
     pcall(function() proxy:SetActorEnableCollision(true) end)
-    local hitbox, hitbox_error = create_interaction_hitbox(proxy, math_lib)
+    local hitbox, hitbox_error = create_interaction_hitbox(proxy, math_lib, wreck_component)
     local inventory = configure_capacity(proxy)
     if inventory then
         pcall(function() inventory.UseDestructionBag = false end)
@@ -603,7 +644,7 @@ local function spawn_cargo_hold(wreck, wreck_component)
     set_active(proxy, hitbox)
     log(string.format("Cargo Hold ready (%s): scaled=%s hidden=%d/%d collision-disabled=%d/%d interaction box=%s.",
         class_source, tostring(scaled), hidden, total, disabled_collision, total,
-        hitbox and string.format("%.0fx%.0fx%.0f cm", BOX_X, BOX_Y, BOX_Z) or ("unavailable: " .. tostring(hitbox_error))))
+        hitbox and box_text() or ("unavailable: " .. tostring(hitbox_error))))
     log_transform(proxy, "Cargo Hold transform:")
     return proxy
 end
@@ -620,7 +661,7 @@ local function ensure_cargo_hold()
     end
     set_active(nil, nil)
     -- After a Lua mod reload the hold still exists but this script forgot it.
-    local existing = find_saved_proxy(wreck)
+    local existing = find_saved_proxy(wreck, wreck_component)
     if existing then
         local reclaimed = reclaim_saved_proxy(existing, wreck, wreck_component)
         if reclaimed then
@@ -646,7 +687,6 @@ end
 -- the hold's own is loaded from it.
 local function remove_duplicate_holds()
     if not is_valid(active_actor) then return 0 end
-    local wreck_at = wreck_location
     local ok_scan, instances = pcall(FindAllOf, WORLD_CONTAINER_CLASS)
     if not ok_scan or type(instances) ~= "table" then return 0 end
     local removed = 0
@@ -655,14 +695,9 @@ local function remove_duplicate_holds()
         if candidate and is_valid(candidate) and address_of(candidate) ~= active_address then
             local ok_parent, parent = pcall(function() return candidate:GetAttachParentActor() end)
             local attached = ok_parent and wreck_address ~= nil and address_of(parent) == wreck_address
-            local near = false
-            if wreck_at and is_cargo_scale(candidate) then
-                local ok, l = pcall(function() return candidate:K2_GetActorLocation() end)
-                if ok and l then
-                    local x, y, z = l.X - wreck_at.X, l.Y - wreck_at.Y, l.Z - wreck_at.Z
-                    near = x * x + y * y + z * z < 2500 * 2500
-                end
-            end
+            -- the hold's scale is the hold's alone: a copy anywhere is extra
+            -- (also one left where the wreck stood before a game update)
+            local near = is_cargo_scale(candidate)
             if attached or near then
                 pcall(function() candidate.BP_MasterInventory.UseDestructionBag = false end)
                 pcall(function() candidate.BP_MasterInventory.ShouldSpawnBag = false end)
