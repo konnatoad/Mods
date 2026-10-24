@@ -2,6 +2,10 @@
 
 ---
 
+## 1.7.1 (2026-10-24)
+
+- Magazines (and any group) came out half lying, half standing: each item was turned on its own to fill gaps, so the same magazines lay different ways and big drums landed in leftover holes. Now a whole group is either all lying down or all standing up, whichever takes fewer rows, so the same items always lie the same way
+
 ## 1.7.0 (2026-10-24)
 
 - Loot to sell goes on top: mutant parts, animal parts, gun parts, broken gear and junk, then money, then ammo, magazines, medical, food and drink, then weapons, attachments, equipment, tools, artifacts, materials and the rest

@@ -18,7 +18,7 @@
 --   .sort repair         cells marked as taken by an item that isn't there
 --                        become free again (the host's game: run it as the host)
 ------------------------------------------------------------
-local VERSION = "1.7.0"
+local VERSION = "1.7.1"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -435,12 +435,11 @@ local function Plan(grid, pin)
     -- fewest gaps) is kept; of those, the one moving the fewest items, so a
     -- sorted container stays as it is. The ways: smallest first or biggest
     -- first (big heads first, then the small parts fill the gaps beside
-    -- them), and with turning on, each of those turned:
-    --   "best"  each item the way that adds the fewest rows, then the first
-    --           free cell (a 1x2 next to 1x1s lies flat in their row)
-    --   "flat"  all lying down, "tall" all standing up (rifles side by side
-    --           can take fewer rows standing), "asis" each the way it lies
-    local WAYS = { "best", "flat", "tall", "asis" }
+    -- them), and with turning on, each of those all lying down ("flat") or
+    -- all standing up ("tall": rifles side by side can take fewer rows). A
+    -- kind is never half one way and half the other: the same magazines all
+    -- lie the same way. Turning off: each the way it lies ("asis")
+    local WAYS = { "flat", "tall" }
     local function placeKind(items, start, bottom, taken, how)
         local cols = grid.cols
         local turns = 0   -- (items moved or turned)
@@ -449,7 +448,6 @@ local function Plan(grid, pin)
             local ways = {}
             local asis, turned = { it.cw, it.ch }, { it.ch, it.cw }
             if how == "asis" or it.cw == it.ch then ways = { asis }
-            elseif how == "best" then ways = { asis, turned }
             elseif how == "flat" then ways = { it.cw >= it.ch and asis or turned }
             else ways = { it.ch >= it.cw and asis or turned } end
             local best
