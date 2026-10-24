@@ -18,7 +18,7 @@
 --   .sort repair         cells marked as taken by an item that isn't there
 --                        become free again (the host's game: run it as the host)
 ------------------------------------------------------------
-local VERSION = "1.6.2"
+local VERSION = "1.6.3"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -419,17 +419,19 @@ local function Plan(grid, pin)
     -- One block per kind of item: each kind starts on a new row and its items
     -- fill in from there, every size together (smallest first), so a kind
     -- never breaks into several rows of shapes with gaps between them.
-    -- Turning (when it's on): each kind is laid out a few ways and the one
-    -- with the fewest rows is kept, then the one turning the fewest items:
+    -- Each kind is laid out a few ways and the one with the fewest rows (the
+    -- fewest gaps) is kept; of those, the one moving the fewest items, so a
+    -- sorted container stays as it is. The ways: smallest first or biggest
+    -- first (big heads first, then the small parts fill the gaps beside
+    -- them), and with turning on, each of those turned:
     --   "best"  each item the way that adds the fewest rows, then the first
     --           free cell (a 1x2 next to 1x1s lies flat in their row)
     --   "flat"  all lying down, "tall" all standing up (rifles side by side
     --           can take fewer rows standing), "asis" each the way it lies
-    -- so nothing is turned for nothing
     local WAYS = { "best", "flat", "tall", "asis" }
     local function placeKind(items, start, bottom, taken, how)
         local cols = grid.cols
-        local turns = 0
+        local turns = 0   -- (items moved or turned)
         local spots = {}
         for _, it in ipairs(items) do
             local ways = {}
@@ -454,10 +456,10 @@ local function Plan(grid, pin)
             if not best then return nil end
             Mark(grid, best.idx, best.w, best.h, taken, true)
             bottom = best.rows
-            if best.w ~= it.cw then turns = turns + 1 end
+            if best.w ~= it.cw or best.idx ~= it.root then turns = turns + 1 end
             spots[it] = best
         end
-        return { rows = bottom, turns = turns, spots = spots, taken = taken }
+        return { rows = bottom, moves = turns, spots = spots, taken = taken }
     end
     local function grouped()
         local taken = {}
@@ -481,13 +483,24 @@ local function Plan(grid, pin)
                 table.insert(kindItems, list[k])
                 k = k + 1
             end
+            local bigFirst = {}
+            for i, it in ipairs(kindItems) do bigFirst[i] = it end
+            local rank = {}
+            for i, it in ipairs(kindItems) do rank[it] = i end
+            table.sort(bigFirst, function(a, b)
+                local aa, ba = a.cw * a.ch, b.cw * b.ch
+                if aa ~= ba then return aa > ba end
+                return rank[a] < rank[b]
+            end)
             local pick
-            for _, how in ipairs(hows) do
-                local copy = {}
-                for i, v in pairs(taken) do copy[i] = v end
-                local r = placeKind(kindItems, bottom, bottom, copy, how)
-                if r and (not pick or r.rows < pick.rows or (r.rows == pick.rows and r.turns < pick.turns)) then
-                    pick = r
+            for _, items in ipairs({ kindItems, bigFirst }) do
+                for _, how in ipairs(hows) do
+                    local copy = {}
+                    for i, v in pairs(taken) do copy[i] = v end
+                    local r = placeKind(items, bottom, bottom, copy, how)
+                    if r and (not pick or r.rows < pick.rows or (r.rows == pick.rows and r.moves < pick.moves)) then
+                        pick = r
+                    end
                 end
             end
             if not pick then return false end

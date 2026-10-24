@@ -2,6 +2,11 @@
 
 ---
 
+## 1.6.3 (2026-10-24)
+
+- Groups with big items left holes: everything went in smallest first, so the big ones (deer, boar and dog heads) came last and had to start lower, leaving gaps beside the small ones. Each group is now also tried biggest first, where the small parts fill the gaps next to the big ones, and the layout with the fewest rows wins (dog tail, dog head, boar head and deer head: 3 full rows instead of 5 with holes)
+- Of layouts just as short, the one moving the fewest items is kept, so pressing S on a sorted container leaves it as it is
+
 ## 1.6.2 (2026-10-24)
 
 - Sorting turns items when that packs a group tighter, not only when the container is too full otherwise. Each group is laid out a few ways (each item the way that adds the fewest rows, all lying down, all standing up, all as they lie) and the one with the fewest rows is kept; a tie goes to the one turning the fewest items, so nothing is turned for nothing. A 1x2 next to 1x1s lies flat in their row, rifles stand side by side when that takes fewer rows, Chuvirla fists stand next to the heads
