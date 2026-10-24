@@ -18,7 +18,7 @@
 --   .sort repair         cells marked as taken by an item that isn't there
 --                        become free again (the host's game: run it as the host)
 ------------------------------------------------------------
-local VERSION = "1.6.1"
+local VERSION = "1.6.2"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -311,12 +311,13 @@ local function Order(items)
         if a.kind ~= b.kind then return a.kind < b.kind end
         local aa, ba = a.w * a.h, b.w * b.h
         if aa ~= ba then return aa < ba end
-        if a.h ~= b.h then return a.h < b.h end
+        -- (the shape whichever way it lies: turning an item doesn't move it)
+        local an, bn = math.min(a.w, a.h), math.min(b.w, b.h)
+        if an ~= bn then return an < bn end
         -- the same shape: the more valuable first (what a trader pays for one)
         if a.value ~= b.value then return a.value > b.value end
         if a.id ~= b.id then return a.id < b.id end
         if a.amount ~= b.amount then return a.amount > b.amount end
-        if a.w ~= b.w then return a.w < b.w end
         return a.root < b.root
     end)
     return list
@@ -416,9 +417,48 @@ local function Plan(grid, pin)
         return true
     end
     -- One block per kind of item: each kind starts on a new row and its items
-    -- fill in from there, every size together (smallest first, each into the
-    -- first gap it fits), so a kind never breaks into several rows of shapes
-    -- with gaps between them
+    -- fill in from there, every size together (smallest first), so a kind
+    -- never breaks into several rows of shapes with gaps between them.
+    -- Turning (when it's on): each kind is laid out a few ways and the one
+    -- with the fewest rows is kept, then the one turning the fewest items:
+    --   "best"  each item the way that adds the fewest rows, then the first
+    --           free cell (a 1x2 next to 1x1s lies flat in their row)
+    --   "flat"  all lying down, "tall" all standing up (rifles side by side
+    --           can take fewer rows standing), "asis" each the way it lies
+    -- so nothing is turned for nothing
+    local WAYS = { "best", "flat", "tall", "asis" }
+    local function placeKind(items, start, bottom, taken, how)
+        local cols = grid.cols
+        local turns = 0
+        local spots = {}
+        for _, it in ipairs(items) do
+            local ways = {}
+            local asis, turned = { it.cw, it.ch }, { it.ch, it.cw }
+            if how == "asis" or it.cw == it.ch then ways = { asis }
+            elseif how == "best" then ways = { asis, turned }
+            elseif how == "flat" then ways = { it.cw >= it.ch and asis or turned }
+            else ways = { it.ch >= it.cw and asis or turned } end
+            local best
+            for _, way in ipairs(ways) do
+                local w, h = way[1], way[2]
+                for idx = start * cols, grid.cells - 1 do
+                    if Fits(grid, idx, w, h, taken) then
+                        local rows = math.max(bottom, idx // cols + h)
+                        if not best or rows < best.rows or (rows == best.rows and idx < best.idx) then
+                            best = { rows = rows, idx = idx, w = w, h = h }
+                        end
+                        break
+                    end
+                end
+            end
+            if not best then return nil end
+            Mark(grid, best.idx, best.w, best.h, taken, true)
+            bottom = best.rows
+            if best.w ~= it.cw then turns = turns + 1 end
+            spots[it] = best
+        end
+        return { rows = bottom, turns = turns, spots = spots, taken = taken }
+    end
     local function grouped()
         local taken = {}
         local list = {}
@@ -431,19 +471,28 @@ local function Plan(grid, pin)
                 table.insert(list, it)
             end
         end
-        local cols = grid.cols
-        local start, bottom, kind = 0, 0, nil
-        for _, it in ipairs(list) do
-            if it.kind ~= kind then kind, start = it.kind, bottom end
-            for idx = start * cols, grid.cells - 1 do
-                if Fits(grid, idx, it.w, it.h, taken) then
-                    it.target = idx
-                    Mark(grid, idx, it.w, it.h, taken, true)
-                    bottom = math.max(bottom, idx // cols + it.h)
-                    break
+        local hows = (ROTATE and not grid.noRotate) and WAYS or { "asis" }
+        local bottom = 0
+        local k = 1
+        while k <= #list do
+            local kindItems = {}
+            local kind = list[k].kind
+            while k <= #list and list[k].kind == kind do
+                table.insert(kindItems, list[k])
+                k = k + 1
+            end
+            local pick
+            for _, how in ipairs(hows) do
+                local copy = {}
+                for i, v in pairs(taken) do copy[i] = v end
+                local r = placeKind(kindItems, bottom, bottom, copy, how)
+                if r and (not pick or r.rows < pick.rows or (r.rows == pick.rows and r.turns < pick.turns)) then
+                    pick = r
                 end
             end
-            if not it.target then return false end
+            if not pick then return false end
+            for it, s in pairs(pick.spots) do it.w, it.h, it.target = s.w, s.h, s.idx end
+            taken, bottom = pick.taken, pick.rows
         end
         return true
     end
@@ -481,7 +530,11 @@ local function Plan(grid, pin)
         return true
     end
     local function any()
-        return grouped() or shelves("height") or shelves("mixed") or try(false) or try(true)
+        local kept = {}
+        for _, it in ipairs(grid.items) do kept[it] = { it.w, it.h } end
+        if grouped() then return true end
+        for it, s in pairs(kept) do it.w, it.h = s[1], s[2] end
+        return shelves("height") or shelves("mixed") or try(false) or try(true)
     end
     local fits = any()
     if not fits and ROTATE and not grid.noRotate then
@@ -1003,7 +1056,7 @@ local function Check()
     local order = Plan(grid, nil)
     for _, it in ipairs(order or Order(grid.items)) do
         log(string.format("  %-34s x%-4s %dx%d%s %-10s worth %-5s at %d -> %s", it.id, tostring(it.amount), it.w, it.h,
-            it.rotated and " (turned)" or "", tostring(it.kind), tostring(it.value), it.root, tostring(it.target)))
+            it.w ~= it.cw and " (turn)" or "", tostring(it.kind), tostring(it.value), it.root, tostring(it.target)))
     end
     if not order then log("  sorted it doesn't pack - S sorts the smaller items around the biggest") end
     ItemData()

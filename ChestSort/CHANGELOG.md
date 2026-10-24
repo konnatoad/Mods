@@ -2,6 +2,12 @@
 
 ---
 
+## 1.6.2 (2026-10-24)
+
+- Sorting turns items when that packs a group tighter, not only when the container is too full otherwise. Each group is laid out a few ways (each item the way that adds the fewest rows, all lying down, all standing up, all as they lie) and the one with the fewest rows is kept; a tie goes to the one turning the fewest items, so nothing is turned for nothing. A 1x2 next to 1x1s lies flat in their row, rifles stand side by side when that takes fewer rows, Chuvirla fists stand next to the heads
+- Pressing S again doesn't turn anything back: items are ordered by their shape whichever way they lie
+- `.sort check` marks items the sort would turn with "(turn)"
+
 ## 1.6.1 (2026-10-24)
 
 - Each group is one block now: it starts on a new row and all its items fill in from there, every size together. Before, each size of a group started its own row, so a group like mutant parts broke into separate rows (small hands, Chuvirla fists, heads) with gaps between them and looked like several groups
