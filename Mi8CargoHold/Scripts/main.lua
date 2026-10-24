@@ -457,21 +457,42 @@ local function wreck_box(wreck_component)
             x, y = math.min(x, BOX_MAX_WIDE), math.min(y, BOX_MAX_LONG)
         end
         z = math.min(z, BOX_MAX_HIGH)
-        box = { x = x, y = y, z = z, cx = o.X * scale.X, cy = o.Y * scale.Y,
+        box = { fromModel = true, x = x, y = y, z = z, cx = o.X * scale.X, cy = o.Y * scale.Y,
                 -- up from the bottom of the model, not round the rotor's sweep
                 cz = (o.Z - e.Z) * scale.Z + z }
     end)
     return box
 end
 local last_box = { x = BOX_X, y = BOX_Y, z = BOX_Z }
-local function box_text() return string.format("%.0fx%.0fx%.0f cm", last_box.x, last_box.y, last_box.z) end
+local function box_text()
+    return string.format("%.0fx%.0fx%.0f cm%s", last_box.x, last_box.y, last_box.z,
+        last_box.fromModel and "" or " (the old wreck's size: the Mi-8 model's size couldn't be read)")
+end
 
-local function create_interaction_hitbox(proxy, math_lib, wreck_component)
-    -- joined: the wreck is what the host's hold hangs on
-    if not is_valid(wreck_component) then
-        pcall(function() wreck_component = proxy:GetAttachParent() end)
+-- Joined: the Mi-8 model the host's hold sits on. What the hold hangs on in
+-- this game needn't be the model (1.1.7 took its size from that, and the box
+-- ended up where nobody could aim at it), so the wreck nearest the hold is
+-- looked for, once, when the hold is taken over
+local function client_wreck_component(proxy)
+    local parent = nil
+    pcall(function() parent = proxy:GetAttachParent() end)
+    if is_wreck_mesh(parent) then return parent, "the wreck it hangs on" end
+    local at = nil
+    pcall(function()
+        local l = proxy:K2_GetActorLocation()
+        at = { X = l.X, Y = l.Y, Z = l.Z }
+    end)
+    local best, pick = math.huge, nil
+    for _, w in ipairs((wreck_candidates())) do
+        local d = distance_between(place_of(w.component), at)
+        if d < best then best, pick = d, w.component end
     end
-    local size = wreck_box(wreck_component)
+    if pick and best < 2500 then return pick, string.format("the wreck %.0f m away", best / 100) end
+    return nil, pick and string.format("nearest wreck %.0f m away, too far", best / 100) or "no wreck loaded"
+end
+
+local function create_interaction_hitbox(proxy, math_lib, wreck_component, size)
+    size = size or wreck_box(wreck_component)
     last_box = size
     local ok_class, box_class = pcall(StaticFindObject, "/Script/Engine.BoxComponent")
     if not ok_class or not is_valid(box_class) then
@@ -1301,7 +1322,14 @@ local function client_ensure(now, manual)
     local ok_math, math_lib = pcall(UEHelpers.GetKismetMathLibrary)
     if not ok_math or not is_valid(math_lib) then return nil end
     local hidden, _, total = prepare_cabinet_components(proxy)
-    local hitbox, hitbox_error = create_interaction_hitbox(proxy, math_lib)
+    -- the model's size is looked up once (a look walks every mesh in the
+    -- world, a hitch 1.1.2 removed); later takeovers reuse it
+    if not client.box then
+        local wreck_component, wreck_source = client_wreck_component(proxy)
+        client.box, client.box_source = wreck_box(wreck_component), wreck_source
+    end
+    local hitbox, hitbox_error = create_interaction_hitbox(proxy, math_lib, nil, client.box)
+    local wreck_source = client.box_source
     configure_capacity(proxy)
     pcall(function() proxy:SetActorEnableCollision(true) end)
     set_active(proxy, hitbox)
@@ -1311,9 +1339,9 @@ local function client_ensure(now, manual)
         local l = proxy:K2_GetActorLocation()
         client.seen_at = { X = l.X, Y = l.Y, Z = l.Z }
     end)
-    log(string.format("Joined the host's Cargo Hold: hidden=%d/%d interaction box=%s. Use Enter at the Mi-8; "
+    log(string.format("Joined the host's Cargo Hold: hidden=%d/%d interaction box=%s (sized from %s). Use Enter at the Mi-8; "
         .. "the host's game saves the cargo.", hidden, total,
-        hitbox and "ok" or ("unavailable: " .. tostring(hitbox_error))))
+        hitbox and box_text() or ("unavailable: " .. tostring(hitbox_error)), tostring(wreck_source)))
     return proxy
 end
 

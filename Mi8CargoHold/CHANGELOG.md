@@ -2,6 +2,11 @@
 
 ---
 
+## 1.1.8 (2026-10-24)
+
+- Joined players couldn't open the hold after the anniversary update (the host could): their interaction box took its size from whatever the host's hold hangs on in their game, which isn't necessarily the new Mi-8 model, so the box wasn't where they aim. Now the joined player's game finds the Mi-8 model nearest the hold (once per session, then reused) and sizes the box from it
+- The "Joined the host's Cargo Hold" log line shows the box's size and what it was sized from
+
 ## 1.1.7 (2026-10-24)
 
 ### Updated for MISERY's Anniversary Update
