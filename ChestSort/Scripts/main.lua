@@ -18,7 +18,7 @@
 --   .sort repair         cells marked as taken by an item that isn't there
 --                        become free again (the host's game: run it as the host)
 ------------------------------------------------------------
-local VERSION = "1.5.3"
+local VERSION = "1.5.4"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -207,7 +207,7 @@ end
 -- The sorted order: smallest first, the same kind together, bigger stacks first
 -- What kind of item it is: the start of its ID (Ammo_9mm -> Ammo,
 -- Holdable_RGD5 -> Holdable). Kinds go in this order; others after them
-local KIND_ORDER = { "Weapon", "Magazine", "Ammo", "Holdable", "Consumable", "Food", "Drink", "Equipment",
+local KIND_ORDER = { "Weapon", "Magazine", "Ammo", "Attachment", "Holdable", "Consumable", "Food", "Drink", "Equipment",
                      "Artifact", "Resource", "Plant", "BuildPart", "Object", "Misc" }
 local KIND_ALIAS = { CUTWeapon = "Weapon" }
 local KIND_RANK = {}

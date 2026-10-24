@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.19 (2026-10-24)
+
+- Stack Them All's page says it keeps item changes from game updates
+
 ## 1.4.18 (2026-10-18)
 
 - Chest Sort's page mentions its Shift+click fix

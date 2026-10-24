@@ -2,6 +2,15 @@
 
 ---
 
+## 1.4.0 (2026-10-24)
+
+### Game Updates No Longer Undone
+- Every item's weight, size, food values, durability and container size in `scripts\stackConfig.lua` were applied as the game had them when the file was made (May for most items), so a game update that changed an item (the anniversary update's new weapons and equipment) was undone. Now a value you never changed follows the game: the game's values are saved for each game version (`scripts\gameValues.lua`), and an entry still holding the old version's value gets the new one, in game and in `stackConfig.lua`
+- Values you changed yourself are still applied, and stack sizes work as before
+- The log lists what changed (`Game update: Weapon_AK74 weight 3.07 -> 3.4`)
+- If the mod is updated with `.reloadmods` in a world, the game's values can't be read until the game is restarted (the log says so)
+- MISERY's anniversary update added 33 items (7.62x25 ammo, attachments, new equipment and resources); they were added to `stackConfig.lua` with stack sizes on the first launch
+
 ## 1.3.4 (2026-10-17)
 
 - A crash when a world loads or closes (joining, the host restarting or leaving): the retries while waiting for items to load ran on a background thread and searched every item in the world from there, which crashes UE4SS when it meets an object being deleted. They run on the game thread now

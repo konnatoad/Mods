@@ -2,6 +2,10 @@
 
 ---
 
+## 1.5.4 (2026-10-24)
+
+- MISERY's anniversary update: weapon attachments (camouflage now, scopes and silencers later) get their own group, right after ammo
+
 ## 1.5.3 (2026-10-18)
 
 - Shift+click moves the stack right away: it waited half a second to see whether the game moved it first, which felt slow. If the game moves it too, the second move finds the cell empty and does nothing

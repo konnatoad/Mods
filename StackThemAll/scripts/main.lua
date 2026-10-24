@@ -1,4 +1,4 @@
-ModName, ModVersion = "Stack Them All", "1.3.4"
+ModName, ModVersion = "Stack Them All", "1.4.0"
 
 -- Runs fn ms later on the game thread. ExecuteWithDelay alone runs it on a
 -- background thread, and the retries below search every item in the world
@@ -229,6 +229,209 @@ local function load_stack_config()
     return stackConfig
 end
 
+------------------------------------------------------------
+-- Following game updates
+------------------------------------------------------------
+-- stackConfig.lua holds every item's values as the game had them when the
+-- entry was written, and they're all applied. A game update that changes an
+-- item (a new weapon model's size, food values, durability) was undone by
+-- that. Now a value nobody changed by hand follows the game: the game's
+-- values are saved once per game version (scripts\gameValues.lua), and an
+-- entry that still holds the previous version's value is updated to the new
+-- one. Values you changed yourself are still applied.
+local gameValuesPath = "./ue4ss/Mods/StackThemAll/scripts/gameValues.lua"
+local FIELDS = {
+    { "stackSize", nil, "MaxStack_18_C57243124FFDE0AB28797AA6F2C1E5F5", stack = true },
+    { "allowStack", nil, "AllowStacking_48_02CFD0D74B05709E8E432E824709C714", stack = true },
+    { "weight", nil, "Weight_7_794436A247BB7BC85C7BF3BC8B1D13BA" },
+    { "width", nil, "Width_12_AF2CA71343924568731BA285FA9ABEA0" },
+    { "height", nil, "Height_10_E54E86E64E73A3ACD86E358532FC6061" },
+    { "canContainItems", "ContainerDetails_59_DA2434FE4D9CB983040BE3B6CDDD8852", "CanContainItems_9_25B233D543AED7B2D8CF249BD72C953A" },
+    { "containerInventoryCells", "ContainerDetails_59_DA2434FE4D9CB983040BE3B6CDDD8852", "ContainerInventoryCells_13_269D7DB442A1056CD715DEA438F850A2" },
+    { "containerColumns", "ContainerDetails_59_DA2434FE4D9CB983040BE3B6CDDD8852", "ContainerColumns_14_F97E5A5744D6545EC3C5FD967C512BF1" },
+    { "useWeight", "ContainerDetails_59_DA2434FE4D9CB983040BE3B6CDDD8852", "UseWeight_16_3F94FD134C121CE317A6D2A0C2938171" },
+    { "maxWeight", "ContainerDetails_59_DA2434FE4D9CB983040BE3B6CDDD8852", "MaxWeight_20_5CDB778F4D6FE3E65C8DD1A7E8722133" },
+    { "canConsume", "ConsumableDetails_77_3E970B0D497E2A71D3B074A210E6F3F1", "CanConsume_1_F33B573C44E7F10E734CE98A8F8B397B" },
+    { "healthRestore", "ConsumableDetails_77_3E970B0D497E2A71D3B074A210E6F3F1", "Health_4_58F2B2E648683BE1B8D783B5F9DE5F26" },
+    { "hungerRestore", "ConsumableDetails_77_3E970B0D497E2A71D3B074A210E6F3F1", "Hunger_9_0D90519F43945DD23F8A98A10994E8C6" },
+    { "thirstRestore", "ConsumableDetails_77_3E970B0D497E2A71D3B074A210E6F3F1", "Thirst_10_D9ED71A24C1DAC5DFF4104823F0A5337" },
+    { "staminaRestore", "ConsumableDetails_77_3E970B0D497E2A71D3B074A210E6F3F1", "Stamina_12_C4F7061C4ECC1EC288DC08B8F0EB32DD" },
+    { "radiationRestore", "ConsumableDetails_77_3E970B0D497E2A71D3B074A210E6F3F1", "Radiation_67_D31CAFB144A016D3CA18EAA9BC483FC1" },
+    { "insanityRestore", "ConsumableDetails_77_3E970B0D497E2A71D3B074A210E6F3F1", "Insanity_70_2DC4A05F4C467A170F3092B4AE0647AC" },
+    { "useDurability", "DurabilityDetails_90_B75E4B1C4EDEECACC047149CE7D922F6", "UseDurability_1_13FF8AEC41F8FB8A7E973CA195D0CDF8" },
+    { "maxDurability", "DurabilityDetails_90_B75E4B1C4EDEECACC047149CE7D922F6", "MaxDurability_4_2937EBF8401931EACB7C5C932B3CB4FC" },
+    { "destroyItemAt0Durability", "DurabilityDetails_90_B75E4B1C4EDEECACC047149CE7D922F6", "DestroyItemAt0Durability_8_0941EB874C13F33FB68492B0414CEB9F" },
+}
+
+local function same(a, b)
+    if type(a) == "number" and type(b) == "number" then
+        return math.abs(a - b) <= 1e-5 * math.max(1, math.abs(a), math.abs(b))
+    end
+    return a == b
+end
+
+local function read_file(path)
+    local file = io.open(path, "rb")
+    if not file then return nil end
+    local content = file:read("a")
+    file:close()
+    return content
+end
+
+-- The game's version: Steam's build id, else the size of the game's exe
+local function game_build()
+    local manifest = read_file("../../../../../appmanifest_2119830.acf")
+    local id = manifest and manifest:match('"buildid"%s+"(%d+)"')
+    if id then return "steam " .. id end
+    local exe = io.open("MISERY-Win64-Shipping.exe", "rb")
+    if exe then
+        local size = exe:seek("end")
+        exe:close()
+        return "exe " .. tostring(size)
+    end
+    return nil
+end
+
+local function read_game_values(masterItemList)
+    local items = {}
+    masterItemList:ForEachRow(function(rowName, rowData)
+        local values = {}
+        for _, f in ipairs(FIELDS) do
+            pcall(function()
+                local struct = f[2] and rowData[f[2]] or rowData
+                local v = struct[f[3]]
+                if type(v) == "number" or type(v) == "boolean" then values[f[1]] = v end
+            end)
+        end
+        items[tostring(rowName)] = values
+    end)
+    return items
+end
+
+-- After this mod (or an older one) changed the list in this game session,
+-- the list no longer holds the game's values: every item with a category
+-- size already has exactly that size
+local function list_already_changed(gameItems, stackConfig)
+    local checked, changed = 0, 0
+    for name, values in pairs(gameItems) do
+        local itemConfig = stackConfig[name]
+        if itemConfig and category_stack_size(name) and values.stackSize then
+            checked = checked + 1
+            if same(values.stackSize, stack_size_for(name, itemConfig)) then changed = changed + 1 end
+        end
+    end
+    return checked >= 5 and changed == checked
+end
+
+local function write_game_values(build, items)
+    local names = {}
+    for name in pairs(items) do table.insert(names, name) end
+    table.sort(names)
+    local out = { "-- The game's own item values, saved by Stack Them All for each game version\n",
+                  "-- so it can tell what a game update changed. Don't edit; deleting it is fine.\n",
+                  "return {\n    build = " .. string.format("%q", build) .. ",\n    items = {\n" }
+    for _, name in ipairs(names) do
+        local parts = {}
+        for _, f in ipairs(FIELDS) do
+            local v = items[name][f[1]]
+            if v ~= nil then table.insert(parts, f[1] .. " = " .. tostring(v)) end
+        end
+        table.insert(out, "        [" .. string.format("%q", name) .. "] = { " .. table.concat(parts, ", ") .. " },\n")
+    end
+    table.insert(out, "    },\n}\n")
+    local file = io.open(gameValuesPath, "w+")
+    if not file then return false end
+    file:write(table.concat(out))
+    file:close()
+    return true
+end
+
+local function lua_pattern(s) return (s:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")) end
+
+-- Puts the game's new values into stackConfig.lua: updates = { {name, key, value}, ... }
+local function rewrite_config(updates)
+    local content = read_file(configPath)
+    if not content then return 0 end
+    local done = 0
+    for _, u in ipairs(updates) do
+        local head = 'stackConfig["' .. u[1] .. '"] = {'
+        local s = string.find(content, head, 1, true)
+        local e = s and string.find(content, "\n}", s, true)
+        if s and e then
+            local block = string.sub(content, s, e)
+            local value = tostring(u[3]):gsub("%%", "%%%%")
+            local newBlock, n = block:gsub("(\n%s*" .. lua_pattern(u[2]) .. "%s*=%s*)[^,\n]*", "%1" .. value, 1)
+            if n == 1 then
+                content = string.sub(content, 1, s - 1) .. newBlock .. string.sub(content, e + 1)
+                done = done + 1
+            end
+        end
+    end
+    if done > 0 then
+        local file = io.open(configPath, "w+")
+        if not file then return 0 end
+        file:write(content)
+        file:close()
+    end
+    return done
+end
+
+local function sync_with_game(masterItemList, stackConfig)
+    local build = game_build()
+    if not build then return end
+    local saved = nil
+    if read_file(gameValuesPath) then
+        local ok, result = pcall(dofile, gameValuesPath)
+        if ok and type(result) == "table" and type(result.items) == "table" then saved = result end
+    end
+    if saved and saved.build == build then return end  -- this game version was handled already
+
+    local gameItems = read_game_values(masterItemList)
+    if list_already_changed(gameItems, stackConfig) then
+        log("The item list was already changed in this game session; restart the game so the new game version's values can be read.")
+        return
+    end
+
+    -- The values the entries were written with: the previous version's saved
+    -- values, or (the first time) the ones stackConfig.default.lua came with
+    local previous = saved and saved.items
+    if not previous then
+        local ok, default = pcall(dofile, defaultConfigPath)
+        previous = (ok and type(default) == "table") and default or {}
+    end
+
+    local updates = {}
+    for name, itemConfig in pairs(stackConfig) do
+        local game = gameItems[name]
+        local before = previous[name]
+        if type(itemConfig) == "table" and game and before then
+            local hasCategory = category_stack_size(name) ~= nil
+            for _, f in ipairs(FIELDS) do
+                local key = f[1]
+                local mine, old, new = itemConfig[key], before[key], game[key]
+                if not (f.stack and hasCategory) and mine ~= nil and old ~= nil and new ~= nil
+                   and same(mine, old) and not same(mine, new) then
+                    table.insert(updates, { name, key, new, mine })
+                end
+            end
+        end
+    end
+    table.sort(updates, function(a, b) return a[1] < b[1] or a[1] == b[1] and a[2] < b[2] end)
+
+    if #updates > 0 then
+        local written = rewrite_config(updates)
+        for i, u in ipairs(updates) do
+            stackConfig[u[1]][u[2]] = u[3]
+            if i <= 40 then log("Game update: " .. u[1] .. " " .. u[2] .. " " .. tostring(u[4]) .. " -> " .. tostring(u[3])) end
+        end
+        if #updates > 40 then log("Game update: ... and " .. (#updates - 40) .. " more") end
+        log(#updates .. " value(s) follow the new game version (" .. written .. " written to stackConfig.lua); values you changed yourself stay.")
+    end
+    if write_game_values(build, gameItems) then
+        log("Saved the game's item values for this game version (" .. build .. ").")
+    end
+end
+
 -- Values missing from an entry are left as the game has them.
 local function set_field(struct, fieldName, value)
     if value ~= nil then
@@ -372,6 +575,9 @@ local function try_init()
                 return
             end
         end
+        -- before the list is changed below: it still holds the game's values
+        local ok, err = pcall(sync_with_game, masterItemList, stackConfig)
+        if not ok then log("Checking the game's new values failed: " .. tostring(err)) end
         loadedStackConfig = stackConfig
     end
 
