@@ -16,4 +16,8 @@ return {
     -- Shift+click on a stack in your inventory with a container open: when the
     -- game doesn't move it (its own bug), the mod moves the whole stack
     quickMoveFix = true,
+
+    -- Dragging moves only half a stack when the game's split key gets stuck
+    -- on: clicking an item with no Ctrl/Alt/Shift held turns it off
+    splitFix = true,
 }

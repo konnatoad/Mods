@@ -2,6 +2,10 @@
 
 ---
 
+## 1.5.5 (2026-10-24)
+
+- Dragging a stack in your inventory moved only half of it, every time: the game's split key can get stuck on after a missed key release (its own bug; the Mod Menu's `.invcheck fix` turned it off by hand). Now clicking an item with no Ctrl, Alt or Shift really held turns a stuck split key off before the drag, and the log says when it did. `splitFix = false` in `config.lua` turns this off
+
 ## 1.5.4 (2026-10-24)
 
 - MISERY's anniversary update: weapon attachments (camouflage now, scopes and silencers later) get their own group, right after ammo

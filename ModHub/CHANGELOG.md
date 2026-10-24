@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.21 (2026-10-24)
+
+- Chest Sort's page mentions its stuck split key fix
+
 ## 1.4.20 (2026-10-24)
 
 - Stack Them All's page: stacks are never smaller than the game's own (money stacks to 1000 since the anniversary update)

@@ -18,7 +18,7 @@
 --   .sort repair         cells marked as taken by an item that isn't there
 --                        become free again (the host's game: run it as the host)
 ------------------------------------------------------------
-local VERSION = "1.5.4"
+local VERSION = "1.5.5"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -47,6 +47,7 @@ local ROTATE = cfg.rotate ~= false
 -- container: when the game doesn't move it (its own bug with stacks), the
 -- mod moves the whole stack itself. false: off
 local QUICK_MOVE_FIX = cfg.quickMoveFix ~= false
+local SPLIT_FIX = cfg.splitFix ~= false
 
 -- The game's struct fields (Blueprint names carry their GUIDs)
 local F = {
@@ -940,7 +941,40 @@ local function QuickMoveCheck(player, src, dst, root, id, amount)
     log("Quick move: no free room for " .. id .. " in the container")
 end
 
+-- The game's split flag (IsSplitKeyDown) can stay on after a missed key
+-- release, and then every drag moves only half the stack. Clicking an item
+-- with no Ctrl, Alt or Shift really held (Slate's own key state: it sees keys
+-- while the inventory screen is open) turns a stuck flag off before the drag
+local split = { fixed = 0, checked = 0 }
+local function FixStuckSplit(player)
+    local stuck = false
+    pcall(function() stuck = player.IsSplitKeyDown == true end)
+    split.checked = split.checked + 1
+    if not stuck then return end
+    local lib = StaticFindObject("/Script/Engine.Default__KismetInputLibrary")
+    if not Valid(lib) then return end
+    local held = nil
+    pcall(function()
+        local keys = lib:GetModifierKeysState()
+        held = lib:ModifierKeysState_IsControlDown(keys) or lib:ModifierKeysState_IsAltDown(keys)
+            or lib:ModifierKeysState_IsShiftDown(keys)
+    end)
+    if held ~= false then
+        if split.checked <= 5 then log("Split flag on, a modifier key is held (or unknown: " .. tostring(held) .. "): left alone") end
+        return
+    end
+    pcall(function() player.IsSplitKeyDown = false end)
+    split.fixed = split.fixed + 1
+    if split.fixed <= 5 then log("The game's split key was stuck on (dragging moved half stacks): turned it off") end
+end
+
 local function OnIconClicked(selfParam)
+    if SPLIT_FIX and not sorting then
+        local pc = LocalController()
+        local player = nil
+        pcall(function() player = pc.Character.PlayerInventory end)
+        if Valid(player) then pcall(FixStuckSplit, player) end
+    end
     if not QUICK_MOVE_FIX or sorting then return end
     local icon = nil
     pcall(function() icon = selfParam:get() end)
@@ -981,18 +1015,21 @@ local function OnIconClicked(selfParam)
 end
 
 local function HookIcons()
-    if quick.hooked or not QUICK_MOVE_FIX then return quick.hooked end
+    if quick.hooked or not (QUICK_MOVE_FIX or SPLIT_FIX) then return quick.hooked end
     local fn = nil
     pcall(function() fn = StaticFindObject(ICON_CLASS .. ":OnMouseButtonDown") end)
     if not Valid(fn) then return false end
     quick.hooked = pcall(RegisterHook, ICON_CLASS .. ":OnMouseButtonDown", OnIconClicked)
-    if quick.hooked then log("Quick move fix on (Shift+click stacks into a container)") end
+    if quick.hooked then
+        log((QUICK_MOVE_FIX and "Quick move fix on (Shift+click stacks into a container)" or "")
+            .. ((QUICK_MOVE_FIX and SPLIT_FIX) and "; " or "") .. (SPLIT_FIX and "stuck split key fix on" or ""))
+    end
     return quick.hooked
 end
 -- the icon's Blueprint loads with the inventory screen: looked for until then
 ExecuteInGameThread(function() pcall(HookIcons) end)
 LoopAsync(3000, function()
-    if quick.hooked or not QUICK_MOVE_FIX then return true end
+    if quick.hooked or not (QUICK_MOVE_FIX or SPLIT_FIX) then return true end
     ExecuteInGameThread(function() pcall(HookIcons) end)
     return false
 end)
