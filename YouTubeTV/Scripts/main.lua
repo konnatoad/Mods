@@ -34,7 +34,7 @@
 -- of the file (nothing is streamed through the game), jumping to the host's
 -- point; a player who doesn't have the file gets it downloaded first.
 ------------------------------------------------------------
-local VERSION = "0.5.14"
+local VERSION = "0.5.15"
 local MOD_DIR = "./ue4ss/Mods/YouTubeTV/"
 local VIDEO_DIR = "ue4ss/Mods/YouTubeTV/videos/"   -- relative to the game's Win64 folder
 
@@ -1178,16 +1178,26 @@ local function StartPoint(id, startClock, random)
 end
 
 -- Which of config.lua's videos plays next: a random one (shuffle), preferring
--- downloaded ones and not the one on now; else the next in the list
+-- downloaded ones and not the one on now; else the next in the list.
+-- Videos added to config.lua but not downloaded never came up (only the
+-- downloaded ones were picked from) until .tv download; now the first pick
+-- of a game session starts downloading the missing ones by itself
+local autoDownloaded = false
 local function PickIndex(current)
     if #videos == 0 then return nil end
     if not SHUFFLE then return (current or 0) % #videos + 1 end
-    local ready, any = {}, {}
+    local ready, any, missing = {}, {}, 0
     for i, v in ipairs(videos) do
+        if not Downloaded(v.id) then missing = missing + 1 end
         if i ~= current or #videos == 1 then
             table.insert(any, i)
             if Downloaded(v.id) then table.insert(ready, i) end
         end
+    end
+    if missing > 0 and not autoDownloaded then
+        autoDownloaded = true
+        log(missing .. " of config.lua's " .. #videos .. " videos aren't downloaded yet: downloading them now, they come up once they're done")
+        pcall(Download)
     end
     local from = #ready > 0 and ready or any
     return from[math.random(#from)]

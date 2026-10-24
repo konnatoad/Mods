@@ -2,6 +2,10 @@
 
 ---
 
+## 0.5.15 (2026-10-24)
+
+- Videos added to `config.lua` never came up until they were downloaded with `.tv download`: a TV only picks from downloaded videos. Now the first time a TV turns on in a game session, the missing ones start downloading by themselves (a minimized window) and come up once they're done. In co-op that's the host's game: the host's list and downloads decide what everyone sees
+
 ## 0.5.14 (2026-10-17)
 
 - The light's flicker is off by default (a steady light): it still cost FPS and added little. `lightFlicker = true` in config.lua brings it back
