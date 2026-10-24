@@ -1,4 +1,4 @@
-ModName, ModVersion = "Stack Them All", "1.4.0"
+ModName, ModVersion = "Stack Them All", "1.4.1"
 
 -- Runs fn ms later on the game thread. ExecuteWithDelay alone runs it on a
 -- background thread, and the retries below search every item in the world
@@ -240,6 +240,8 @@ end
 -- entry that still holds the previous version's value is updated to the new
 -- one. Values you changed yourself are still applied.
 local gameValuesPath = "./ue4ss/Mods/StackThemAll/scripts/gameValues.lua"
+-- This game version's own values (from gameValues.lua), once read
+local gameNow = nil
 local FIELDS = {
     { "stackSize", nil, "MaxStack_18_C57243124FFDE0AB28797AA6F2C1E5F5", stack = true },
     { "allowStack", nil, "AllowStacking_48_02CFD0D74B05709E8E432E824709C714", stack = true },
@@ -310,12 +312,14 @@ end
 
 -- After this mod (or an older one) changed the list in this game session,
 -- the list no longer holds the game's values: every item with a category
--- size already has exactly that size
+-- size already has exactly that size. Items with their own size (money) are
+-- left out: they get the game's stack instead when that's bigger
 local function list_already_changed(gameItems, stackConfig)
     local checked, changed = 0, 0
     for name, values in pairs(gameItems) do
         local itemConfig = stackConfig[name]
-        if itemConfig and category_stack_size(name) and values.stackSize then
+        local category = category_stack_size(name, true)
+        if itemConfig and category and same(itemConfig.stackSize, category) and values.stackSize then
             checked = checked + 1
             if same(values.stackSize, stack_size_for(name, itemConfig)) then changed = changed + 1 end
         end
@@ -384,13 +388,17 @@ local function sync_with_game(masterItemList, stackConfig)
         local ok, result = pcall(dofile, gameValuesPath)
         if ok and type(result) == "table" and type(result.items) == "table" then saved = result end
     end
-    if saved and saved.build == build then return end  -- this game version was handled already
+    if saved and saved.build == build then  -- this game version was handled already
+        gameNow = saved.items
+        return
+    end
 
     local gameItems = read_game_values(masterItemList)
     if list_already_changed(gameItems, stackConfig) then
         log("The item list was already changed in this game session; restart the game so the new game version's values can be read.")
         return
     end
+    gameNow = gameItems
 
     -- The values the entries were written with: the previous version's saved
     -- values, or (the first time) the ones stackConfig.default.lua came with
@@ -444,7 +452,13 @@ local function startup_lists_modification(masterItemList, stackConfig)
         local itemConfig = stackConfig[tostring(rowName)]
         if not itemConfig then return false end
 
-        set_field(rowData, "MaxStack_18_C57243124FFDE0AB28797AA6F2C1E5F5", stack_size_for(tostring(rowName), itemConfig))
+        -- Never smaller than the game's own stack: the anniversary update
+        -- raised money to 1000 a stack, and selling at a trader filled a
+        -- stack past this mod's 250 (810 rubles in a 250 stack)
+        local size = stack_size_for(tostring(rowName), itemConfig)
+        local own = gameNow and gameNow[tostring(rowName)] and gameNow[tostring(rowName)].stackSize
+        if type(size) == "number" and type(own) == "number" and own > size then size = own end
+        set_field(rowData, "MaxStack_18_C57243124FFDE0AB28797AA6F2C1E5F5", size)
         set_field(rowData, "AllowStacking_48_02CFD0D74B05709E8E432E824709C714", itemConfig.allowStack)
         if stackThemAllConfig.onlyStacksChanges then return false end
 

@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.20 (2026-10-24)
+
+- Stack Them All's page: stacks are never smaller than the game's own (money stacks to 1000 since the anniversary update)
+
 ## 1.4.19 (2026-10-24)
 
 - Stack Them All's page says it keeps item changes from game updates

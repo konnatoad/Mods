@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.1 (2026-10-24)
+
+- Selling at a trader could leave more money in one stack than it may hold (810 rubles in a 250 stack): the anniversary update made money stack to 1000, and this mod still set it to 250. A stack is now never made smaller than the game's own, for every item
+
 ## 1.4.0 (2026-10-24)
 
 ### Game Updates No Longer Undone
