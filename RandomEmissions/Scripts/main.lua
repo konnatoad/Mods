@@ -122,7 +122,6 @@ local function SirenSounding()
     return playing == true
 end
 
-local playingOwn = false   -- (our own SpawnSound2D call, so the watch below ignores it)
 local function PlaySiren(why)
     if not isSirenEnabled or isSirenPlaying then
         return
@@ -138,33 +137,16 @@ local function PlaySiren(why)
     local world = UEHelpers.GetWorld()
     local cue = GetSirenCue()
 
-    playingOwn = true
     pcall(function()
         siren = gs:SpawnSound2D(world, cue, sirenVolume, 1.0, 0.0, nil, false, false)
 		isSirenPlaying = true
     end)
-    playingOwn = false
     log("Siren started (" .. why .. ")")
 end
 
--- The game's own siren: if the game starts a siren itself while ours sounds,
--- ours stops (two on top of each other otherwise). Only 2D sounds are looked
--- at, and only their name
-local function OnGame2DSound(_, worldContext, sound)
-    if playingOwn then return end
-    local name = ""
-    pcall(function() name = sound:get():GetFName():ToString() end)
-    if not name:lower():find("siren", 1, true) then return end
-    if SirenSounding() then
-        pcall(function() siren:Stop() end)
-        log("The game itself started a siren (" .. name .. ") - this mod's stops so there's only one")
-    else
-        log("The game itself started a siren (" .. name .. ")")
-    end
-end
-for _, fn in ipairs({ "SpawnSound2D", "PlaySound2D" }) do
-    pcall(RegisterHook, "/Script/Engine.GameplayStatics:" .. fn, OnGame2DSound)
-end
+-- (No hook on the game's 2D sounds to catch the game's own siren any more:
+-- it ran Lua on every 2D sound the game played, and reading a sound's name
+-- there crashed the game when picking things up, 24 Oct)
 
 -- Every CHECK_EVERY_MS (it used to run Lua on every frame)
 local function OnTick()

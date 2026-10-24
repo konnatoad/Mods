@@ -2,6 +2,10 @@
 
 ---
 
+## 1.2.8 (2026-10-24)
+
+- The game could crash when picking things up (a fatal error in UE4SS's Lua): this mod hooked every 2D sound the game plays to catch the game's own siren, and read each sound's name there. That hook is gone. It never caught a siren anyway; this mod still never starts a second siren of its own while one sounds
+
 ## 1.2.7 (2026-10-17)
 
 - The siren felt like a false alarm, with the real emission coming well after it: the siren is 2 minutes long but started up to 5 minutes before the emission, so it could end 3 minutes early. It now starts 2 to 2.5 minutes before (`sirenMax` 300 -> 150), so it ends at most 30 s before the emission. A `config.lua` with its own `sirenMax` still decides (only the host's counts in co-op)
