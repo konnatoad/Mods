@@ -18,7 +18,7 @@
 --   .sort repair         cells marked as taken by an item that isn't there
 --                        become free again (the host's game: run it as the host)
 ------------------------------------------------------------
-local VERSION = "1.7.1"
+local VERSION = "1.7.2"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -357,7 +357,10 @@ end
 -- the bottom first (last place they fit) and the small ones fill the top.
 -- Returns the ordered list (each with .target) or nil if it doesn't fit
 -- pin: items bigger than this many cells stay where they are (nil: none)
-local function Plan(grid, pin)
+-- chosen: the layout each kind got when this sort started ({ [kind] = "1|flat" }):
+-- the plan is made again after every move, and choosing again then (by the
+-- fewest moves from where things are now) could switch layouts half way
+local function Plan(grid, pin, chosen)
     -- Each item keeps the way it's turned; only if the container is too
     -- full for that are tall items turned flat (wider than tall) to fit
     local function shapes(flat)
@@ -505,17 +508,26 @@ local function Plan(grid, pin)
             local pick
             -- (loot to sell keeps its most-valuable-first order)
             local lists = SELL[kind] and { kindItems } or { kindItems, bigFirst }
-            for _, items in ipairs(lists) do
-                for _, how in ipairs(hows) do
-                    local copy = {}
-                    for i, v in pairs(taken) do copy[i] = v end
-                    local r = placeKind(items, bottom, bottom, copy, how)
-                    if r and (not pick or r.rows < pick.rows or (r.rows == pick.rows and r.moves < pick.moves)) then
-                        pick = r
+            local function choose(only)
+                for l, items in ipairs(lists) do
+                    for _, how in ipairs(hows) do
+                        local name = l .. "|" .. how
+                        if not only or only == name then
+                            local copy = {}
+                            for i, v in pairs(taken) do copy[i] = v end
+                            local r = placeKind(items, bottom, bottom, copy, how)
+                            if r and (not pick or r.rows < pick.rows or (r.rows == pick.rows and r.moves < pick.moves)) then
+                                pick = r
+                                pick.name = name
+                            end
+                        end
                     end
                 end
             end
+            if chosen and chosen[kind] then choose(chosen[kind]) end
+            if not pick then choose(nil) end
             if not pick then return false end
+            if chosen then chosen[kind] = pick.name end
             for it, s in pairs(pick.spots) do it.w, it.h, it.target = s.w, s.h, s.idx end
             taken, bottom = pick.taken, pick.rows
         end
@@ -881,7 +893,7 @@ local function Step()
                 .. SORT_KEY .. " again)")
             return
         end
-        order = Plan(grid, pin or nil)
+        order = Plan(grid, pin or nil, s.chosen)
         if order then
             move, why = NextMove(grid, order)
             s.room = move and move.room or grid.room
@@ -949,7 +961,7 @@ local function Start()
     end
     if #grid.items == 0 then log("It's empty") return end
     sorting = { player = player, inv = inv, invName = NameOf(inv), steps = 0, maxSteps = #grid.items * 10 + 50,
-                lastMove = nil, same = 0, moved = 0, level = 1 }
+                lastMove = nil, same = 0, moved = 0, level = 1, chosen = {} }
     log(string.format("Sorting %s: %d items in %d cells (%d columns)", sorting.invName, #grid.items, grid.cells, grid.cols))
     LoopAsync(MOVE_MS, function()
         if not sorting then return true end

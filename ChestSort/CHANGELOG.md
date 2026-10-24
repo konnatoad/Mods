@@ -2,6 +2,10 @@
 
 ---
 
+## 1.7.2 (2026-10-24)
+
+- Each group's layout is chosen once when a sort starts and kept to the end. The plan is made again after every move, and choosing again then (by the fewest moves from where things lie at that moment) could switch a group to another layout half way through
+
 ## 1.7.1 (2026-10-24)
 
 - Magazines (and any group) came out half lying, half standing: each item was turned on its own to fill gaps, so the same magazines lay different ways and big drums landed in leftover holes. Now a whole group is either all lying down or all standing up, whichever takes fewer rows, so the same items always lie the same way
