@@ -2,6 +2,12 @@
 
 ---
 
+## 1.7.0 (2026-10-24)
+
+- Loot to sell goes on top: mutant parts, animal parts, gun parts, broken gear and junk, then money, then ammo, magazines, medical, food and drink, then weapons, attachments, equipment, tools, artifacts, materials and the rest
+- Loot to sell goes the most valuable first (what a trader pays for one, from the game's item data), whatever its size: a screamer head before Chuvirla fists before zombie hands. Other groups still go by size, the more valuable first among the same size
+- The log says once how many item values it read from the game and which trader it took as the junk trader
+
 ## 1.6.3 (2026-10-24)
 
 - Groups with big items left holes: everything went in smallest first, so the big ones (deer, boar and dog heads) came last and had to start lower, leaving gaps beside the small ones. Each group is now also tried biggest first, where the small parts fill the gaps next to the big ones, and the layout with the fewest rows wins (dog tail, dog head, boar head and deer head: 3 full rows instead of 5 with holes)

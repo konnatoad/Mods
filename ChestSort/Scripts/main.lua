@@ -18,7 +18,7 @@
 --   .sort repair         cells marked as taken by an item that isn't there
 --                        become free again (the host's game: run it as the host)
 ------------------------------------------------------------
-local VERSION = "1.6.3"
+local VERSION = "1.7.0"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -206,16 +206,20 @@ local function Mark(grid, idx, w, h, taken, value)
 end
 
 -- The sorted order: the same kind together, smallest first, the more
--- valuable first, bigger stacks first.
+-- valuable first, bigger stacks first. Loot to sell goes the most valuable
+-- first whatever its size.
 --
 -- What kind of item it is. Mostly the start of its ID (Ammo_9mm -> Ammo,
 -- Holdable_RGD5 -> Tool), but the game files most loot under Resource, so
 -- that's split: mutant parts, animal parts, gun parts, broken gear, junk (what
 -- the junk trader buys) and money each get their own group. Kinds go in
--- this order; others after them
-local KIND_ORDER = { "Weapon", "Magazine", "Ammo", "Attachment", "Medical", "Food", "Drink", "Equipment", "Tool",
-                     "Artifact", "Money", "MutantPart", "AnimalPart", "GunPart", "BrokenGear", "Junk", "Resource",
-                     "Plant", "BuildPart", "Object", "Misc" }
+-- this order, loot to sell on top; others after them
+local KIND_ORDER = { "MutantPart", "AnimalPart", "GunPart", "BrokenGear", "Junk", "Money",
+                     "Ammo", "Magazine", "Medical", "Food", "Drink",
+                     "Weapon", "Attachment", "Equipment", "Tool", "Artifact",
+                     "Resource", "Plant", "BuildPart", "Object", "Misc" }
+-- loot to sell: the most valuable first
+local SELL = { MutantPart = true, AnimalPart = true, GunPart = true, BrokenGear = true, Junk = true }
 local KIND_ALIAS = { CUTWeapon = "Weapon", Consumable = "Medical", Holdable = "Tool" }
 local KIND_RANK = {}
 for i, k in ipairs(KIND_ORDER) do KIND_RANK[k] = i end
@@ -271,6 +275,13 @@ local function ItemData()
     for _, plain in ipairs({ "Resource_Wood", "Resource_Scrap", "Resource_Iron", "Resource_Cement" }) do
         if junkTrader and itemData[plain] and itemData[plain].trader == junkTrader then junkTrader = nil end
     end
+    local n, priced = 0, 0
+    for _, d in pairs(itemData) do
+        n = n + 1
+        if (d.value or 0) > 0 then priced = priced + 1 end
+    end
+    log(string.format("Item values: %d items, %d with a trader price; junk trader %s", n, priced,
+        tostring(junkTrader or "not found")))
     return itemData
 end
 
@@ -309,6 +320,7 @@ local function Order(items)
     table.sort(list, function(a, b)
         if a.kindRank ~= b.kindRank then return a.kindRank < b.kindRank end
         if a.kind ~= b.kind then return a.kind < b.kind end
+        if SELL[a.kind] and a.value ~= b.value then return a.value > b.value end
         local aa, ba = a.w * a.h, b.w * b.h
         if aa ~= ba then return aa < ba end
         -- (the shape whichever way it lies: turning an item doesn't move it)
@@ -493,7 +505,9 @@ local function Plan(grid, pin)
                 return rank[a] < rank[b]
             end)
             local pick
-            for _, items in ipairs({ kindItems, bigFirst }) do
+            -- (loot to sell keeps its most-valuable-first order)
+            local lists = SELL[kind] and { kindItems } or { kindItems, bigFirst }
+            for _, items in ipairs(lists) do
                 for _, how in ipairs(hows) do
                     local copy = {}
                     for i, v in pairs(taken) do copy[i] = v end

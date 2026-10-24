@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.24 (2026-10-24)
+
+- Chest Sort's text describes its new order: loot to sell on top, the most valuable first
+
 ## 1.4.23 (2026-10-24)
 
 - Chest Sort's text mentions its new groups (food, medical, mutant parts, animal parts, junk, money...) and that it puts the most valuable first
