@@ -42,7 +42,7 @@ local INFO = {
       commands = { { ".radmenu", "Settings and live readout" }, { ".radshield", "Shield on / off" },
                    { ".radshield 75", "75% less radiation (host)" }, { ".radmeter", "Measure a hot spot (run twice)" },
                    { ".radshield scan", "Radiation numbers on your stats, for the log" } } },
-    { name = "StackThemAll", title = "Stack Them All",
+    { name = "StackThemAll", title = "Stack Them All", gameRestart = true,
       about = "Bigger stacks. Items added by game updates get a stack size automatically, and item changes from game updates are kept. Stacks are never smaller than the game's own.",
       notes = "Your stack sizes: config.lua (see config.example.lua); per item: scripts\\stackConfig.lua" },
     { name = "Mi8CargoHold", title = "Mi-8 Cargo Hold",
@@ -192,6 +192,10 @@ local function Loaded()
 end
 
 local function Builtin(name) return INFO_BY_NAME[name] ~= nil and INFO_BY_NAME[name].builtin == true end
+-- Mods only a game restart updates: Stack Them All changes the game's item
+-- list, which only a fresh game start brings back to the game's own values,
+-- and restarting it in a world froze the host's game (24 Oct, stopped half way)
+local function NeedsGameRestart(name) return INFO_BY_NAME[name] ~= nil and INFO_BY_NAME[name].gameRestart == true end
 
 ------------------------------------------------------------
 -- Changelogs
@@ -532,12 +536,22 @@ local function Reload(which, beforeSelf, finished, notify)
     local list = {}
     if which == "changed" or which == "all" then
         local includeSelf = false
+        local skipped = {}
         for _, name in ipairs(Loaded()) do
             if not Builtin(name) and (which == "all" or Changed(name)) then
-                if name == SELF then includeSelf = true else table.insert(list, name) end
+                if NeedsGameRestart(name) then table.insert(skipped, name)
+                elseif name == SELF then includeSelf = true else table.insert(list, name) end
             end
         end
+        if #skipped > 0 then
+            log(table.concat(skipped, ", ") .. " changed: restart the game to update " .. (#skipped == 1 and "it" or "them")
+                .. " (restarting it in a world can freeze the game)")
+        end
         if includeSelf then table.insert(list, SELF) end   -- itself last
+        if #list == 0 and #skipped > 0 then
+            finished("Restart the game to update " .. table.concat(skipped, ", "))
+            return
+        end
         if #list == 0 then
             local msg = which == "changed" and "No mod has changed since it was loaded" or "No mods to restart"
             log(msg)
@@ -552,6 +566,11 @@ local function Reload(which, beforeSelf, finished, notify)
         if not Script(name) then
             log("No mod called '" .. which .. "' (looked for " .. MODS_DIR .. name .. "/Scripts/main.lua)")
             finished("No mod called " .. which)
+            return
+        end
+        if NeedsGameRestart(name) then
+            log(name .. ": restart the game to update it (restarting it in a world can freeze the game)")
+            finished("Restart the game to update " .. name)
             return
         end
         list = { name }

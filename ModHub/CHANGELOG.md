@@ -2,6 +2,10 @@
 
 ---
 
+## 1.4.22 (2026-10-24)
+
+- Restarting mods doesn't restart Stack Them All any more; the log says to restart the game for it instead. Restarting it in a world froze the host's game (UE4SS stopped it half way). It changes the game's item list, which only a fresh game start puts back to the game's own values, so a restart in a world couldn't fully update it anyway
+
 ## 1.4.21 (2026-10-24)
 
 - Chest Sort's page mentions its stuck split key fix
