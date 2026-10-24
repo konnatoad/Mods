@@ -2,7 +2,14 @@
 
 ---
 
-## 1.5.5 (2026-10-24)
+## 1.6.0 (2026-10-24)
+
+- Finer groups: loot the game files under one "Resource" kind is now split into money, mutant parts (Chuvirla hands, zombie hands, ghoul parts, mutant carcasses...), animal parts (boar and deer heads, dog tails, animal carcasses...), gun parts, broken gear and junk. Junk is everything the junk trader buys, read from the game's own trader data, so new junk items join it by themselves. Medical items, food and drink are each their own group, and tools (grenades, flashlights) come after equipment
+- Groups go: weapons, magazines, ammo, attachments, medical, food, drink, equipment, tools, artifacts, money, mutant parts, animal parts, gun parts, broken gear, junk, materials, plants, build parts, the rest
+- Within a group, items of the same size go from the most valuable to the least (what a trader pays for one, from the game's item data)
+- `.sort check` shows each item's group and value, and which trader it took as the junk trader
+
+ (2026-10-24)
 
 - Dragging a stack in your inventory moved only half of it, every time: the game's split key can get stuck on after a missed key release (its own bug; the Mod Menu's `.invcheck fix` turned it off by hand). Now clicking an item with no Ctrl, Alt or Shift really held turns a stuck split key off before the drag, and the log says when it did. `splitFix = false` in `config.lua` turns this off
 

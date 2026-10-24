@@ -76,7 +76,7 @@ local INFO = {
       commands = { { ".stats", "Panel on / off" }, { ".stats move", "Next position on the screen" },
                    { ".stats scan", "If a stat is missing: list the numbers" } } },
     { name = "ChestSort", title = "Chest Sort",
-      about = "With a container open, S sorts it: the smallest items first (1-slot items at the top, then 2-slot, 3-slot...), the same kind together. Each move is the game's own, so it works in co-op too. Also fixes Shift+click not moving stacks into a container, and dragging moving only half a stack (a stuck split key).",
+      about = "With a container open, S sorts it: the smallest items first (1-slot items at the top, then 2-slot, 3-slot...), the same kind together (food, medical, mutant parts, animal parts, junk, money...), the most valuable first. Each move is the game's own, so it works in co-op too. Also fixes Shift+click not moving stacks into a container, and dragging moving only half a stack (a stuck split key).",
       keys = { { "S", "Inventory open: sort the container" }, { "SHIFT+CLICK", "Stack into the open container (fixed)" } },
       commands = { { ".sort", "Sort the open container" }, { ".sort stop", "Stop a sort that's running" },
                    { ".sort check", "What it sees and where items would go" },

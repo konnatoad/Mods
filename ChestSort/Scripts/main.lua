@@ -18,7 +18,7 @@
 --   .sort repair         cells marked as taken by an item that isn't there
 --                        become free again (the host's game: run it as the host)
 ------------------------------------------------------------
-local VERSION = "1.5.5"
+local VERSION = "1.6.0"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -205,17 +205,97 @@ local function Mark(grid, idx, w, h, taken, value)
     end
 end
 
--- The sorted order: smallest first, the same kind together, bigger stacks first
--- What kind of item it is: the start of its ID (Ammo_9mm -> Ammo,
--- Holdable_RGD5 -> Holdable). Kinds go in this order; others after them
-local KIND_ORDER = { "Weapon", "Magazine", "Ammo", "Attachment", "Holdable", "Consumable", "Food", "Drink", "Equipment",
-                     "Artifact", "Resource", "Plant", "BuildPart", "Object", "Misc" }
-local KIND_ALIAS = { CUTWeapon = "Weapon" }
+-- The sorted order: the same kind together, smallest first, the more
+-- valuable first, bigger stacks first.
+--
+-- What kind of item it is. Mostly the start of its ID (Ammo_9mm -> Ammo,
+-- Holdable_RGD5 -> Tool), but the game files most loot under Resource, so
+-- that's split: mutant parts, animal parts, gun parts, broken gear, junk (what
+-- the junk trader buys) and money each get their own group. Kinds go in
+-- this order; others after them
+local KIND_ORDER = { "Weapon", "Magazine", "Ammo", "Attachment", "Medical", "Food", "Drink", "Equipment", "Tool",
+                     "Artifact", "Money", "MutantPart", "AnimalPart", "GunPart", "BrokenGear", "Junk", "Resource",
+                     "Plant", "BuildPart", "Object", "Misc" }
+local KIND_ALIAS = { CUTWeapon = "Weapon", Consumable = "Medical", Holdable = "Tool" }
 local KIND_RANK = {}
 for i, k in ipairs(KIND_ORDER) do KIND_RANK[k] = i end
+
+local function set(list) local s = {} for _, v in ipairs(list) do s[v] = true end return s end
+local MUTANT_PARTS = set({ "Resource_ChuvirlaFist", "Resource_ChuvirlaHead", "Resource_ZombieHand", "Resource_ZombieLegs",
+    "Resource_GhoulParts", "Resource_GraftBones", "Resource_GraftFlesh", "Resource_ScreamerHead", "Resource_ScreamerLungs",
+    "Resource_TwinsFeet", "Resource_TwinsHead", "Resource_WendigoHead", "Resource_WendigoHorns", "Resource_RatwolfHead",
+    "Resource_CrabEye", "Resource_CrabLeg", "Resource_SwamperMoss", "Resource_AssemblyFlesh", "Resource_AssemblyMetal",
+    "BuildPart_CarcassChuvirla", "BuildPart_CarcassRatWolf", "BuildPart_CarcassSwamper", "BuildPart_CarcassTwins" })
+local ANIMAL_PARTS = set({ "Resource_BoarHead", "Resource_DeerHead", "Resource_DogHead", "Resource_DogTail",
+    "Resource_CrayFishTail", "Resource_Bones", "BuildPart_CarcassBoar", "BuildPart_CarcassDeer", "BuildPart_CarcassCatfish" })
+local JUNK = set({ "Resource_Musor", "Resource_OldPhoto" })
+
+-- The game's own item data (MasterItemList): what traders pay for each
+-- item (its value) and which trader deals in it. Read once, on first use
+local MASTER_LIST = "/Game/SurvivalGameKitV2/Blueprints/Items/MasterLists/MasterItemList.MasterItemList"
+local V = {
+    vendor = "VendorDetails_132_7BB646D344E047B6377D17AF38E7685B",
+    sell = "SellPrice_23_DB81849743F8694701EA61B74F879068",
+    buy = "BuyPrice_26_B0892B7149108822AAF096BFD35E8C9D",
+    class = "VendorClass_43_796A18A1408B11576249188823B5A193",
+}
+local itemData = nil   -- { [id] = { value, trader } }; junkTrader
+local junkTrader = nil
+local function ItemData()
+    if itemData then return itemData end
+    itemData = {}
+    pcall(function()
+        local list = StaticFindObject(MASTER_LIST)
+        if not Valid(list) then itemData = nil return end
+        list:ForEachRow(function(name, row)
+            local d = {}
+            pcall(function()
+                local v = row[V.vendor]
+                local sell, buy = v[V.sell], v[V.buy]
+                d.value = (type(sell) == "number" and sell > 0) and sell or ((type(buy) == "number" and buy > 0) and buy or 0)
+                local class = v[V.class]
+                if class and class:IsValid() then d.trader = class:GetFName():ToString() end
+            end)
+            itemData[tostring(name)] = d
+        end)
+    end)
+    if not itemData then return {} end
+    -- the junk trader: the one the game's trash items go to. Not used if that
+    -- trader also deals in ordinary materials (then it isn't a junk trader)
+    local count = {}
+    for id, d in pairs(itemData) do
+        if id:match("^Resource_ItemTrash") and d.trader then count[d.trader] = (count[d.trader] or 0) + 1 end
+    end
+    local best = 0
+    for trader, n in pairs(count) do if n > best then best, junkTrader = n, trader end end
+    for _, plain in ipairs({ "Resource_Wood", "Resource_Scrap", "Resource_Iron", "Resource_Cement" }) do
+        if junkTrader and itemData[plain] and itemData[plain].trader == junkTrader then junkTrader = nil end
+    end
+    return itemData
+end
+
 local function KindOf(id)
-    local k = tostring(id):match("^([^_]+)_") or "Misc"
-    return KIND_ALIAS[k] or k
+    id = tostring(id)
+    local k = id:match("^([^_]+)_") or "Misc"
+    k = KIND_ALIAS[k] or k
+    if MUTANT_PARTS[id] then return "MutantPart" end
+    if ANIMAL_PARTS[id] then return "AnimalPart" end
+    if k == "Resource" then
+        if id == "Resource_Rubles" then return "Money" end
+        if id:match("^Resource_GunParts") or id:match("^Resource_Weapon_") then return "GunPart" end
+        if id:match("^Resource_Broken") then return "BrokenGear" end
+        if JUNK[id] or id:match("^Resource_ItemTrash") then return "Junk" end
+    end
+    if k == "Resource" or k == "Object" or k == "Misc" or k == "Artifact" then
+        local d = ItemData()[id]
+        if junkTrader and d and d.trader == junkTrader and (d.value or 0) > 0 then return "Junk" end
+    end
+    return k
+end
+
+local function ValueOf(id)
+    local d = ItemData()[tostring(id)]
+    return d and d.value or 0
 end
 
 local function Order(items)
@@ -223,6 +303,7 @@ local function Order(items)
     for _, it in ipairs(items) do
         it.kind = KindOf(it.id)
         it.kindRank = KIND_RANK[it.kind] or 100
+        it.value = ValueOf(it.id)
         table.insert(list, it)
     end
     table.sort(list, function(a, b)
@@ -231,6 +312,8 @@ local function Order(items)
         local aa, ba = a.w * a.h, b.w * b.h
         if aa ~= ba then return aa < ba end
         if a.h ~= b.h then return a.h < b.h end
+        -- the same shape: the more valuable first (what a trader pays for one)
+        if a.value ~= b.value then return a.value > b.value end
         if a.id ~= b.id then return a.id < b.id end
         if a.amount ~= b.amount then return a.amount > b.amount end
         if a.w ~= b.w then return a.w < b.w end
@@ -887,10 +970,12 @@ local function Check()
     -- end up leaving its biggest items in place)
     local order = Plan(grid, nil)
     for _, it in ipairs(order or Order(grid.items)) do
-        log(string.format("  %-34s x%-4s %dx%d%s at %d -> %s", it.id, tostring(it.amount), it.w, it.h,
-            it.rotated and " (turned)" or "", it.root, tostring(it.target)))
+        log(string.format("  %-34s x%-4s %dx%d%s %-10s worth %-5s at %d -> %s", it.id, tostring(it.amount), it.w, it.h,
+            it.rotated and " (turned)" or "", tostring(it.kind), tostring(it.value), it.root, tostring(it.target)))
     end
     if not order then log("  sorted it doesn't pack - S sorts the smaller items around the biggest") end
+    ItemData()
+    log("  junk trader: " .. tostring(junkTrader or "not found (junk is told by name only)"))
 end
 
 ------------------------------------------------------------
