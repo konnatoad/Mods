@@ -18,7 +18,7 @@
 --   .sort repair         cells marked as taken by an item that isn't there
 --                        become free again (the host's game: run it as the host)
 ------------------------------------------------------------
-local VERSION = "1.6.0"
+local VERSION = "1.6.1"
 local MOD_DIR = "./ue4ss/Mods/ChestSort/"
 
 local function log(msg) print("[ChestSort] " .. tostring(msg) .. "\n") end
@@ -415,6 +415,38 @@ local function Plan(grid, pin)
         end
         return true
     end
+    -- One block per kind of item: each kind starts on a new row and its items
+    -- fill in from there, every size together (smallest first, each into the
+    -- first gap it fits), so a kind never breaks into several rows of shapes
+    -- with gaps between them
+    local function grouped()
+        local taken = {}
+        local list = {}
+        for _, it in ipairs(order) do
+            it.target = nil
+            if pin and it.w * it.h > pin then
+                it.target = it.root
+                Mark(grid, it.root, it.w, it.h, taken, true)
+            else
+                table.insert(list, it)
+            end
+        end
+        local cols = grid.cols
+        local start, bottom, kind = 0, 0, nil
+        for _, it in ipairs(list) do
+            if it.kind ~= kind then kind, start = it.kind, bottom end
+            for idx = start * cols, grid.cells - 1 do
+                if Fits(grid, idx, it.w, it.h, taken) then
+                    it.target = idx
+                    Mark(grid, idx, it.w, it.h, taken, true)
+                    bottom = math.max(bottom, idx // cols + it.h)
+                    break
+                end
+            end
+            if not it.target then return false end
+        end
+        return true
+    end
     local function try(bigFromBottom)
         local taken = {}
         local list = {}
@@ -449,7 +481,7 @@ local function Plan(grid, pin)
         return true
     end
     local function any()
-        return shelves("shape") or shelves("height") or shelves("mixed") or try(false) or try(true)
+        return grouped() or shelves("height") or shelves("mixed") or try(false) or try(true)
     end
     local fits = any()
     if not fits and ROTATE and not grid.noRotate then

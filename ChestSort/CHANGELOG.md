@@ -2,6 +2,10 @@
 
 ---
 
+## 1.6.1 (2026-10-24)
+
+- Each group is one block now: it starts on a new row and all its items fill in from there, every size together. Before, each size of a group started its own row, so a group like mutant parts broke into separate rows (small hands, Chuvirla fists, heads) with gaps between them and looked like several groups
+
 ## 1.6.0 (2026-10-24)
 
 - Finer groups: loot the game files under one "Resource" kind is now split into money, mutant parts (Chuvirla hands, zombie hands, ghoul parts, mutant carcasses...), animal parts (boar and deer heads, dog tails, animal carcasses...), gun parts, broken gear and junk. Junk is everything the junk trader buys, read from the game's own trader data, so new junk items join it by themselves. Medical items, food and drink are each their own group, and tools (grenades, flashlights) come after equipment
